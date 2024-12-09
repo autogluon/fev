@@ -9,9 +9,8 @@ Specifically, this package makes it easy to
 `fev` supports point & probabilistic forecasting, different types of covariates, as well as all popular forecasting metrics.
 
 ## Installation
-Clone the repository and install with pip
 ```
-pip install -e .
+pip install fev
 ```
 
 ## Quickstart
