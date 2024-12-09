@@ -1,10 +1,8 @@
-# `fev`
-Utilities for evaluating time series forecasting models.
-
+# fev: Forecast evaluation library
 `fev` adds a thin wrapper on top of the Hugging Face (HF) [`datasets`](https://huggingface.co/docs/datasets/en/index) library, resulting in a lightweight but fully functional benchmarking solution.
 
 Specifically, this package makes it easy to
-- define forecasting tasks
+- define time series forecasting tasks
 - load time series data and generate train-test splits
 - evaluate model predictions
 

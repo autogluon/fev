@@ -55,5 +55,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/fev"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "benchmarks",
+    "examples",
+]
+
 [tool.hatch.version]
 path = "src/fev/__about__.py"
