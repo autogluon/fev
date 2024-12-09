@@ -8,6 +8,8 @@ extend-include = ["*.ipynb"]
 
 [project]
 name = "fev"
+readme = "README.md"
+license = { file = "LICENSE" }
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
