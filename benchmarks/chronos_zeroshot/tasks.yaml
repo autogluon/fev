@@ -1,0 +1,481 @@
+tasks:
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_traffic
+  horizon: 24
+  seasonality: 24
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_australian_electricity
+  horizon: 48
+  seasonality: 48
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: ercot
+  horizon: 24
+  seasonality: 24
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets_extra
+  dataset_config: ETTm
+  horizon: 24
+  seasonality: 96
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  cutoff: -96
+  multiple_target_columns: __ALL__
+- dataset_path: autogluon/chronos_datasets_extra
+  dataset_config: ETTh
+  horizon: 24
+  seasonality: 24
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  multiple_target_columns: __ALL__
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: exchange_rate
+  horizon: 30
+  seasonality: 5
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: nn5
+  horizon: 56
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_nn5_weekly
+  horizon: 8
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_weather
+  horizon: 30
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_covid_deaths
+  horizon: 30
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_fred_md
+  horizon: 12
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: m4_quarterly
+  horizon: 8
+  seasonality: 4
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: m4_yearly
+  horizon: 6
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: dominick
+  horizon: 8
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: m5
+  horizon: 28
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_tourism_monthly
+  horizon: 24
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_tourism_quarterly
+  horizon: 8
+  seasonality: 4
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_tourism_yearly
+  horizon: 4
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_car_parts
+  horizon: 12
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_hospital
+  horizon: 12
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_cif_2016
+  horizon: 12
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_yearly
+  horizon: 6
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_quarterly
+  horizon: 8
+  seasonality: 4
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_monthly
+  horizon: 18
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m3_monthly
+  horizon: 18
+  seasonality: 12
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m3_yearly
+  horizon: 6
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m3_quarterly
+  horizon: 8
+  seasonality: 4
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_saugeenday
+  horizon: 30
+  seasonality: 1
+  eval_metric: MASE
+  extra_metrics:
+  - WQL
+  quantile_levels:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+  target_column: T1

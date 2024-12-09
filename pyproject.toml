@@ -1,0 +1,57 @@
+[tool.ruff]
+line-length = 119
+lint.extend-select = ["I"]
+lint.isort.known-first-party = ["fev"]
+lint.isort.known-third-party = ["datasets", "numpy", "pandas", "scipy", "yaml"]
+extend-include = ["*.ipynb"]
+
+
+[project]
+name = "fev"
+dynamic = ["version"]
+requires-python = ">=3.10"
+dependencies = [
+    "datasets[s3]>=2.15,<3.2",
+    "pydantic~=2.0",
+    "numpy",
+    "scipy",
+]
+description = "fev: Forecast evaluation library"
+authors = [
+  { name="Oleksandr Shchur", email="shchuro@amazon.com" },
+  { name="Lorenzo Stella", email="stellalo@amazon.com" },
+  { name="Caner Turkmen", email="atturkm@amazon.com" },
+  { name="Abdul Fatir Ansari", email="ansarnd@amazon.com" },
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/autogluon/fev"
+Issues = "https://github.com/autogluon/fev/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "ruff",
+    "autogluon.timeseries>=1.1.1",
+    "nbformat",
+    "nbconvert",
+    "jupyter",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+packages = ["src/fev"]
+
+[tool.hatch.version]
+path = "src/fev/__about__.py"
