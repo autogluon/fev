@@ -1,3 +1,4 @@
+import pathlib
 import pprint
 import warnings
 
@@ -6,6 +7,7 @@ from scipy.stats import gmean, hmean
 
 from fev.benchmark import Benchmark
 
+# Use Arrow dtypes to correctly handle missing values
 TASK_DEF_DTYPES = {
     "dataset_path": pd.StringDtype(),
     "dataset_config": pd.StringDtype(),
@@ -30,56 +32,59 @@ RESULTS_DTYPES = {
     "model_name": pd.StringDtype(),
     "test_error": float,
     "training_time_s": float,
+    "trained_on_this_dataset": pd.BooleanDtype(),
     "inference_time_s": float,
 }
 
 TASK_DEF_COLUMNS = list(TASK_DEF_DTYPES)
 
 # Valid types for summaries
-SummariesType = pd.DataFrame | list[dict] | list[str] | str
+SummaryType = pd.DataFrame | list[dict] | str | pathlib.Path
 
 
-def _load_summaries_from_file(file_path: str) -> pd.DataFrame:
-    """Load the summaries DataFrame from a JSON or CSV file."""
-    try:
-        if file_path.endswith(".json"):
-            summaries = pd.read_json(file_path, orient="records")
-        elif file_path.endswith(".csv"):
-            summaries = pd.read_csv(file_path)
-        else:
-            raise ValueError("Path to summaries must ends with '.json' or '.csv'")
-    except Exception:
-        raise ValueError(f"Unable to load summaries from file '{file_path}.")
-    return summaries
+def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
+    """Load a single summary as a pandas DataFrame"""
+
+    if isinstance(summary, pd.DataFrame):
+        df = summary
+    elif isinstance(summary, list) and isinstance(summary[0], dict):
+        df = pd.DataFrame(summary)
+    elif isinstance(summary, (str, pathlib.Path)):
+        file_path = str(summary)
+        try:
+            if file_path.endswith(".json"):
+                df = pd.read_json(file_path, orient="records")
+            elif file_path.endswith(".csv"):
+                df = pd.read_csv(file_path)
+            else:
+                raise ValueError("Path to summaries must ends with '.json' or '.csv'")
+        except Exception:
+            raise ValueError(f"Unable to load summaries from file '{file_path}.")
+    else:
+        raise ValueError(
+            f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
+        )
+    return df
 
 
-def _validate_summaries(summaries: SummariesType) -> pd.DataFrame:
-    """Convert the evaluation summaries to a DataFrame.
+def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
+    """Load potentially multiple summary objects into a single pandas DataFrame.
 
     Ensures that all expected columns are present and have correct dtypes.
     """
-    if isinstance(summaries, pd.DataFrame):
-        pass
-    elif isinstance(summaries, str):
-        summaries = _load_summaries_from_file(summaries)
-    elif isinstance(summaries, list) and isinstance(summaries[0], dict):
-        summaries = pd.DataFrame(summaries)
-    elif isinstance(summaries, list) and isinstance(summaries[0], str):
-        summaries = pd.concat([_load_summaries_from_file(path) for path in summaries])
-    else:
-        raise ValueError(
-            f"Invalid type of summaries {type(summaries)}. Expected one of pd.DataFrame, list[dict], list[str], str."
-        )
+    if not isinstance(summaries, list) or (isinstance(summaries, list) and isinstance(summaries[0], dict)):
+        summaries = [summaries]
+    summaries_df = pd.concat([_summary_to_df(summary) for summary in summaries])
 
     for col in RESULTS_DTYPES:
-        if col not in summaries:
+        if col not in summaries_df:
             warnings.warn(f"Column '{col}' is missing from summaries, filling with None", stacklevel=3)
-            summaries[col] = None
-    return summaries.astype(RESULTS_DTYPES)
+            summaries_df[col] = None
+    return summaries_df.astype(RESULTS_DTYPES)
 
 
 def pivot_table(
-    summaries: SummariesType,
+    summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
     task_columns: str | list[str] = "dataset_name",
     aggfunc: str = "mean",
@@ -89,7 +94,7 @@ def pivot_table(
 
     Returns a DataFrame where entry df.iloc[i, j] contains the score of model j on task i.
     """
-    summaries = _validate_summaries(summaries).astype({metric_column: "float64"})
+    summaries = _load_summaries(summaries).astype({metric_column: "float64"})
 
     pivot_df = summaries.pivot_table(index=task_columns, columns="model_name", values=metric_column, aggfunc=aggfunc)
     if baseline_model is not None:
@@ -102,7 +107,7 @@ def pivot_table(
 
 
 def leaderboard(
-    summaries: SummariesType,
+    summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
     baseline_model: str = "seasonal_naive",
     min_relative_error: float = 1e-3,
@@ -133,13 +138,13 @@ def leaderboard(
 
     Parameters
     ----------
-    summaries : pd.DataFrame | list[dict] | list[str] | str
-        Evaluation summaries for all models and all tasks. Supported formats:
+    summaries : pd.DataFrame | list[dict] | str | list[pd.DataFrame] | list[list[dict]] | list[str]
+        One or multiple summary objects containing evaluation results.
+        Each summary object can be represented as a:
 
         - list of dictionaries produced by :meth:`fev.Task.evaluation_summary`
         - a DataFrame where each row corresponds to the evaluation summary on one task
         - path to a JSON (orient="records") or CSV file with the evaluation summaries
-        - list of paths to JSON (orient="records") or CSV files with the evaluation summaries
     baseline_model : str, default "seasonal_naive"
         Name of the baseline model that is used to compute relative scores.
     min_relative_error : float, default 1e-3
@@ -162,7 +167,7 @@ def leaderboard(
         If `True`, this method will assert that the dataset fingerprint is unique for each task. This ensures that
         the same dataset version was used by all models.
     """
-    summaries = _validate_summaries(summaries).astype({metric_column: "float64"}).set_index(TASK_DEF_COLUMNS)
+    summaries = _load_summaries(summaries).astype({metric_column: "float64"}).set_index(TASK_DEF_COLUMNS)
 
     if validate_dataset_fingerprints:
         num_fingerprints_per_task = summaries.groupby(TASK_DEF_COLUMNS, dropna=False)["dataset_fingerprint"].nunique()
@@ -207,12 +212,14 @@ def leaderboard(
     )
     inference_time_s_per_model = summaries["inference_time_s"].unstack()
     training_time_s_per_model = summaries["training_time_s"].unstack()
+    trained_on_this_dataset = summaries["trained_on_this_dataset"].unstack()
     if remove_failures:
         rel_error_per_model = rel_error_per_model.dropna(how="any")
         if len(rel_error_per_model) < len(error_per_model):
             print(f"Keeping {len(rel_error_per_model)} / {len(error_per_model)} tasks where no model failed.")
         inference_time_s_per_model = inference_time_s_per_model.reindex(rel_error_per_model.index)
         training_time_s_per_model = training_time_s_per_model.reindex(rel_error_per_model.index)
+        trained_on_this_dataset = trained_on_this_dataset.reindex(rel_error_per_model.index)
     else:
         rel_error_per_model = rel_error_per_model.fillna(rel_score_failures or max_relative_error)
     avg_rank_per_model = error_per_model.rank(axis=1).mean()
@@ -226,6 +233,7 @@ def leaderboard(
             "median_inference_time_s": inference_time_s_per_model.median(),
             "avg_training_time_s": training_time_s_per_model.mean(),
             "median_training_time_s": training_time_s_per_model.median(),
+            "training_corpus_overlap": trained_on_this_dataset.mean(),
             "num_failures": num_failures_per_model,
         },
         axis=1,
