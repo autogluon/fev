@@ -1,4 +1,6 @@
-# fev: Forecast evaluation library
+# fev
+A lightweight library for evaluating time series forecasting models.
+
 `fev` adds a thin wrapper on top of the Hugging Face (HF) [`datasets`](https://huggingface.co/docs/datasets/en/index) library, resulting in a lightweight but fully functional benchmarking solution.
 
 Specifically, this package makes it easy to
@@ -69,6 +71,7 @@ task.evaluation_summary(predictions, model_name="naive")
 #  'test_error': 3.3784518,
 #  'training_time_s': None,
 #  'inference_time_s': None,
+#  'trained_on_this_dataset': False,
 #  'fev_version': '0.2.0',
 #  'MASE': 3.3784518}
 ```
@@ -80,3 +83,12 @@ The evaluation summary contains all information necessary to uniquely identify t
 - An in-depth walkthrough of the library: [docs/tutorials/in-depth.ipynb](./docs/tutorials/in-depth.ipynb).
 
 Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
+
+
+## Leaderboards
+We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard.
+
+Note that the goal of `fev` is not to introduce a single benchmark to end all benchmarks - we all understand that this is impossible.
+Rather, it's a library that makes it easy to define new benchmarks to support the model development as the field of time series forecasting evolves.
+
+Therefore, we expect to add new benchmarks to the `fev` repo and add new results to the leaderboard on [Hugging Face](https://huggingface.co/spaces/autogluon/fev-leaderboard).
