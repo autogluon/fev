@@ -69,7 +69,7 @@ task.evaluation_summary(predictions, model_name="naive")
 #  'test_error': 3.3784518,
 #  'training_time_s': None,
 #  'inference_time_s': None,
-#  'fev_version': '0.1.0',
+#  'fev_version': '0.2.0',
 #  'MASE': 3.3784518}
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
