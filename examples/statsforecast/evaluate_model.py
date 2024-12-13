@@ -68,6 +68,8 @@ def predict_with_model(
     else:
         levels = None
 
+    # Forward fill NaNs + zero-fill leading NaNs
+    past_df = past_df.set_index("unique_id").groupby("unique_id").ffill().reset_index().fillna(0.0)
     if max_context_length is not None:
         past_df = past_df.groupby("unique_id").tail(max_context_length).reset_index(drop=True)
 
@@ -76,9 +78,6 @@ def predict_with_model(
         warnings.simplefilter("ignore")
         forecast_df = sf.forecast(df=past_df, h=task.horizon, level=levels)
     inference_time = time.monotonic() - start_time
-
-    # SeasonalNaive may return NaN forecast if len(y) < season_length; replace forecast with 0 in this case
-    forecast_df = forecast_df.fillna(0.0)
 
     forecast_df["predictions"] = forecast_df[str(model)]
     if task.quantile_levels is not None:
