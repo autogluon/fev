@@ -3,9 +3,9 @@ tasks:
   dataset_config: monash_m1_yearly
   horizon: 8
 - dataset_path: autogluon/chronos_datasets
-  dataset_config: ercot
-  horizon: 168
-  seasonality: 24
+  dataset_config: monash_electricity_weekly
+  horizon: 8
+  seasonality: 1
   variants:
-  - cutoff: "2021-01-01"
-  - cutoff: "2020-07-01"
+  - cutoff: "2013-01-01"
+  - cutoff: "2014-01-01"

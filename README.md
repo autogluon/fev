@@ -1,14 +1,19 @@
 # fev
-A lightweight library for evaluating time series forecasting models.
+A lightweight library that makes it easy to benchmark time series forecasting models.
 
-`fev` adds a thin wrapper on top of the Hugging Face (HF) [`datasets`](https://huggingface.co/docs/datasets/en/index) library, resulting in a lightweight but fully functional benchmarking solution.
+- Extensible: Easy to define your own forecasting tasks and benchmarks.
+- Reproducible: Ensures that the results obtained by different users are comparable.
+- Easy to use: Compatible with most popular forecasting libraries.
+- Minimal dependencies: Just a thin wrapper on top of 🤗[`datasets`](https://huggingface.co/docs/datasets/en/index).
 
-Specifically, this package makes it easy to
-- define time series forecasting tasks
-- load time series data and generate train-test splits
-- evaluate model predictions
+### How is `fev` different from other benchmarking tools?
 
-`fev` supports point & probabilistic forecasting, different types of covariates, as well as all popular forecasting metrics.
+Existing forecasting benchmarks usually fall into one of two categories:
+
+- Standalone datasets without any supporting infrastructure. These provide no guarantees that the results obtained by different users are comparable. For example, changing the start date or duration of the forecast horizon totally changes the meaning of the scores.
+- Bespoke end-to-end systems that combine models, datasets and forecasting tasks. Such packages usually come with lots of dependencies and assumptions, which makes extending or integrating these libraries into existing systems difficult.
+
+`fev` aims for the middle ground - it provides the core benchmarking functionality without introducing unnecessary constraints or bloated dependencies. The library supports point & probabilistic forecasting, different types of covariates, as well as all popular forecasting metrics.
 
 ## Installation
 ```
@@ -77,6 +82,18 @@ task.evaluation_summary(predictions, model_name="naive")
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
 
+Multiple evaluation summaries produced by different models on different tasks can be aggregated into a single table.
+```python
+# Dataframes, dicts, JSON or CSV files supported
+summaries = "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/example/results/results.csv"
+fev.leaderboard(summaries)
+# | model_name     |   gmean_relative_error |   avg_rank |   avg_inference_time_s |   ... |
+# |:---------------|-----------------------:|-----------:|-----------------------:|------:|
+# | auto_theta     |                  0.874 |      2     |                  5.501 |   ... |
+# | auto_arima     |                  0.887 |      2     |                 21.799 |   ... |
+# | auto_ets       |                  0.951 |      2.667 |                  0.737 |   ... |
+# | seasonal_naive |                  1     |      3.333 |                  0.004 |   ... |
+```
 
 ## Tutorials
 - Quick start tutorial: [docs/tutorials/quickstart.ipynb](./docs/tutorials/quickstart.ipynb).
@@ -88,7 +105,4 @@ Examples of model implementations compatible with `fev` are available in [`examp
 ## Leaderboards
 We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard.
 
-Note that the goal of `fev` is not to introduce a single benchmark to end all benchmarks - we all understand that this is impossible.
-Rather, it's a library that makes it easy to define new benchmarks to support the model development as the field of time series forecasting evolves.
-
-Therefore, we expect to add new benchmarks to the `fev` repo and add new results to the leaderboard on [Hugging Face](https://huggingface.co/spaces/autogluon/fev-leaderboard).
+Currently, the leaderboard includes the results from the Benchmark II introduced in [Chronos: Learning the Language of Time Series](https://arxiv.org/abs/2403.07815). We expect to extend this list in the future.

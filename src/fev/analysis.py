@@ -3,7 +3,7 @@ import pprint
 import warnings
 
 import pandas as pd
-from scipy.stats import gmean, hmean
+from scipy.stats import gmean
 
 from fev.benchmark import Benchmark
 
@@ -127,13 +127,13 @@ def leaderboard(
 
     For each model, the following metrics are reported:
 
-    - `gmean_relative_error` - geometric mean of relative scores across all tasks.
-    - `hmean_relative_error` - harmonic mean of relative scores across all tasks.
+    - `gmean_relative_error` - geometric mean of relative scores across all tasks
     - `avg_rank` - average rank across all tasks
     - `avg_inference_time_s` - average inference time of each model (in seconds)
     - `median_inference_time_s` - median inference time of each model (in seconds)
     - `avg_training_time_s` - average training time of each model (in seconds)
     - `median_training_time_s` - median training time of each model (in seconds)
+    - `training_corpus_overlap` - fraction of the datasets used in the benchmark that were included in the model's training corpus
     - `num_failures` - number of tasks for which each model failed
 
     Parameters
@@ -227,7 +227,6 @@ def leaderboard(
     agg_scores = pd.concat(
         {
             "gmean_relative_error": rel_error_per_model.apply(gmean),
-            "hmean_relative_error": rel_error_per_model.apply(hmean),
             "avg_rank": avg_rank_per_model,
             "avg_inference_time_s": inference_time_s_per_model.mean(),
             "median_inference_time_s": inference_time_s_per_model.median(),
