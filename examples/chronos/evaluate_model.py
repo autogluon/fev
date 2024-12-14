@@ -2,6 +2,7 @@ import time
 
 import datasets
 import numpy as np
+import pandas as pd
 import torch
 from chronos import BaseChronosPipeline, ForecastType
 from tqdm.auto import tqdm
@@ -89,13 +90,25 @@ def predict_with_model(
 
 
 if __name__ == "__main__":
-    task = fev.Task(dataset_path="autogluon/chronos_datasets", dataset_config="monash_m1_yearly", horizon=8)
     model_name = "amazon/chronos-bolt-small"
-    predictions, inference_time, extra_info = predict_with_model(task, model_name=model_name)
-    evaluation_summary = task.evaluation_summary(
-        predictions,
-        model_name=model_name,
-        inference_time_s=inference_time,
-        extra_info=extra_info,
+    num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
+
+    benchmark = fev.Benchmark.from_yaml(
+        "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/tasks.yaml"
     )
-    print(evaluation_summary)
+    summaries = []
+    for task in benchmark.tasks[:num_tasks]:
+        predictions, inference_time, extra_info = predict_with_model(task, model_name=model_name)
+        evaluation_summary = task.evaluation_summary(
+            predictions,
+            model_name=model_name,
+            inference_time_s=inference_time,
+            extra_info=extra_info,
+        )
+        print(evaluation_summary)
+        summaries.append(evaluation_summary)
+
+    # Show and save the results
+    summary_df = pd.DataFrame(summaries)
+    print(summary_df)
+    summary_df.to_csv(f"{model_name}.csv", index=False)
