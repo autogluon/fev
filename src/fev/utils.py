@@ -1,11 +1,13 @@
 import reprlib
 
 import datasets
+import multiprocess as mp
 import pandas as pd
 
 from .constants import DEFAULT_NUM_PROC
 
 __all__ = [
+    "convert_long_df_to_hf_dataset",
     "infer_column_types",
     "validate_time_series_dataset",
 ]
@@ -139,3 +141,43 @@ class PatchedDownloadConfig(datasets.DownloadConfig):
     def __post_init__(self, use_auth_token):
         if use_auth_token != "deprecated":
             self.token = use_auth_token
+
+
+def convert_long_df_to_hf_dataset(
+    df: pd.DataFrame,
+    id_column: str = "id",
+    timestamp_column: str = "timestamp",
+    static_columns: list[str] | None = None,
+    num_proc: int = DEFAULT_NUM_PROC,
+) -> datasets.Dataset:
+    """Convert a long-format pandas DataFrame to a Hugging Face datasets.Dataset object.
+
+    Parameters
+    ----------
+    df:
+        Long-format DataFrame containing the data.
+    id_column
+        Name of the column containing the unique ID of each time series.
+    timestamp_column
+        Name of the column containing the timestamp of time series observations.
+    static_columns
+        Names of columns that contain static (time-independent) features.
+    num_proc
+        Number of processes used to parallelize the computation.
+    """
+    df[id_column] = df[id_column].astype(str)
+    df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+    df = df.sort_values(by=[id_column, timestamp_column])
+
+    if static_columns is None:
+        static_columns = []
+    static_columns = [id_column] + static_columns
+
+    def process_entry(group: pd.DataFrame) -> dict:
+        static = group[static_columns].iloc[0].to_dict()
+        dynamic = group.drop(columns=static_columns).to_dict("list")
+        return {**static, **dynamic}
+
+    with mp.Pool(processes=num_proc) as pool:
+        entries = pool.map(process_entry, [group for _, group in df.groupby(id_column, sort=False)])
+    return datasets.Dataset.from_list(entries)
