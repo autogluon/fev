@@ -77,7 +77,7 @@ task.evaluation_summary(predictions, model_name="naive")
 #  'training_time_s': None,
 #  'inference_time_s': None,
 #  'trained_on_this_dataset': False,
-#  'fev_version': '0.2.1',
+#  'fev_version': '0.3.0',
 #  'MASE': 3.3784518}
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
@@ -95,11 +95,11 @@ fev.leaderboard(summaries)
 # | seasonal_naive |                  1     |      3.333 |                  0.004 |   ... |
 ```
 
-## Documentation
-- Quickstart: Define a task and evaluate a model ([docs/01-quickstart.ipynb](./docs/01-quickstart.ipynb)).
-- Datasets: Use `fev` with your own datasets ([docs/02-dataset-format.ipynb](./docs/02-dataset-format.ipynb)).
-- Tasks & benchmarks: Advanced features for defining tasks and benchmarks  ([docs/03-tasks-and-benchmarks.ipynb](./docs/03-tasks-and-benchmarks.ipynb)).
-- Models: Evaluate your models and submit results to the leaderboard ([docs/04-models.ipynb](./docs/04-models.ipynb)).
+## Tutorials
+- [Quickstart](./docs/01-quickstart.ipynb): Define a task and evaluate a model.
+- [Datasets](./docs/02-dataset-format.ipynb): Use `fev` with your own datasets.
+- [Tasks & benchmarks](./docs/03-tasks-and-benchmarks.ipynb): Advanced features for defining tasks and benchmarks.
+- [Models](./docs/04-models.ipynb): Evaluate your models and submit results to the leaderboard.
 
 Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
 
