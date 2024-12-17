@@ -95,9 +95,11 @@ fev.leaderboard(summaries)
 # | seasonal_naive |                  1     |      3.333 |                  0.004 |   ... |
 ```
 
-## Tutorials
-- Quick start tutorial: [docs/tutorials/quickstart.ipynb](./docs/tutorials/quickstart.ipynb).
-- An in-depth walkthrough of the library: [docs/tutorials/in-depth.ipynb](./docs/tutorials/in-depth.ipynb).
+## Documentation
+- Quickstart: Define a task and evaluate a model ([docs/01-quickstart.ipynb](./docs/01-quickstart.ipynb)).
+- Datasets: Use `fev` with your own datasets ([docs/02-dataset-format.ipynb](./docs/02-dataset-format.ipynb)).
+- Tasks & benchmarks: Advanced features for defining tasks and benchmarks  ([docs/03-tasks-and-benchmarks.ipynb](./docs/03-tasks-and-benchmarks.ipynb)).
+- Models: Evaluate your models and submit results to the leaderboard ([docs/04-models.ipynb](./docs/04-models.ipynb)).
 
 Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
 
