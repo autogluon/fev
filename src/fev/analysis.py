@@ -173,7 +173,10 @@ def leaderboard(
         num_fingerprints_per_task = summaries.groupby(TASK_DEF_COLUMNS, dropna=False)["dataset_fingerprint"].nunique()
         tasks_with_different_fingerprints = num_fingerprints_per_task.index[num_fingerprints_per_task > 1]
         if len(tasks_with_different_fingerprints) > 0:
-            raise ValueError(f"{len(tasks_with_different_fingerprints)} tasks have different dataset fingerprints!")
+            raise ValueError(
+                f"{len(tasks_with_different_fingerprints)} tasks have different dataset fingerprints:\n"
+                f"{tasks_with_different_fingerprints.to_frame(index=False)}"
+            )
 
     if benchmark is not None:
         expected_tasks = pd.MultiIndex.from_frame(

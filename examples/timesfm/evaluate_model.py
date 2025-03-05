@@ -29,12 +29,23 @@ def batchify(lst: list, batch_size: int = 32):
         yield lst[i : i + batch_size]
 
 
+VERSION_TO_HYPERPARAMETERS = {
+    "google/timesfm-1.0-200m-pytorch": {
+        "context_len": 512,
+    },
+    "google/timesfm-2.0-500m-pytorch": {
+        "num_layers": 50,
+        "use_positional_embedding": False,
+        "context_len": 2048,
+    },
+}
+
+
 def predict_with_model(
     task: fev.Task,
-    model_name: str = "google/timesfm-1.0-200m-pytorch",
+    model_name: str = "google/timesfm-2.0-500m-pytorch",
     backend: str = "gpu",
     batch_size: int = 256,
-    context_len: int = 512,
 ) -> tuple[datasets.Dataset, float, dict]:
     past_data, _ = task.get_input_data(trust_remote_code=True)
     target = past_data.with_format("numpy").cast_column(
@@ -44,12 +55,17 @@ def predict_with_model(
     imputation = LastValueImputation()
     inputs = [imputation(t) for t in target]
 
+    if model_name not in VERSION_TO_HYPERPARAMETERS:
+        raise ValueError(f"model_name must be one of {list(VERSION_TO_HYPERPARAMETERS)} (got {model_name})")
+    model_hparams = VERSION_TO_HYPERPARAMETERS[model_name]
+
     frequency_indicator = get_frequency_indicator(task.freq)
     tfm = TimesFmTorch(
         hparams=timesfm.TimesFmHparams(
             backend=backend,
             horizon_len=task.horizon,
-            context_len=context_len,
+            per_core_batch_size=32,
+            **model_hparams,
         ),
         checkpoint=timesfm.TimesFmCheckpoint(huggingface_repo_id=model_name),
     )
@@ -87,7 +103,7 @@ def predict_with_model(
             "batch_size": batch_size,
             "backend": backend,
             "frequency_indicator": frequency_indicator,
-            "context_len": context_len,
+            **model_hparams,
         }
     }
 
@@ -95,7 +111,7 @@ def predict_with_model(
 
 
 if __name__ == "__main__":
-    model_name = "google/timesfm-1.0-200m-pytorch"
+    model_name = "google/timesfm-2.0-500m-pytorch"
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
     benchmark = fev.Benchmark.from_yaml(
@@ -116,4 +132,4 @@ if __name__ == "__main__":
     # Show and save the results
     summary_df = pd.DataFrame(summaries)
     print(summary_df)
-    summary_df.to_csv(f"{model_name}.csv", index=False)
+    summary_df.to_csv(f"{model_name.replace('/', '_')}.csv", index=False)
