@@ -13,12 +13,19 @@ class Benchmark:
     ----------
     tasks : list[Task]
         Collection of tasks in the benchmark.
+    task_generators : list[TaskGenerator]
+        Collection of task generators used to create individual tasks in the benchmark.
     """
 
-    def __init__(self, tasks: list[Task]):
-        self.tasks = list(tasks)
-        for task in self.tasks:
-            assert isinstance(task, Task), "`tasks` must be a list of list of `Task` objects"
+    def __init__(self, tasks: list[Task | TaskGenerator]):
+        self.task_generators = []
+        for t in tasks:
+            if isinstance(t, TaskGenerator):
+                self.task_generators.append(t)
+            elif isinstance(t, Task):
+                self.task_generators.append(TaskGenerator(**t.to_dict()))
+            else:
+                raise ValueError(f"`tasks` must be a list of list of `Task` or `TaskGenerator` objects (got {type(t)})")
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "Benchmark":
@@ -70,7 +77,12 @@ class Benchmark:
 
         Each dictionary must follow the schema compatible with a `fev.task.TaskGenerator`.
         """
+        return cls(tasks=[TaskGenerator(**conf) for conf in task_configs])
+
+    @property
+    def tasks(self) -> list[Task]:
+        """List of tasks in the benchmark."""
         tasks = []
-        for conf in task_configs:
-            tasks.extend(TaskGenerator(**conf).generate_tasks())
-        return cls(tasks=tasks)
+        for task_gen in self.task_generators:
+            tasks.extend(task_gen.generate_tasks())
+        return tasks
