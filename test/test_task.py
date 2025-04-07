@@ -1,5 +1,6 @@
 import datasets
 import numpy as np
+import pydantic
 import pytest
 
 import fev
@@ -85,3 +86,45 @@ def test_when_multiple_target_columns_set_to_all_used_then_all_columns_are_explo
     assert len(expanded_ds) == num_sequence_columns * len(original_ds)
     assert len(expanded_ds.features) == len(original_ds.features) - num_sequence_columns + 1
     assert len(np.unique(expanded_ds[task.id_column])) == len(expanded_ds)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"variants": [], "num_rolling_windows": 3},
+        {"variants": [], "rolling_step_size": 24},
+        {"variants": [], "initial_cutoff": -48},
+        {"num_rolling_windows": -1},
+        {"num_rolling_windows": 2, "initial_cutoff": 48},
+        {"num_rolling_windows": 2, "initial_cutoff": -48, "rolling_step_size": "24h"},
+        {"num_rolling_windows": 2, "initial_cutoff": "2021-01-01", "rolling_step_size": 24},
+        {"num_rolling_windows": 2, "initial_cutoff": "2021-01-01", "rolling_step_size": "-24h"},
+        {"num_rolling_windows": 2, "initial_cutoff": "2021-01-01"},
+        {"num_rolling_windows": 2, "rolling_step_size": "24h"},
+    ],
+)
+def test_when_invalid_task_generator_config_provided_then_validation_error_is_raised(config):
+    with pytest.raises(pydantic.ValidationError):
+        fev.TaskGenerator(dataset_path="my_dataset", horizon=24, **config)
+
+
+@pytest.mark.parametrize(
+    "config, expected_cutoffs",
+    [
+        ({"num_rolling_windows": 3}, [-36, -24, -12]),
+        ({"num_rolling_windows": 3, "initial_cutoff": -48}, [-48, -36, -24]),
+        ({"num_rolling_windows": 3, "initial_cutoff": -48, "rolling_step_size": 4}, [-48, -44, -40]),
+        ({"num_rolling_windows": 2, "rolling_step_size": 4}, [-24, -20]),
+        (
+            {"num_rolling_windows": 2, "initial_cutoff": "2024-06-01", "rolling_step_size": "4h"},
+            ["2024-06-01T00:00:00", "2024-06-01T04:00:00"],
+        ),
+        (
+            {"num_rolling_windows": 2, "initial_cutoff": "2024-06-01", "rolling_step_size": "1ME"},
+            ["2024-06-01T00:00:00", "2024-06-30T00:00:00"],
+        ),
+    ],
+)
+def test_when_using_rolling_evaluation_then_tasks_are_generated_with_correct_offsets(config, expected_cutoffs):
+    tasks = fev.TaskGenerator(dataset_path="my_dataset", horizon=12, **config).generate_tasks()
+    assert [t.cutoff for t in tasks] == expected_cutoffs

@@ -25,7 +25,7 @@ class Benchmark:
             elif isinstance(t, Task):
                 self.task_generators.append(TaskGenerator(**t.to_dict()))
             else:
-                raise ValueError(f"`tasks` must be a list of list of `Task` or `TaskGenerator` objects (got {type(t)})")
+                raise ValueError(f"`tasks` must be a list of `Task` or `TaskGenerator` objects (got {type(t)})")
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "Benchmark":

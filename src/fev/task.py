@@ -589,6 +589,28 @@ class TaskGenerator(_TaskBase):
     """
     Can generate one or multiple `Task` objects based on the task configuration.
 
+    Supports the same keyword arguments as `Task`, in addition to the following arguments for defining multiple
+    variants of the same task.
+
+    Parameters
+    ----------
+    variants : list[dict] | None
+        List, where each entry corresponds to a variant of the base task. See *Examples* for usage details.
+        If `variants` are provided together with the rolling evaluation arguments (`num_rolling_windows`,
+        `rolling_step_size` or `initial_cutoff`), an exception will be raised.
+    num_rolling_windows : int | None
+        Number of rolling evaluation windows to generate from the base task.
+    initial_cutoff : int | str | None
+        Cutoff for the first rolling window. Can be a negative integer (e.g., `-48`) or a timestamp-like string
+        (e.g., `"2024-02-01"). See also documentation for `cutoff` argument to `Task`.
+        Defaults to `-num_rolling_windows * rolling_step_size`.
+    rolling_step_size : int | str | None
+        Step size between consecutive rolling evaluation windows.
+        If `initial_cutoff` is an integer, `rolling_step_size` must be a positive integer.
+        If `initial_cutoff` is a timestamp-like string, `rolling_step_size` must be pandas-compatible offset string
+        (e.g., `D` for daily, `15min` for quarter-hourly).
+        Defaults to `horizon`.
+
     Examples
     --------
     To define a single task, simply define the respective attributes:
@@ -601,7 +623,7 @@ class TaskGenerator(_TaskBase):
     >>> print(task_config.generate_tasks())
     [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=12, ...)]
 
-    To create multiple variants of the same task, use the `variants` keyword:
+    To create multiple variants of the same task, you can use the `variants` keyword:
 
     >>> task_config = TaskGenerator(
     ...     dataset_path="my_dataset",
@@ -615,19 +637,95 @@ class TaskGenerator(_TaskBase):
     [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=12, ...),
      Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, ...)]
 
+    Alternatively, you can configure rolling evaluation using the keywords `num_rolling_windows`, `rolling_step_size`
+    and `initial_cutoff`.
+
+    Using integer-based cutoffs:
+
+    >>> task_config = TaskGenerator(
+    ...     dataset_path="my_dataset",
+    ...     dataset_config="my_config",
+    ...     horizon=24,
+    ...     num_rolling_windows=3,
+    ...     initial_cutoff=-96,
+    ...     rolling_step_size=None,  # defaults to `horizon`
+    ... )
+    >>> print(task_config.generate_tasks())
+    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-96, ...),
+     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-72, ...),
+     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-48, ...)]
+
+    Using timestamp-based cutoffs:
+
+    >>> task_config = TaskGenerator(
+    ...     dataset_path="my_dataset",
+    ...     dataset_config="my_config",
+    ...     horizon=24,
+    ...     num_rolling_windows=3,
+    ...     initial_cutoff="2024-01-05",
+    ...     rolling_step_size="12h",  # required
+    ... )
+    >>> print(task_config.generate_tasks())
+    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-05T00:00:00", ...),
+     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-05T12:00:00", ...),
+     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-06T00:00:00", ...)]
+
     """
 
     variants: list[dict[str, Any]] | None = None
+    num_rolling_windows: int | None = None
+    initial_cutoff: int | str | None = None
+    rolling_step_size: int | str | None = None
+
+    def __post_init__(self):
+        if self.variants is not None:
+            assert self.num_rolling_windows is None, "`num_rolling_windows` must be `None` if `variants` is provided"
+            assert self.initial_cutoff is None, "`num_rolling_windows` must be `None` if `variants` is provided"
+            assert self.rolling_step_size is None, "`rolling_step_size` must be `None` if `variants` is provided"
+        elif self.num_rolling_windows is not None:
+            assert self.variants is None, "`variants` must be `None` if `num_rolling_windows` is provided"
+            assert self.num_rolling_windows >= 1, "If provided, `num_rolling_windows` must satisfy >= 1"
+            if self.rolling_step_size is None:
+                self.rolling_step_size = self.horizon
+            if self.initial_cutoff is None:
+                self.initial_cutoff = -self.num_rolling_windows * self.horizon
+
+            if isinstance(self.initial_cutoff, int):
+                if not isinstance(self.rolling_step_size, int):
+                    raise ValueError("`rolling_step_size` must be an int if `initial_cutoff` is an int")
+                assert self.initial_cutoff <= -1
+                assert self.rolling_step_size >= 1
+            else:
+                if not isinstance(self.rolling_step_size, str):
+                    raise ValueError("`rolling_step_size` must be a string if `initial_cutoff` is a string")
+                self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
+                offset = pd.tseries.frequencies.to_offset(self.rolling_step_size)
+                assert offset.n >= 1, "If `rolling_step_size` is a string, it must correspond to a positive timedelta"
+                self.rolling_step_size = offset.freqstr
 
     def generate_tasks(self) -> list[Task]:
         tasks = []
-        base_task_data = self.__dict__.copy()
-        base_task_data.pop("variants", None)
+        excluded_keys = ["variants", "num_rolling_windows", "rolling_step_size", "initial_cutoff"]
+        base_task_data = {k: v for k, v in self.__dict__.items() if k not in excluded_keys}
 
         if self.variants:
             for variant in self.variants:
                 task_data = base_task_data.copy()
                 task_data.update(variant)
+                tasks.append(Task(**task_data))
+        elif self.num_rolling_windows:
+            for window_idx in range(self.num_rolling_windows):
+                task_data = base_task_data.copy()
+                if isinstance(self.initial_cutoff, int):
+                    cutoff = self.initial_cutoff + window_idx * self.rolling_step_size
+                else:
+                    cutoff = pd.Timestamp(self.initial_cutoff)
+                    # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
+                    # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
+                    if window_idx != 0:
+                        cutoff += window_idx * pd.tseries.frequencies.to_offset(self.rolling_step_size)
+                    cutoff = cutoff.isoformat()
+                task_data["cutoff"] = cutoff
                 tasks.append(Task(**task_data))
         else:
             tasks.append(Task(**base_task_data))
