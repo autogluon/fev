@@ -117,7 +117,7 @@ def leaderboard(
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
     benchmark: Benchmark | None = None,
-    validate_dataset_fingerprints: bool = True,
+    validate_dataset_fingerprints: bool = False,
 ):
     """Summarize benchmark results into a single table reporting aggregate performance of each model.
 
@@ -163,7 +163,7 @@ def leaderboard(
     benchmark : fev.Benchmark, optional
         If provided, the results will be computed using only the tasks included in the benchmark. If results for some
         tasks of this benchmark are missing, an exception will be raised.
-    validate_dataset_fingerprints : bool, default True
+    validate_dataset_fingerprints : bool, default False
         If `True`, this method will assert that the dataset fingerprint is unique for each task. This ensures that
         the same dataset version was used by all models.
     """

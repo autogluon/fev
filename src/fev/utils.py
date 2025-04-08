@@ -1,4 +1,5 @@
 import reprlib
+import warnings
 
 import datasets
 import multiprocess as mp
@@ -181,3 +182,21 @@ def convert_long_df_to_hf_dataset(
     with mp.Pool(processes=num_proc) as pool:
         entries = pool.map(process_entry, [group for _, group in df.groupby(id_column, sort=False)])
     return datasets.Dataset.from_list(entries)
+
+
+def generate_fingerprint(dataset: datasets.Dataset) -> str | None:
+    """Generate a fingerprint for the PyArrow Table backing the Dataset.
+
+    Unlike `datasets.fingerprint.generate_print`, this method only considers the representation of the PyArrow Table
+    and not other dataset attributes such as DatasetInfo or the last modified timestamp.
+    """
+    try:
+        hasher = datasets.fingerprint.Hasher()
+        table = dataset._data
+        hasher.update(table)
+        hasher.update(table.nbytes)
+        return hasher.hexdigest()
+    except Exception as e:
+        # In case the private API `Dataset._data` breaks at some point
+        warnings.warn(f"generate_fingerprint failed with exception '{str(e)}'")
+        return None
