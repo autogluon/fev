@@ -190,6 +190,8 @@ def generate_fingerprint(dataset: datasets.Dataset) -> str | None:
     Unlike `datasets.fingerprint.generate_print`, this method only considers the representation of the PyArrow Table
     and not other dataset attributes such as DatasetInfo or the last modified timestamp.
     """
+    if not isinstance(dataset, datasets.Dataset):
+        raise ValueError(f"Expected a datasets.Dataset object (got type {type(dataset)})")
     try:
         hasher = datasets.fingerprint.Hasher()
         table = dataset._data
