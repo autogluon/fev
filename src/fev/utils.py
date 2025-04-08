@@ -187,8 +187,18 @@ def convert_long_df_to_hf_dataset(
 def generate_fingerprint(dataset: datasets.Dataset, num_rows_to_check: int = 3) -> str | None:
     """Generate a fingerprint for the PyArrow Table backing the Dataset.
 
-    Unlike `datasets.fingerprint.generate_print`, this method only considers the representation of the PyArrow Table
-    and not other dataset attributes such as DatasetInfo or the last modified timestamp.
+    Unlike `datasets.fingerprint.generate_fingerprint`, this method only considers the underlying PyArrow Table, and
+    not other dataset attributes such as DatasetInfo or the last modified timestamp.
+
+    The fingerprint depends on the first and last `num_rows_to_check` of the dataset, and the metadata such as
+    `schema`, `nbytes` and `num_rows`.
+
+    Parameters
+    ----------
+    dataset : datasets.Dataset
+        Dataset for which to generate the fingerprint.
+    num_rows_to_check : int, default 3
+        Number of rows at the start and the end of the dataset to check when generating the fingerprint.
     """
     if not isinstance(dataset, datasets.Dataset):
         raise ValueError(f"Expected a datasets.Dataset object (got type {type(dataset)})")
