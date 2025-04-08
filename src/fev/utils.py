@@ -194,7 +194,7 @@ def generate_fingerprint(dataset: datasets.Dataset, num_rows: int = 3) -> str | 
         raise ValueError(f"Expected a datasets.Dataset object (got type {type(dataset)})")
     try:
         hasher = datasets.fingerprint.Hasher()
-        # Compute hash of the first and last `num_rows` row of the data
+        # Compute hash of the first and last `num_rows` rows of the data
         hasher.update(dataset.with_format("arrow")[:num_rows])
         hasher.update(dataset.with_format("arrow")[-num_rows:])
         table = dataset._data
