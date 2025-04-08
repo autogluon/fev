@@ -184,7 +184,7 @@ def convert_long_df_to_hf_dataset(
     return datasets.Dataset.from_list(entries)
 
 
-def generate_fingerprint(dataset: datasets.Dataset) -> str | None:
+def generate_fingerprint(dataset: datasets.Dataset, num_rows: int = 3) -> str | None:
     """Generate a fingerprint for the PyArrow Table backing the Dataset.
 
     Unlike `datasets.fingerprint.generate_print`, this method only considers the representation of the PyArrow Table
@@ -194,9 +194,13 @@ def generate_fingerprint(dataset: datasets.Dataset) -> str | None:
         raise ValueError(f"Expected a datasets.Dataset object (got type {type(dataset)})")
     try:
         hasher = datasets.fingerprint.Hasher()
+        # Compute hash of the first and last `num_rows` row of the data
+        hasher.update(dataset.with_format("arrow")[:num_rows])
+        hasher.update(dataset.with_format("arrow")[-num_rows:])
         table = dataset._data
-        hasher.update(table)
-        hasher.update(table.nbytes)
+        # Update hash based on the dataset schema and size
+        for attr in [table.schema, table.nbytes, table.num_rows]:
+            hasher.update(attr)
         return hasher.hexdigest()
     except Exception as e:
         # In case the private API `Dataset._data` breaks at some point
