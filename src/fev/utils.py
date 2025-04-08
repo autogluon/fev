@@ -1,4 +1,5 @@
 import reprlib
+import warnings
 
 import datasets
 import multiprocess as mp
@@ -181,3 +182,37 @@ def convert_long_df_to_hf_dataset(
     with mp.Pool(processes=num_proc) as pool:
         entries = pool.map(process_entry, [group for _, group in df.groupby(id_column, sort=False)])
     return datasets.Dataset.from_list(entries)
+
+
+def generate_fingerprint(dataset: datasets.Dataset, num_rows_to_check: int = 3) -> str | None:
+    """Generate a fingerprint for the PyArrow Table backing the Dataset.
+
+    Unlike `datasets.fingerprint.generate_fingerprint`, this method only considers the underlying PyArrow Table, and
+    not other dataset attributes such as DatasetInfo or the last modified timestamp.
+
+    The fingerprint depends on the first and last `num_rows_to_check` of the dataset, and the metadata such as
+    `schema`, `nbytes` and `num_rows`.
+
+    Parameters
+    ----------
+    dataset : datasets.Dataset
+        Dataset for which to generate the fingerprint.
+    num_rows_to_check : int, default 3
+        Number of rows at the start and the end of the dataset to check when generating the fingerprint.
+    """
+    if not isinstance(dataset, datasets.Dataset):
+        raise ValueError(f"Expected a datasets.Dataset object (got type {type(dataset)})")
+    try:
+        hasher = datasets.fingerprint.Hasher()
+        # Compute hash of the first and last `num_rows` rows of the data
+        hasher.update(dataset.with_format("arrow")[:num_rows_to_check])
+        hasher.update(dataset.with_format("arrow")[-num_rows_to_check:])
+        table = dataset._data
+        # Update hash based on the dataset schema and size
+        for attr in [table.schema, table.nbytes, table.num_rows]:
+            hasher.update(attr)
+        return hasher.hexdigest()
+    except Exception as e:
+        # In case the private API `Dataset._data` breaks at some point
+        warnings.warn(f"generate_fingerprint failed with exception '{str(e)}'")
+        return None

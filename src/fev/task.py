@@ -11,14 +11,10 @@ import numpy as np
 import pandas as pd
 import pydantic
 
+from . import utils
 from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
-from .utils import (
-    PatchedDownloadConfig,
-    infer_column_types,
-    validate_time_series_dataset,
-)
 
 MULTIPLE_TARGET_COLUMNS_ALL = "__ALL__"
 
@@ -313,7 +309,7 @@ class Task(_TaskBase):
             ds = datasets.load_dataset(
                 **load_dataset_kwargs,
                 # PatchedDownloadConfig fixes https://github.com/huggingface/datasets/issues/6598
-                download_config=PatchedDownloadConfig(storage_options=copy.deepcopy(storage_options)),
+                download_config=utils.PatchedDownloadConfig(storage_options=copy.deepcopy(storage_options)),
             )
         except Exception:
             raise RuntimeError(
@@ -330,7 +326,7 @@ class Task(_TaskBase):
         else:
             required_columns += self.multiple_target_columns
 
-        validate_time_series_dataset(
+        utils.validate_time_series_dataset(
             ds,
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
@@ -427,9 +423,9 @@ class Task(_TaskBase):
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
-        self._dataset_fingerprint = ds._fingerprint
+        self._dataset_fingerprint = utils.generate_fingerprint(ds)
 
-        self._dynamic_columns, self._static_columns = infer_column_types(
+        self._dynamic_columns, self._static_columns = utils.infer_column_types(
             ds,
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
