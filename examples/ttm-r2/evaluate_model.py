@@ -82,7 +82,7 @@ def batchify(lst: list, batch_size: int = 32):
 
 def predict_with_model(
     task: fev.Task,
-    model_name: str = "google/timesfm-2.0-500m-pytorch",
+    model_name: str = "ibm-granite/granite-timeseries-ttm-r2",
     device: str = "cuda",
     batch_size: int = 256,
 ) -> tuple[datasets.Dataset, float, dict]:
