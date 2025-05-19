@@ -231,9 +231,7 @@ class Task(_TaskBase):
         """
         if self._dataset_dict is None:
             self._prepare_dataset_dict(
-                num_proc=num_proc,
-                storage_options=storage_options,
-                trust_remote_code=trust_remote_code,
+                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
             )
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
@@ -249,9 +247,7 @@ class Task(_TaskBase):
         """
         if self._dataset_dict is None:
             self._prepare_dataset_dict(
-                num_proc=num_proc,
-                storage_options=storage_options,
-                trust_remote_code=trust_remote_code,
+                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
             )
         return self._dataset_dict[TEST]
 
@@ -748,12 +744,7 @@ class TaskGenerator(_TaskBase):
 
     def generate_tasks(self) -> list[Task]:
         tasks = []
-        excluded_keys = [
-            "variants",
-            "num_rolling_windows",
-            "rolling_step_size",
-            "initial_cutoff",
-        ]
+        excluded_keys = ["variants", "num_rolling_windows", "rolling_step_size", "initial_cutoff"]
         base_task_data = {k: v for k, v in self.__dict__.items() if k not in excluded_keys}
 
         if self.variants:
