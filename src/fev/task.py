@@ -39,10 +39,14 @@ class _TaskBase:
     # Feature information
     id_column: str = "id"
     timestamp_column: str = "timestamp"
-    target_column: str = "target"
+    target_column: str | list[str] = "target"
     multiple_target_columns: list[str] | Literal["__ALL__"] | None = None
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
     excluded_columns: list[str] = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert task definition to a dictionary."""
+        return dataclasses.asdict(self)
 
 
 @pydantic.dataclasses.dataclass
@@ -100,10 +104,13 @@ class Task(_TaskBase):
         Name of the column with the unique identifier of each time series.
     timestamp_column : str, default 'timestamp'
         Name of the column with the timestamps of the observations.
-    target_column : str, default 'target'
-        Name of the column that must be predicted.
+    target_column : str or list[str], default 'target'
+        Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
+        If a list of strings is provided, a multivariate forecasting task is created.
     multiple_target_columns : list[str] | Literal["__ALL__"] | None, default None
         If provided, a separate univariate time series will be created from each of the multiple_target_columns fields.
+
+        This argument can only set for univariate tasks where `target_column` is a string.
 
         If set to `"__ALL__"`, then a separate univariate instance will be created from each column of type `Sequence`.
 
@@ -139,6 +146,11 @@ class Task(_TaskBase):
         if self.dataset_path is None:
             raise ValueError("`dataset_path` cannot be `None` when creating a `Task`")
 
+        if self.multiple_target_columns is not None and self.is_multivariate:
+            raise ValueError(
+                "`multiple_target_columns` cannot be used for multivariate tasks (when `target_column` is a list)"
+            )
+
         if self.cutoff is None:
             self.cutoff = -self.horizon
         elif isinstance(self.cutoff, str):
@@ -172,10 +184,6 @@ class Task(_TaskBase):
         self._dataset_fingerprint: str | None = None
         self._dynamic_columns: list[str] | None = None
         self._static_columns: list[str] | None = None
-
-    def to_dict(self) -> dict:
-        """Convert task definition to a dictionary."""
-        return dataclasses.asdict(self)
 
     @property
     def dataset_name(self) -> str:
@@ -223,7 +231,9 @@ class Task(_TaskBase):
         """
         if self._dataset_dict is None:
             self._prepare_dataset_dict(
-                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
+                num_proc=num_proc,
+                storage_options=storage_options,
+                trust_remote_code=trust_remote_code,
             )
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
@@ -239,7 +249,9 @@ class Task(_TaskBase):
         """
         if self._dataset_dict is None:
             self._prepare_dataset_dict(
-                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
+                num_proc=num_proc,
+                storage_options=storage_options,
+                trust_remote_code=trust_remote_code,
             )
         return self._dataset_dict[TEST]
 
@@ -320,7 +332,7 @@ class Task(_TaskBase):
 
         required_columns = self.past_dynamic_columns + self.excluded_columns
         if self.multiple_target_columns is None:
-            required_columns += [self.target_column]
+            required_columns += self._target_columns_list
         elif self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
             pass
         else:
@@ -379,8 +391,8 @@ class Task(_TaskBase):
             num_proc=num_proc,
             desc="Selecting future data",
         )
-        future_known = future_data.remove_columns([self.target_column] + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column, self.target_column])
+        future_known = future_data.remove_columns(self._target_columns_list + self.past_dynamic_columns)
+        test = future_data.select_columns([self.id_column, self.timestamp_column] + self._target_columns_list)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
     def _prepare_dataset_dict(
@@ -430,8 +442,8 @@ class Task(_TaskBase):
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
         )
-        self._dynamic_columns.remove(self.target_column)
-        columns_to_slice = self.dynamic_columns + [self.target_column, self.timestamp_column]
+        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self._target_columns_list]
+        columns_to_slice = self.dynamic_columns + self._target_columns_list + [self.timestamp_column]
         num_proc = min(num_proc, len(ds))
         ds = self._filter_short_series(ds, num_proc=num_proc)
         self._dataset_dict = self._past_future_test_split(ds, columns_to_slice=columns_to_slice, num_proc=num_proc)
@@ -465,7 +477,10 @@ class Task(_TaskBase):
         if self.quantile_levels is not None:
             for q in sorted(self.quantile_levels):
                 predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
-        return datasets.Features(predictions_schema)
+        if self.is_multivariate:
+            return datasets.Features({col: predictions_schema for col in self.target_column})
+        else:
+            return datasets.Features(predictions_schema)
 
     def compute_metrics(self, predictions: datasets.Dataset | list[dict]) -> dict[str, float]:
         test_data = self.get_test_data().with_format("numpy")
@@ -482,16 +497,21 @@ class Task(_TaskBase):
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for eval_metric in sorted(set([self.eval_metric] + self.extra_metrics)):
                 metric = AVAILABLE_METRICS[eval_metric]()
-                test_scores[eval_metric] = float(
-                    metric.compute(
-                        test_data=test_data,
-                        predictions=predictions,
-                        past_data=past_data,
-                        seasonality=self.seasonality,
-                        quantile_levels=self.quantile_levels,
-                        target_column=self.target_column,
+                scores = []
+                for col in self._target_columns_list:
+                    scores.append(
+                        float(
+                            metric.compute(
+                                test_data=test_data,
+                                predictions=predictions,
+                                past_data=past_data,
+                                seasonality=self.seasonality,
+                                quantile_levels=self.quantile_levels,
+                                target_column=col,
+                            )
+                        )
                     )
-                )
+                test_scores[eval_metric] = float(np.mean(scores))
         return test_scores
 
     def _clean_and_validate_predictions(self, predictions: datasets.Dataset | list[dict]) -> datasets.Dataset:
@@ -525,7 +545,7 @@ class Task(_TaskBase):
         inference_time_s: float | None = None,
         trained_on_this_dataset: bool = False,
         extra_info: dict | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Get a summary of the model performance for the given forecasting task.
 
         Parameters
@@ -558,7 +578,7 @@ class Task(_TaskBase):
             - `trained_on_this_dataset` - whether the model was trained on the dataset used in the task
             - `fev_version` - version of the `fev` package used to obtain the summary
         """
-        summary = {
+        summary: dict[str, Any] = {
             "model_name": model_name,
             "dataset_name": self.dataset_name,
         }
@@ -578,6 +598,17 @@ class Task(_TaskBase):
         if extra_info is not None:
             summary.update(extra_info)
         return summary
+
+    @property
+    def is_multivariate(self) -> bool:
+        return isinstance(self.target_column, list)
+
+    @property
+    def _target_columns_list(self) -> list[str]:
+        if isinstance(self.target_column, list):
+            return self.target_column
+        else:
+            return [self.target_column]
 
 
 @pydantic.dataclasses.dataclass
@@ -701,7 +732,12 @@ class TaskGenerator(_TaskBase):
 
     def generate_tasks(self) -> list[Task]:
         tasks = []
-        excluded_keys = ["variants", "num_rolling_windows", "rolling_step_size", "initial_cutoff"]
+        excluded_keys = [
+            "variants",
+            "num_rolling_windows",
+            "rolling_step_size",
+            "initial_cutoff",
+        ]
         base_task_data = {k: v for k, v in self.__dict__.items() if k not in excluded_keys}
 
         if self.variants:
