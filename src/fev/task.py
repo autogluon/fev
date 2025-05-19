@@ -4,7 +4,7 @@ import pprint
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal, Sequence, overload
 
 import datasets
 import numpy as np
@@ -332,7 +332,7 @@ class Task(_TaskBase):
 
         required_columns = self.past_dynamic_columns + self.excluded_columns
         if self.multiple_target_columns is None:
-            required_columns += self._target_columns_list
+            required_columns += self.target_columns_list
         elif self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
             pass
         else:
@@ -391,8 +391,8 @@ class Task(_TaskBase):
             num_proc=num_proc,
             desc="Selecting future data",
         )
-        future_known = future_data.remove_columns(self._target_columns_list + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column] + self._target_columns_list)
+        future_known = future_data.remove_columns(self.target_columns_list + self.past_dynamic_columns)
+        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns_list)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
     def _prepare_dataset_dict(
@@ -442,8 +442,8 @@ class Task(_TaskBase):
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
         )
-        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self._target_columns_list]
-        columns_to_slice = self.dynamic_columns + self._target_columns_list + [self.timestamp_column]
+        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self.target_columns_list]
+        columns_to_slice = self.dynamic_columns + self.target_columns_list + [self.timestamp_column]
         num_proc = min(num_proc, len(ds))
         ds = self._filter_short_series(ds, num_proc=num_proc)
         self._dataset_dict = self._past_future_test_split(ds, columns_to_slice=columns_to_slice, num_proc=num_proc)
@@ -477,20 +477,19 @@ class Task(_TaskBase):
         if self.quantile_levels is not None:
             for q in sorted(self.quantile_levels):
                 predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
-        if self.is_multivariate:
-            return datasets.Features({col: predictions_schema for col in self.target_column})
-        else:
-            return datasets.Features(predictions_schema)
+        return datasets.Features(predictions_schema)
 
-    def compute_metrics(self, predictions: datasets.Dataset | list[dict]) -> dict[str, float]:
+    def compute_metrics(self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict) -> dict[str, float]:
         test_data = self.get_test_data().with_format("numpy")
         past_data = self._dataset_dict[TRAIN].with_format("numpy")
         predictions = self._clean_and_validate_predictions(predictions)
 
-        if len(predictions) != len(test_data):
-            raise ValueError(
-                f"Length of predictions ({len(predictions)}) must match the length of test data ({len(test_data)})"
-            )
+        for target_column, predictions_for_column in predictions.items():
+            if len(predictions_for_column) != len(test_data):
+                raise ValueError(
+                    f"Length of predictions for column {target_column} ({len(predictions)}) must "
+                    f"match the length of test data ({len(test_data)})"
+                )
 
         test_scores = {}
         with warnings.catch_warnings():
@@ -498,12 +497,12 @@ class Task(_TaskBase):
             for eval_metric in sorted(set([self.eval_metric] + self.extra_metrics)):
                 metric = AVAILABLE_METRICS[eval_metric]()
                 scores = []
-                for col in self._target_columns_list:
+                for col in self.target_columns_list:
                     scores.append(
                         float(
                             metric.compute(
                                 test_data=test_data,
-                                predictions=predictions,
+                                predictions=predictions[col],
                                 past_data=past_data,
                                 seasonality=self.seasonality,
                                 quantile_levels=self.quantile_levels,
@@ -514,19 +513,37 @@ class Task(_TaskBase):
                 test_scores[eval_metric] = float(np.mean(scores))
         return test_scores
 
-    def _clean_and_validate_predictions(self, predictions: datasets.Dataset | list[dict]) -> datasets.Dataset:
-        """Convert predictions to the format needed for computing the metrics."""
-        if isinstance(predictions, Iterable):
-            try:
-                predictions = datasets.Dataset.from_list(list(predictions))
-            except Exception:
-                raise ValueError(
-                    "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
-                )
-        if not isinstance(predictions, datasets.Dataset):
-            raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(predictions)})")
-        predictions = predictions.cast(self.predictions_schema).with_format("numpy")
+    def _clean_and_validate_predictions(
+        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict
+    ) -> datasets.DatasetDict:
+        """Convert predictions to the format needed for computing the metrics.
 
+        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset
+        """
+        if self.is_multivariate:
+            if not isinstance(predictions, datasets.DatasetDict):
+                raise ValueError(
+                    f"predictions for multivariate tasks must be of type `datasets.DatasetDict` (received {type(predictions)})"
+                )
+        else:
+            if isinstance(predictions, Sequence):
+                try:
+                    predictions = datasets.Dataset.from_list(list(predictions))
+                except Exception:
+                    raise ValueError(
+                        "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
+                    )
+            if not isinstance(predictions, datasets.Dataset):
+                raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(predictions)})")
+            predictions = datasets.DatasetDict({self.target_column: predictions})
+
+        predictions = predictions.cast(self.predictions_schema).with_format("numpy")
+        for target_column, predictions_for_column in predictions.items():
+            self._assert_all_columns_finite(predictions_for_column)
+        return predictions
+
+    @staticmethod
+    def _assert_all_columns_finite(predictions: datasets.Dataset) -> None:
         for col in predictions.column_names:
             nan_row_idx, _ = np.where(~np.isfinite(np.array(predictions[col])))
             if len(nan_row_idx) > 0:
@@ -535,11 +552,10 @@ class Task(_TaskBase):
                     f"First invalid value encountered in column {col} for item {nan_row_idx[0]}:\n"
                     f"{predictions[int(nan_row_idx[0])]}"
                 )
-        return predictions
 
     def evaluation_summary(
         self,
-        predictions: datasets.Dataset | list[dict],
+        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict,
         model_name: str,
         training_time_s: float | None = None,
         inference_time_s: float | None = None,
@@ -604,7 +620,7 @@ class Task(_TaskBase):
         return isinstance(self.target_column, list)
 
     @property
-    def _target_columns_list(self) -> list[str]:
+    def target_columns_list(self) -> list[str]:
         if isinstance(self.target_column, list):
             return self.target_column
         else:
