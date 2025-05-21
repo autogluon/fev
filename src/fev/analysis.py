@@ -22,7 +22,7 @@ TASK_DEF_DTYPES = {
     "id_column": pd.StringDtype(),
     "timestamp_column": pd.StringDtype(),
     "target_column": pd.StringDtype(),
-    "multiple_target_columns": pd.StringDtype(),
+    "generate_univariate_targets_from": pd.StringDtype(),
     "past_dynamic_columns": pd.StringDtype(),
     "excluded_columns": pd.StringDtype(),
 }

@@ -10,6 +10,7 @@ import datasets
 import numpy as np
 import pandas as pd
 import pydantic
+from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
@@ -40,7 +41,7 @@ class _TaskBase:
     id_column: str = "id"
     timestamp_column: str = "timestamp"
     target_column: str | list[str] = "target"
-    multiple_target_columns: list[str] | Literal["__ALL__"] | None = None
+    generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
     excluded_columns: list[str] = dataclasses.field(default_factory=list)
 
@@ -48,11 +49,30 @@ class _TaskBase:
         """Convert task definition to a dictionary."""
         return dataclasses.asdict(self)
 
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def handle_legacy_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+        if data.kwargs is not None:
+            if "multiple_target_columns" in data.kwargs:
+                if "generate_univariate_targets_from" in data.kwargs:
+                    raise ValueError(
+                        "Do not specify both 'generate_univariate_targets_from' and deprecated 'multiple_target_columns'"
+                    )
+                else:
+                    warnings.warn(
+                        "Field 'multiple_target_columns' is deprecated and will be removed in v1.0. "
+                        "Please use 'generate_univariate_targets_from' instead",
+                        category=FutureWarning,
+                        stacklevel=3,
+                    )
+                    data.kwargs["generate_univariate_targets_from"] = data.kwargs.pop("multiple_target_columns")
+        return data
+
 
 @pydantic.dataclasses.dataclass
 class Task(_TaskBase):
     """
-    A univariate time series forecasting task.
+    A univariate or multivariate time series forecasting task.
 
     This object is responsible for
 
@@ -60,9 +80,9 @@ class Task(_TaskBase):
     - generating a train/test split
     - evaluating the predictions accuracy
 
-    A single `Task` object corresponds to a single train-test split of the data. This means that, for example, to
-    perform evaluation on `N` rolling windows, it is necessary to create `N` separate `Task` objects (one for each
-    window).
+    A single `Task` object corresponds to a single train-test split of the data (i.e., a single cutoff).
+    This means that, for example, to perform evaluation on `N` rolling windows, it is necessary to create `N` separate
+    `Task` objects (one for each window).
 
     Parameters
     ----------
@@ -75,7 +95,7 @@ class Task(_TaskBase):
         S3 path.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
-    cutoff : int | str | None, default -horizon
+    cutoff : int | str | None, default -1 * horizon
         Position in the series where that divides the observed data and the forecast horizon. Defaults to `-horizon`.
         Cutoff logic is similar to pandas indexing:
 
@@ -107,14 +127,16 @@ class Task(_TaskBase):
     target_column : str or list[str], default 'target'
         Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
         If a list of strings is provided, a multivariate forecasting task is created.
-    multiple_target_columns : list[str] | Literal["__ALL__"] | None, default None
-        If provided, a separate univariate time series will be created from each of the multiple_target_columns fields.
+    generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
+        If provided, a separate univariate time series will be created from each of the
+        `generate_univariate_targets_from` columns.
 
-        This argument can only set for univariate tasks where `target_column` is a string.
+        This argument can only set for univariate tasks where `target_column` is a string. If `target_column` is set to
+        a list (in a multivariate task) and `generate_univariate_targets_from` is provided, an error will be raised.
 
         If set to `"__ALL__"`, then a separate univariate instance will be created from each column of type `Sequence`.
 
-        For example, if `multiple_target_columns = ["X", "Y"]` then the raw multivariate time series
+        For example, if `generate_univariate_targets_from = ["X", "Y"]` then the raw multivariate time series
         `{"id": "A", "timestamp": [...], "X": [...], "Y": [...]}` will be split into two univariate time series
         `{"id": "A_X", "timestamp": [...], "target": [...]}` and `{"id": "A_Y", "timestamp": [...], "target": [...]}`.
     past_dynamic_columns : list[str], default None
@@ -146,9 +168,9 @@ class Task(_TaskBase):
         if self.dataset_path is None:
             raise ValueError("`dataset_path` cannot be `None` when creating a `Task`")
 
-        if self.multiple_target_columns is not None and self.is_multivariate:
+        if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
-                "`multiple_target_columns` cannot be used for multivariate tasks (when `target_column` is a list)"
+                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
             )
 
         if self.cutoff is None:
@@ -327,12 +349,12 @@ class Task(_TaskBase):
         ds.set_format("numpy")
 
         required_columns = self.past_dynamic_columns + self.excluded_columns
-        if self.multiple_target_columns is None:
+        if self.generate_univariate_targets_from is None:
             required_columns += self.target_columns_list
-        elif self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
+        elif self.generate_univariate_targets_from == MULTIPLE_TARGET_COLUMNS_ALL:
             pass
         else:
-            required_columns += self.multiple_target_columns
+            required_columns += self.generate_univariate_targets_from
 
         utils.validate_time_series_dataset(
             ds,
@@ -403,24 +425,24 @@ class Task(_TaskBase):
             trust_remote_code=trust_remote_code,
             num_proc=num_proc,
         )
-        if self.multiple_target_columns is not None:
-            if self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
-                multiple_target_columns = [
+        if self.generate_univariate_targets_from is not None:
+            if self.generate_univariate_targets_from == MULTIPLE_TARGET_COLUMNS_ALL:
+                generate_univariate_targets_from = [
                     col
                     for col, feat in ds.features.items()
                     if isinstance(feat, datasets.Sequence) and col != self.timestamp_column
                 ]
             else:
-                multiple_target_columns = self.multiple_target_columns
+                generate_univariate_targets_from = self.generate_univariate_targets_from
             ds = ds.map(
                 _expand_target_columns,
                 batched=True,
                 fn_kwargs=dict(
                     id_column=self.id_column,
                     target_column=self.target_column,
-                    multiple_target_columns=multiple_target_columns,
+                    generate_univariate_targets_from=generate_univariate_targets_from,
                 ),
-                remove_columns=multiple_target_columns,
+                remove_columns=generate_univariate_targets_from,
                 num_proc=num_proc,
             )
 
@@ -826,18 +848,18 @@ def _is_record_long_enough(record: dict, timestamp_column: str, min_ts_length: i
 
 
 def _expand_target_columns(
-    batch: dict, id_column: str, target_column: str, multiple_target_columns: list[str]
+    batch: dict, id_column: str, target_column: str, generate_univariate_targets_from: list[str]
 ) -> dict:
-    """Create a separate record for each column listed in multiple_target_columns.
+    """Create a separate record for each column listed in generate_univariate_targets_from.
 
     It is required to set batched=True when using method in `dataset.map`.
     """
     expanded_batch = defaultdict(list)
     batch_size = len(batch[id_column])
     for i in range(batch_size):
-        for target_col in multiple_target_columns:
+        for target_col in generate_univariate_targets_from:
             for key in batch.keys():
-                if key not in multiple_target_columns:
+                if key not in generate_univariate_targets_from:
                     value = batch[key][i]
                     if key == id_column:
                         value = value + "_" + target_col
