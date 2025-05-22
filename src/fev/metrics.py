@@ -1,3 +1,5 @@
+from typing import Type
+
 import datasets
 import numpy as np
 
@@ -321,7 +323,7 @@ def _quantile_loss(
     return 2 * np.abs((y_test - q_pred) * ((y_test <= q_pred) - np.array(quantile_levels)))
 
 
-AVAILABLE_METRICS: dict[str, Metric] = {
+AVAILABLE_METRICS: dict[str, Type[Metric]] = {
     # Median estimation
     "MAE": MAE,
     "WAPE": WAPE,

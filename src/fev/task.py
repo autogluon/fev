@@ -4,26 +4,27 @@ import pprint
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 import datasets
 import numpy as np
 import pandas as pd
 import pydantic
+from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
-MULTIPLE_TARGET_COLUMNS_ALL = "__ALL__"
+GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
 class _TaskBase:
     """Base class defining the attributes of a time series forecasting task."""
 
-    dataset_path: str | None = None
+    dataset_path: str
     dataset_config: str | None = None
     # Forecast horizon parameters
     horizon: int = 1
@@ -39,16 +40,41 @@ class _TaskBase:
     # Feature information
     id_column: str = "id"
     timestamp_column: str = "timestamp"
-    target_column: str = "target"
-    multiple_target_columns: list[str] | Literal["__ALL__"] | None = None
+    target_column: str | list[str] = "target"
+    generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
     excluded_columns: list[str] = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert task definition to a dictionary."""
+        return dataclasses.asdict(self)
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+        # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
+        # Support the old name (with warning) for backward compatibility
+        if data.kwargs is not None:
+            if "multiple_target_columns" in data.kwargs:
+                if "generate_univariate_targets_from" in data.kwargs:
+                    raise ValueError(
+                        "Do not specify both 'generate_univariate_targets_from' and deprecated 'multiple_target_columns'"
+                    )
+                else:
+                    warnings.warn(
+                        "Field 'multiple_target_columns' is deprecated and will be removed in v1.0. "
+                        "Please use 'generate_univariate_targets_from' instead",
+                        category=FutureWarning,
+                        stacklevel=3,
+                    )
+                    data.kwargs["generate_univariate_targets_from"] = data.kwargs.pop("multiple_target_columns")
+        return data
 
 
 @pydantic.dataclasses.dataclass
 class Task(_TaskBase):
     """
-    A univariate time series forecasting task.
+    A univariate or multivariate time series forecasting task.
 
     This object is responsible for
 
@@ -56,9 +82,9 @@ class Task(_TaskBase):
     - generating a train/test split
     - evaluating the predictions accuracy
 
-    A single `Task` object corresponds to a single train-test split of the data. This means that, for example, to
-    perform evaluation on `N` rolling windows, it is necessary to create `N` separate `Task` objects (one for each
-    window).
+    A single `Task` object corresponds to a single train-test split of the data (i.e., a single cutoff).
+    This means that, for example, to perform evaluation on `N` rolling windows, it is necessary to create `N` separate
+    `Task` objects (one for each window).
 
     Parameters
     ----------
@@ -71,7 +97,7 @@ class Task(_TaskBase):
         S3 path.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
-    cutoff : int | str | None, default -horizon
+    cutoff : int | str | None, default -1 * horizon
         Position in the series where that divides the observed data and the forecast horizon. Defaults to `-horizon`.
         Cutoff logic is similar to pandas indexing:
 
@@ -100,14 +126,19 @@ class Task(_TaskBase):
         Name of the column with the unique identifier of each time series.
     timestamp_column : str, default 'timestamp'
         Name of the column with the timestamps of the observations.
-    target_column : str, default 'target'
-        Name of the column that must be predicted.
-    multiple_target_columns : list[str] | Literal["__ALL__"] | None, default None
-        If provided, a separate univariate time series will be created from each of the multiple_target_columns fields.
+    target_column : str or list[str], default 'target'
+        Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
+        If a list of strings is provided, a multivariate forecasting task is created.
+    generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
+        If provided, a separate univariate time series will be created from each of the
+        `generate_univariate_targets_from` columns.
+
+        This argument can only set for univariate tasks where `target_column` is a string. If `target_column` is set to
+        a list (in a multivariate task) and `generate_univariate_targets_from` is provided, an error will be raised.
 
         If set to `"__ALL__"`, then a separate univariate instance will be created from each column of type `Sequence`.
 
-        For example, if `multiple_target_columns = ["X", "Y"]` then the raw multivariate time series
+        For example, if `generate_univariate_targets_from = ["X", "Y"]` then the raw multivariate time series
         `{"id": "A", "timestamp": [...], "X": [...], "Y": [...]}` will be split into two univariate time series
         `{"id": "A_X", "timestamp": [...], "target": [...]}` and `{"id": "A_Y", "timestamp": [...], "target": [...]}`.
     past_dynamic_columns : list[str], default None
@@ -136,8 +167,10 @@ class Task(_TaskBase):
         if self.lead_time > 1:
             raise ValueError("lead_time > 1 is currently not supported")
 
-        if self.dataset_path is None:
-            raise ValueError("`dataset_path` cannot be `None` when creating a `Task`")
+        if self.generate_univariate_targets_from is not None and self.is_multivariate:
+            raise ValueError(
+                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
+            )
 
         if self.cutoff is None:
             self.cutoff = -self.horizon
@@ -166,16 +199,16 @@ class Task(_TaskBase):
         if self.max_context_length is not None:
             if self.max_context_length < 1:
                 raise ValueError("If provided, `max_context_length` must satisfy >= 1")
+
+        if isinstance(self.target_column, list):
+            if len(self.target_column) < 1:
+                raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
         self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
         self._freq: str | None = None
         self._dataset_fingerprint: str | None = None
         self._dynamic_columns: list[str] | None = None
         self._static_columns: list[str] | None = None
-
-    def to_dict(self) -> dict:
-        """Convert task definition to a dictionary."""
-        return dataclasses.asdict(self)
 
     @property
     def dataset_name(self) -> str:
@@ -319,12 +352,12 @@ class Task(_TaskBase):
         ds.set_format("numpy")
 
         required_columns = self.past_dynamic_columns + self.excluded_columns
-        if self.multiple_target_columns is None:
-            required_columns += [self.target_column]
-        elif self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
+        if self.generate_univariate_targets_from is None:
+            required_columns += self.target_columns_list
+        elif self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL:
             pass
         else:
-            required_columns += self.multiple_target_columns
+            required_columns += self.generate_univariate_targets_from
 
         utils.validate_time_series_dataset(
             ds,
@@ -379,8 +412,8 @@ class Task(_TaskBase):
             num_proc=num_proc,
             desc="Selecting future data",
         )
-        future_known = future_data.remove_columns([self.target_column] + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column, self.target_column])
+        future_known = future_data.remove_columns(self.target_columns_list + self.past_dynamic_columns)
+        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns_list)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
     def _prepare_dataset_dict(
@@ -395,24 +428,24 @@ class Task(_TaskBase):
             trust_remote_code=trust_remote_code,
             num_proc=num_proc,
         )
-        if self.multiple_target_columns is not None:
-            if self.multiple_target_columns == MULTIPLE_TARGET_COLUMNS_ALL:
-                multiple_target_columns = [
+        if self.generate_univariate_targets_from is not None:
+            if self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL:
+                generate_univariate_targets_from = [
                     col
                     for col, feat in ds.features.items()
                     if isinstance(feat, datasets.Sequence) and col != self.timestamp_column
                 ]
             else:
-                multiple_target_columns = self.multiple_target_columns
+                generate_univariate_targets_from = self.generate_univariate_targets_from
             ds = ds.map(
                 _expand_target_columns,
                 batched=True,
                 fn_kwargs=dict(
                     id_column=self.id_column,
                     target_column=self.target_column,
-                    multiple_target_columns=multiple_target_columns,
+                    generate_univariate_targets_from=generate_univariate_targets_from,
                 ),
-                remove_columns=multiple_target_columns,
+                remove_columns=generate_univariate_targets_from,
                 num_proc=num_proc,
             )
 
@@ -430,8 +463,8 @@ class Task(_TaskBase):
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
         )
-        self._dynamic_columns.remove(self.target_column)
-        columns_to_slice = self.dynamic_columns + [self.target_column, self.timestamp_column]
+        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self.target_columns_list]
+        columns_to_slice = self.dynamic_columns + self.target_columns_list + [self.timestamp_column]
         num_proc = min(num_proc, len(ds))
         ds = self._filter_short_series(ds, num_proc=num_proc)
         self._dataset_dict = self._past_future_test_split(ds, columns_to_slice=columns_to_slice, num_proc=num_proc)
@@ -467,46 +500,80 @@ class Task(_TaskBase):
                 predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
         return datasets.Features(predictions_schema)
 
-    def compute_metrics(self, predictions: datasets.Dataset | list[dict]) -> dict[str, float]:
+    def compute_metrics(
+        self,
+        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
+    ) -> dict[str, float]:
         test_data = self.get_test_data().with_format("numpy")
         past_data = self._dataset_dict[TRAIN].with_format("numpy")
         predictions = self._clean_and_validate_predictions(predictions)
 
-        if len(predictions) != len(test_data):
-            raise ValueError(
-                f"Length of predictions ({len(predictions)}) must match the length of test data ({len(test_data)})"
-            )
+        for target_column, predictions_for_column in predictions.items():
+            if len(predictions_for_column) != len(test_data):
+                raise ValueError(
+                    f"Length of predictions for column {target_column} ({len(predictions)}) must "
+                    f"match the length of test data ({len(test_data)})"
+                )
 
         test_scores = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for eval_metric in sorted(set([self.eval_metric] + self.extra_metrics)):
                 metric = AVAILABLE_METRICS[eval_metric]()
-                test_scores[eval_metric] = float(
-                    metric.compute(
-                        test_data=test_data,
-                        predictions=predictions,
-                        past_data=past_data,
-                        seasonality=self.seasonality,
-                        quantile_levels=self.quantile_levels,
-                        target_column=self.target_column,
+                scores = []
+                for col in self.target_columns_list:
+                    scores.append(
+                        metric.compute(
+                            test_data=test_data,
+                            predictions=predictions[col],
+                            past_data=past_data,
+                            seasonality=self.seasonality,
+                            quantile_levels=self.quantile_levels,
+                            target_column=col,
+                        )
                     )
-                )
+                test_scores[eval_metric] = float(np.mean(scores))
         return test_scores
 
-    def _clean_and_validate_predictions(self, predictions: datasets.Dataset | list[dict]) -> datasets.Dataset:
-        """Convert predictions to the format needed for computing the metrics."""
-        if isinstance(predictions, Iterable):
-            try:
-                predictions = datasets.Dataset.from_list(list(predictions))
-            except Exception:
-                raise ValueError(
-                    "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
-                )
-        if not isinstance(predictions, datasets.Dataset):
-            raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(predictions)})")
-        predictions = predictions.cast(self.predictions_schema).with_format("numpy")
+    def _clean_and_validate_predictions(
+        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
+    ) -> datasets.DatasetDict:
+        """Convert predictions to the format needed for computing the metrics.
 
+        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset.
+        """
+
+        def _to_dataset(preds: datasets.Dataset | list[dict]) -> datasets.Dataset:
+            if isinstance(preds, list):
+                try:
+                    preds = datasets.Dataset.from_list(list(preds))
+                except Exception:
+                    raise ValueError(
+                        "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
+                    )
+            if not isinstance(preds, datasets.Dataset):
+                raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
+            return preds
+
+        if self.is_multivariate:
+            if isinstance(predictions, datasets.DatasetDict):
+                pass
+            elif isinstance(predictions, dict):
+                predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+            else:
+                raise ValueError(
+                    f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
+                )
+        else:
+            predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
+
+        predictions = predictions.cast(self.predictions_schema).with_format("numpy")
+        for target_column, predictions_for_column in predictions.items():
+            self._assert_all_columns_finite(predictions_for_column)
+        return predictions
+
+    @staticmethod
+    def _assert_all_columns_finite(predictions: datasets.Dataset) -> None:
         for col in predictions.column_names:
             nan_row_idx, _ = np.where(~np.isfinite(np.array(predictions[col])))
             if len(nan_row_idx) > 0:
@@ -515,23 +582,29 @@ class Task(_TaskBase):
                     f"First invalid value encountered in column {col} for item {nan_row_idx[0]}:\n"
                     f"{predictions[int(nan_row_idx[0])]}"
                 )
-        return predictions
 
     def evaluation_summary(
         self,
-        predictions: datasets.Dataset | list[dict],
+        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
         model_name: str,
         training_time_s: float | None = None,
         inference_time_s: float | None = None,
         trained_on_this_dataset: bool = False,
         extra_info: dict | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Get a summary of the model performance for the given forecasting task.
 
         Parameters
         ----------
-        predictions : list[dict] | datasets.Dataset
-            Predictions generated by the model. The predictions must follow the format described in `task.predictions_schema`.
+        predictions : datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
+            Predictions generated by the model.
+
+            For univariate tasks (if `task.target_column` is a string), predictions must be formatted as a `Dataset`
+            or `list[dict]` that matches the format described in `task.predictions_schema`.
+
+            For multivariate tasks (if `task.target_column` is a list of strings), predictions must be formatted as a
+            `DatasetDict` or `dict[str, list[dict]]`, where each key corresponds to a name of the target column, and
+            each value is a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.
         model_name : str
             Name of the model that generated the predictions.
         training_time_s : float | None
@@ -558,7 +631,7 @@ class Task(_TaskBase):
             - `trained_on_this_dataset` - whether the model was trained on the dataset used in the task
             - `fev_version` - version of the `fev` package used to obtain the summary
         """
-        summary = {
+        summary: dict[str, Any] = {
             "model_name": model_name,
             "dataset_name": self.dataset_name,
         }
@@ -578,6 +651,18 @@ class Task(_TaskBase):
         if extra_info is not None:
             summary.update(extra_info)
         return summary
+
+    @property
+    def is_multivariate(self) -> bool:
+        return isinstance(self.target_column, list)
+
+    @property
+    def target_columns_list(self) -> list[str]:
+        """A list including names of all target columns for this task."""
+        if isinstance(self.target_column, list):
+            return self.target_column
+        else:
+            return [self.target_column]
 
 
 @pydantic.dataclasses.dataclass
@@ -783,18 +868,18 @@ def _is_record_long_enough(record: dict, timestamp_column: str, min_ts_length: i
 
 
 def _expand_target_columns(
-    batch: dict, id_column: str, target_column: str, multiple_target_columns: list[str]
+    batch: dict, id_column: str, target_column: str, generate_univariate_targets_from: list[str]
 ) -> dict:
-    """Create a separate record for each column listed in multiple_target_columns.
+    """Create a separate record for each column listed in generate_univariate_targets_from.
 
     It is required to set batched=True when using method in `dataset.map`.
     """
     expanded_batch = defaultdict(list)
     batch_size = len(batch[id_column])
     for i in range(batch_size):
-        for target_col in multiple_target_columns:
+        for target_col in generate_univariate_targets_from:
             for key in batch.keys():
-                if key not in multiple_target_columns:
+                if key not in generate_univariate_targets_from:
                     value = batch[key][i]
                     if key == id_column:
                         value = value + "_" + target_col
