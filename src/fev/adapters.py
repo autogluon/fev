@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Type
 
 import datasets
 import numpy as np
@@ -88,6 +88,8 @@ class GluonTSAdapter(PandasAdapter):
             from gluonts.dataset.pandas import PandasDataset
         except ModuleNotFoundError:
             raise ModuleNotFoundError(f"Please install GluonTS before using {self.__class__.__name__}")
+        if task.is_multivariate:
+            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
         past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
 
         past_df = self._convert_dtypes(past_df)
@@ -147,6 +149,8 @@ class NixtlaAdapter(PandasAdapter):
         future: datasets.Dataset,
         task: Task,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        if task.is_multivariate:
+            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
         past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
         past_df = past_df.rename(
             columns={
@@ -190,6 +194,8 @@ class AutoGluonAdapter(PandasAdapter):
             from autogluon.timeseries import TimeSeriesDataFrame
         except ModuleNotFoundError:
             raise ModuleNotFoundError(f"Please install AutoGluon before using {self.__class__.__name__}")
+        if task.is_multivariate:
+            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
 
         past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
         past_data = TimeSeriesDataFrame.from_data_frame(
@@ -210,7 +216,7 @@ class DartsAdapter(DatasetAdapter):
     pass
 
 
-DATASET_ADAPTERS: dict[str, DatasetAdapter] = {
+DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
     "pandas": PandasAdapter,
     "gluonts": GluonTSAdapter,
     "nixtla": NixtlaAdapter,

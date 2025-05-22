@@ -64,6 +64,20 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
         )
+    # Handle deprecated columns
+    if "multiple_target_columns" in df.columns:
+        if "generate_univariate_targets_from" in df.columns:
+            raise ValueError(
+                "Provided DataFrame contains both 'generate_univariate_targets_from' and the deprecated "
+                "'multiple_target_columns' columns. Please only keep the 'generate_univariate_targets_from'.\n"
+                f"{df.head(3)}",
+            )
+        else:
+            warnings.warn(
+                "Deprecated column name 'multiple_target_columns' was renamed to 'generate_univariate_targets_from'",
+                category=DeprecationWarning,
+            )
+            df = df.rename(columns={"multiple_target_columns": "generate_univariate_targets_from"})
     return df
 
 

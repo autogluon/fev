@@ -4,7 +4,7 @@ import pprint
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Literal, Sequence, overload
+from typing import Any, Literal
 
 import datasets
 import numpy as np
@@ -17,14 +17,14 @@ from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
-MULTIPLE_TARGET_COLUMNS_ALL = "__ALL__"
+GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
 class _TaskBase:
     """Base class defining the attributes of a time series forecasting task."""
 
-    dataset_path: str | None = None
+    dataset_path: str
     dataset_config: str | None = None
     # Forecast horizon parameters
     horizon: int = 1
@@ -51,7 +51,9 @@ class _TaskBase:
 
     @pydantic.model_validator(mode="before")
     @classmethod
-    def handle_legacy_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+    def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+        # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
+        # Support the old name (with warning) for backward compatibility
         if data.kwargs is not None:
             if "multiple_target_columns" in data.kwargs:
                 if "generate_univariate_targets_from" in data.kwargs:
@@ -165,9 +167,6 @@ class Task(_TaskBase):
         if self.lead_time > 1:
             raise ValueError("lead_time > 1 is currently not supported")
 
-        if self.dataset_path is None:
-            raise ValueError("`dataset_path` cannot be `None` when creating a `Task`")
-
         if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
                 "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
@@ -200,6 +199,10 @@ class Task(_TaskBase):
         if self.max_context_length is not None:
             if self.max_context_length < 1:
                 raise ValueError("If provided, `max_context_length` must satisfy >= 1")
+
+        if isinstance(self.target_column, list):
+            if len(self.target_column) < 1:
+                raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
         self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
         self._freq: str | None = None
@@ -351,7 +354,7 @@ class Task(_TaskBase):
         required_columns = self.past_dynamic_columns + self.excluded_columns
         if self.generate_univariate_targets_from is None:
             required_columns += self.target_columns_list
-        elif self.generate_univariate_targets_from == MULTIPLE_TARGET_COLUMNS_ALL:
+        elif self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL:
             pass
         else:
             required_columns += self.generate_univariate_targets_from
@@ -426,7 +429,7 @@ class Task(_TaskBase):
             num_proc=num_proc,
         )
         if self.generate_univariate_targets_from is not None:
-            if self.generate_univariate_targets_from == MULTIPLE_TARGET_COLUMNS_ALL:
+            if self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL:
                 generate_univariate_targets_from = [
                     col
                     for col, feat in ds.features.items()
@@ -497,7 +500,10 @@ class Task(_TaskBase):
                 predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
         return datasets.Features(predictions_schema)
 
-    def compute_metrics(self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict) -> dict[str, float]:
+    def compute_metrics(
+        self,
+        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
+    ) -> dict[str, float]:
         test_data = self.get_test_data().with_format("numpy")
         past_data = self._dataset_dict[TRAIN].with_format("numpy")
         predictions = self._clean_and_validate_predictions(predictions)
@@ -517,43 +523,49 @@ class Task(_TaskBase):
                 scores = []
                 for col in self.target_columns_list:
                     scores.append(
-                        float(
-                            metric.compute(
-                                test_data=test_data,
-                                predictions=predictions[col],
-                                past_data=past_data,
-                                seasonality=self.seasonality,
-                                quantile_levels=self.quantile_levels,
-                                target_column=col,
-                            )
+                        metric.compute(
+                            test_data=test_data,
+                            predictions=predictions[col],
+                            past_data=past_data,
+                            seasonality=self.seasonality,
+                            quantile_levels=self.quantile_levels,
+                            target_column=col,
                         )
                     )
                 test_scores[eval_metric] = float(np.mean(scores))
         return test_scores
 
     def _clean_and_validate_predictions(
-        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict
+        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
     ) -> datasets.DatasetDict:
         """Convert predictions to the format needed for computing the metrics.
 
-        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset
+        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset.
         """
-        if self.is_multivariate:
-            if not isinstance(predictions, datasets.DatasetDict):
-                raise ValueError(
-                    f"predictions for multivariate tasks must be of type `datasets.DatasetDict` (received {type(predictions)})"
-                )
-        else:
-            if isinstance(predictions, Sequence):
+
+        def _to_dataset(preds: datasets.Dataset | list[dict]) -> datasets.Dataset:
+            if isinstance(preds, list):
                 try:
-                    predictions = datasets.Dataset.from_list(list(predictions))
+                    preds = datasets.Dataset.from_list(list(preds))
                 except Exception:
                     raise ValueError(
                         "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
                     )
-            if not isinstance(predictions, datasets.Dataset):
-                raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(predictions)})")
-            predictions = datasets.DatasetDict({self.target_column: predictions})
+            if not isinstance(preds, datasets.Dataset):
+                raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
+            return preds
+
+        if self.is_multivariate:
+            if isinstance(predictions, datasets.DatasetDict):
+                pass
+            elif isinstance(predictions, dict):
+                predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+            else:
+                raise ValueError(
+                    f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
+                )
+        else:
+            predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
 
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
@@ -573,7 +585,7 @@ class Task(_TaskBase):
 
     def evaluation_summary(
         self,
-        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict,
+        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
         model_name: str,
         training_time_s: float | None = None,
         inference_time_s: float | None = None,
@@ -584,8 +596,15 @@ class Task(_TaskBase):
 
         Parameters
         ----------
-        predictions : list[dict] | datasets.Dataset
-            Predictions generated by the model. The predictions must follow the format described in `task.predictions_schema`.
+        predictions : datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
+            Predictions generated by the model.
+
+            For univariate tasks (if `task.target_column` is a string), predictions must be formatted as a `Dataset`
+            or `list[dict]` that matches the format described in `task.predictions_schema`.
+
+            For multivariate tasks (if `task.target_column` is a list of strings), predictions must be formatted as a
+            `DatasetDict` or `dict[str, list[dict]]`, where each key corresponds to a name of the target column, and
+            each value is a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.
         model_name : str
             Name of the model that generated the predictions.
         training_time_s : float | None
@@ -639,6 +658,7 @@ class Task(_TaskBase):
 
     @property
     def target_columns_list(self) -> list[str]:
+        """A list including names of all target columns for this task."""
         if isinstance(self.target_column, list):
             return self.target_column
         else:
