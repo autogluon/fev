@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import logging
 import pprint
 import warnings
 from collections import defaultdict
@@ -19,6 +20,10 @@ from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
 
+logger = logging.getLogger("fev")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
+
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
 class _TaskBase:
@@ -30,7 +35,7 @@ class _TaskBase:
     horizon: int = 1
     cutoff: int | str | None = None
     lead_time: int = 1
-    min_ts_length: int | None = None
+    min_context_length: int = 1
     max_context_length: int | None = None
     # Evaluation parameters
     seasonality: int = 1
@@ -52,9 +57,8 @@ class _TaskBase:
     @pydantic.model_validator(mode="before")
     @classmethod
     def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
-        # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
-        # Support the old name (with warning) for backward compatibility
         if data.kwargs is not None:
+            # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
             if "multiple_target_columns" in data.kwargs:
                 if "generate_univariate_targets_from" in data.kwargs:
                     raise ValueError(
@@ -68,6 +72,22 @@ class _TaskBase:
                         stacklevel=3,
                     )
                     data.kwargs["generate_univariate_targets_from"] = data.kwargs.pop("multiple_target_columns")
+            # Field 'min_ts_length' was deprecated in favor of 'min_context_length' in v0.5.
+            # Previously, series with fewer than `min_ts_length` observations were filtered.
+            # Currently, series with fewer than `min_context_length` observations before `cutoff` are filtered.
+            if "min_ts_length" in data.kwargs:
+                if "min_context_length" in data.kwargs:
+                    raise ValueError("Do not specify both 'min_context_length' and deprecated 'min_ts_length'")
+                else:
+                    warnings.warn(
+                        "Field 'min_ts_length' is deprecated and will be removed in v1.0. "
+                        "Please use 'min_context_length' instead",
+                        category=FutureWarning,
+                        stacklevel=3,
+                    )
+                    data.kwargs["min_context_length"] = max(
+                        data.kwargs.pop("min_ts_length") - data.kwargs.get("horizon", 1), 1
+                    )
         return data
 
 
@@ -109,8 +129,8 @@ class Task(_TaskBase):
         data.
     lead_time : int, default 1
         Number of time steps between the end of observed data and the start of the forecast horizon.
-    min_ts_length : int | None, default horizon + 1
-        Time series with length less than `min_ts_length` will be removed from the dataset. Defaults to `horizon + 1`.
+    min_context_length : int, default 1
+        Time series with fewer than `min_context_length` observations before the `cutoff` will be removed from the dataset.
     max_context_length : int | None, default None
         If provided, the past time series will be shortened to at most this many observations.
     seasonality : int, default 1
@@ -194,8 +214,8 @@ class Task(_TaskBase):
         if self.quantile_levels is not None:
             assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
             self.quantile_levels = sorted(self.quantile_levels)
-        if self.min_ts_length is None:
-            self.min_ts_length = self.horizon + 1
+        if self.min_context_length < 1:
+            raise ValueError("`min_context_length` must satisfy >= 1")
         if self.max_context_length is not None:
             if self.max_context_length < 1:
                 raise ValueError("If provided, `max_context_length` must satisfy >= 1")
@@ -375,13 +395,37 @@ class Task(_TaskBase):
         dataset: datasets.Dataset,
         num_proc: int,
     ) -> datasets.Dataset:
-        """Remove records from the datasets that have length lower than self.min_ts_length."""
-        return dataset.filter(
-            _is_record_long_enough,
-            fn_kwargs=dict(timestamp_column=self.timestamp_column, min_ts_length=self.min_ts_length),
+        """Remove records from the dataset that are too short for the given task configuration.
+
+        Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
+        fewer than `horizon` observations after `cutoff`.
+        """
+        num_items_before = len(dataset)
+        filtered_dataset = dataset.filter(
+            _has_enough_past_and_future_observations,
+            fn_kwargs=dict(
+                timestamp_column=self.timestamp_column,
+                horizon=self.horizon,
+                cutoff=self.cutoff,
+                min_context_length=self.min_context_length,
+            ),
             num_proc=num_proc,
             desc="Filtering short time series",
         )
+        num_items_after = len(filtered_dataset)
+        if num_items_after < num_items_before:
+            logger.info(
+                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
+                f"because they had fewer than min_context_length ({self.min_context_length}) "
+                f"observations before cutoff ({self.cutoff}) "
+                f"or fewer than horizon ({self.horizon}) "
+                f"observations after cutoff."
+            )
+        if len(filtered_dataset) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+        return filtered_dataset
 
     def _past_future_test_split(
         self,
@@ -862,9 +906,22 @@ def _select_future(
     return processed_record
 
 
-def _is_record_long_enough(record: dict, timestamp_column: str, min_ts_length: int) -> bool:
-    """Return True if time series length is >= min_ts_length."""
-    return len(record[timestamp_column]) >= min_ts_length
+def _has_enough_past_and_future_observations(
+    record: dict,
+    timestamp_column: str,
+    horizon: int,
+    cutoff: str | int,
+    min_context_length: int,
+) -> bool:
+    """Return True if time series has >= `min_context_length` observations before `cutoff` and >= `horizon` observations after."""
+    timestamps = record[timestamp_column]
+    if isinstance(cutoff, str):
+        before = timestamps[timestamps <= np.datetime64(cutoff)]
+        after = timestamps[timestamps > np.datetime64(cutoff)]
+    else:
+        before = timestamps[:cutoff]
+        after = timestamps[cutoff:]
+    return len(before) >= min_context_length and len(after) >= horizon
 
 
 def _expand_target_columns(

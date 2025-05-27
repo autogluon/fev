@@ -174,3 +174,36 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target_co
     summary = task.evaluation_summary(predictions, model_name="naive")
     for metric in ["MASE", "WAPE"]:
         assert np.isfinite(summary[metric])
+
+
+@pytest.mark.parametrize(
+    "horizon, cutoff, min_context_length, expected_num_items",
+    [(8, None, 10, 419), (8, None, 1, 518), (30, None, 1, 31), (8, -20, 1, 406)],
+)
+def test_when_some_series_have_too_few_observations_then_they_get_filtered_out(
+    horizon, cutoff, min_context_length, expected_num_items
+):
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_tourism_yearly",
+        horizon=horizon,
+        cutoff=cutoff,
+        min_context_length=min_context_length,
+    )
+    assert len(task.get_input_data()[0]) == expected_num_items
+
+
+@pytest.mark.parametrize(
+    "horizon, cutoff, min_context_length",
+    [(50, None, 1), (8, -50, 1), (8, None, 100), (8, "2020-01-01", 1), (8, "1903-05-01", 1)],
+)
+def test_when_all_series_have_too_few_observations_then_exception_is_raised(horizon, cutoff, min_context_length):
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_tourism_yearly",
+        horizon=horizon,
+        cutoff=cutoff,
+        min_context_length=min_context_length,
+    )
+    with pytest.raises(ValueError, match="All time series in the dataset are too short"):
+        task.get_input_data()

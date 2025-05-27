@@ -14,7 +14,7 @@ TASK_DEF_DTYPES = {
     "horizon": pd.Int64Dtype(),
     "cutoff": pd.StringDtype(),
     "lead_time": pd.Int64Dtype(),
-    "min_ts_length": pd.Int64Dtype(),
+    "min_context_length": pd.Int64Dtype(),
     "max_context_length": pd.Int64Dtype(),
     "seasonality": pd.Int64Dtype(),
     "eval_metric": pd.StringDtype(),
@@ -78,6 +78,20 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
                 category=DeprecationWarning,
             )
             df = df.rename(columns={"multiple_target_columns": "generate_univariate_targets_from"})
+    if "min_ts_length" in df.columns:
+        if "min_context_length" in df.columns:
+            raise ValueError(
+                "Provided DataFrame contains both 'min_context_length' and the deprecated "
+                "'min_ts_length' columns. Please only keep the 'min_context_length'.\n"
+                f"{df.head(3)}",
+            )
+        else:
+            warnings.warn(
+                "Deprecated column 'min_ts_length' was converted to 'min_context_length'",
+                category=DeprecationWarning,
+            )
+            df = df.rename(columns={"min_ts_length": "min_context_length"})
+            df["min_context_length"] = df["min_context_length"].astype(int) - df["horizon"].astype(int)
     return df
 
 
