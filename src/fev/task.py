@@ -20,7 +20,8 @@ from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
 
-logger = logging.getLogger(__file__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
@@ -414,9 +415,9 @@ class Task(_TaskBase):
         if num_items_after < num_items_before:
             logger.info(
                 f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
-                f"because they had fewer than {self.min_context_length} "
+                f"because they had fewer than min_context_length ({self.min_context_length}) "
                 f"observations before cutoff ({self.cutoff}) "
-                f"or fewer than {self.horizon} "
+                f"or fewer than horizon ({self.horizon}) "
                 f"observations after cutoff."
             )
         if len(filtered_dataset) == 0:
