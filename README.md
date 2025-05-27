@@ -55,13 +55,12 @@ Get an evaluation summary
 task.evaluation_summary(predictions, model_name="naive")
 # {'model_name': 'naive',
 #  'dataset_name': 'chronos_datasets_monash_kdd_cup_2018',
-#  'dataset_fingerprint': '8a50d3417859652b',
 #  'dataset_path': 'autogluon/chronos_datasets',
 #  'dataset_config': 'monash_kdd_cup_2018',
 #  'horizon': 12,
 #  'cutoff': -12,
 #  'lead_time': 1,
-#  'min_ts_length': 13,
+#  'min_context_length': 1,
 #  'max_context_length': None,
 #  'seasonality': 1,
 #  'eval_metric': 'MASE',
@@ -70,15 +69,16 @@ task.evaluation_summary(predictions, model_name="naive")
 #  'id_column': 'id',
 #  'timestamp_column': 'timestamp',
 #  'target_column': 'target',
-#  'multiple_target_columns': None,
+#  'generate_univariate_targets_from': None,
 #  'past_dynamic_columns': [],
 #  'excluded_columns': [],
-#  'test_error': 3.3784518,
+#  'test_error': 3.3784518866750513,
 #  'training_time_s': None,
 #  'inference_time_s': None,
+#  'dataset_fingerprint': 'a22d13d4c1e8641c',
 #  'trained_on_this_dataset': False,
-#  'fev_version': '0.3.0',
-#  'MASE': 3.3784518}
+#  'fev_version': '0.5.0',
+#  'MASE': 3.3784518866750513}
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
 
