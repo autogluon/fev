@@ -1,4 +1,4 @@
-name: tirex
+name: freezed_test_environment
 channels:
   - nvidia
   - conda-forge
