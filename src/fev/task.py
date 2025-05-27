@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import logging
 import pprint
 import warnings
 from collections import defaultdict
@@ -18,6 +19,8 @@ from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
+
+logger = logging.getLogger(__file__)
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
@@ -80,8 +83,9 @@ class _TaskBase:
                         category=FutureWarning,
                         stacklevel=3,
                     )
-                    horizon = data.kwargs.get("horizon", 1)
-                    data.kwargs["min_context_length"] = data.kwargs.pop("min_ts_length") - horizon
+                    data.kwargs["min_context_length"] = max(
+                        data.kwargs.pop("min_ts_length") - data.kwargs.get("horizon", 1), 1
+                    )
         return data
 
 
@@ -394,8 +398,9 @@ class Task(_TaskBase):
         Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
         fewer than `horizon` observations after `cutoff`.
         """
-        return dataset.filter(
-            _is_record_long_enough,
+        num_items_before = len(dataset)
+        filtered_dataset = dataset.filter(
+            _has_enough_past_and_future_observations,
             fn_kwargs=dict(
                 timestamp_column=self.timestamp_column,
                 horizon=self.horizon,
@@ -405,6 +410,20 @@ class Task(_TaskBase):
             num_proc=num_proc,
             desc="Filtering short time series",
         )
+        num_items_after = len(filtered_dataset)
+        if num_items_after < num_items_before:
+            logger.info(
+                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
+                f"because they had fewer than {self.min_context_length} "
+                f"observations before cutoff ({self.cutoff}) "
+                f"or fewer than {self.horizon} "
+                f"observations after cutoff."
+            )
+        if len(filtered_dataset) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+        return filtered_dataset
 
     def _past_future_test_split(
         self,
@@ -885,7 +904,7 @@ def _select_future(
     return processed_record
 
 
-def _is_record_long_enough(
+def _has_enough_past_and_future_observations(
     record: dict,
     timestamp_column: str,
     horizon: int,
