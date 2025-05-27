@@ -20,8 +20,9 @@ from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("fev")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
