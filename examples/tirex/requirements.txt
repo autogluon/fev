@@ -1,0 +1,2 @@
+torch~=2.6.0
+tirex @ git+https://github.com/NX-AI/tirex@main
