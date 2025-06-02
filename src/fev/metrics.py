@@ -271,7 +271,7 @@ class WQL(Metric):
 
 def _seasonal_diff(array: np.ndarray, seasonality: int) -> np.ndarray:
     if len(array) <= seasonality:
-        return []
+        return np.array([])
     else:
         return array[seasonality:] - array[:-seasonality]
 
