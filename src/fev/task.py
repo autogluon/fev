@@ -550,7 +550,7 @@ class Task(_TaskBase):
     ) -> dict[str, float]:
         test_data = self.get_test_data().with_format("numpy")
         past_data = self._dataset_dict[TRAIN].with_format("numpy")
-        predictions = self._clean_and_validate_predictions(predictions)
+        predictions = self.clean_and_validate_predictions(predictions)
 
         for target_column, predictions_for_column in predictions.items():
             if len(predictions_for_column) != len(test_data):
@@ -579,7 +579,7 @@ class Task(_TaskBase):
                 test_scores[eval_metric] = float(np.mean(scores))
         return test_scores
 
-    def _clean_and_validate_predictions(
+    def clean_and_validate_predictions(
         self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
     ) -> datasets.DatasetDict:
         """Convert predictions to the format needed for computing the metrics.
