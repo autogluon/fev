@@ -145,6 +145,31 @@ def test_when_multivariate_task_is_created_then_data_contains_correct_columns(ta
     assert set(future_data.column_names) == set(all_column_names) - set(target_column)
 
 
+@pytest.mark.parametrize("return_list", [True, False])
+def test_when_predictions_provided_as_dataset_dict_for_univariate_task_then_predictions_can_be_scores(return_list):
+    def naive_forecast_univariate(task: fev.Task) -> list[dict]:
+        past_data, future_data = task.get_input_data()
+        predictions = []
+        for ts in past_data:
+            predictions.append({"predictions": [ts[task.target_column][-1] for _ in range(task.horizon)]})
+        if return_list:
+            return predictions
+        else:
+            return datasets.DatasetDict({task.target_column: datasets.Dataset.from_list(predictions)})
+
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="MASE",
+        extra_metrics=["WAPE"],
+        horizon=4,
+    )
+    predictions = naive_forecast_univariate(task)
+    summary = task.evaluation_summary(predictions, model_name="naive")
+    for metric in ["MASE", "WAPE"]:
+        assert np.isfinite(summary[metric])
+
+
 @pytest.mark.parametrize("target_column", [["OT"], ["OT", "LULL", "HULL"]])
 @pytest.mark.parametrize("return_dict", [True, False])
 def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target_column, return_dict):

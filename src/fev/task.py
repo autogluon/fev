@@ -599,17 +599,16 @@ class Task(_TaskBase):
                 raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
             return preds
 
-        if self.is_multivariate:
-            if isinstance(predictions, datasets.DatasetDict):
-                pass
-            elif isinstance(predictions, dict):
-                predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+        if not isinstance(predictions, datasets.DatasetDict):
+            if self.is_multivariate:
+                if isinstance(predictions, dict):
+                    predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+                else:
+                    raise ValueError(
+                        f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
+                    )
             else:
-                raise ValueError(
-                    f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
-                )
-        else:
-            predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
+                predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
 
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
