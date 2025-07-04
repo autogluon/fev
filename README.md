@@ -111,5 +111,5 @@ Currently, the leaderboard includes the results from the Benchmark II introduced
 
 ## Datasets
 Repositories with datasets in format compatible with `fev`:
-- https://huggingface.co/datasets/autogluon/chronos_datasets
-- https://huggingface.co/datasets/autogluon/fev_datasets
+- [`chronos_datasets`](https://huggingface.co/datasets/autogluon/chronos_datasets)
+- [`fev_datasets`](https://huggingface.co/datasets/autogluon/fev_datasets)
