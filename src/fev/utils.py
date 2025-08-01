@@ -1,5 +1,6 @@
 import reprlib
 import warnings
+from collections import defaultdict
 
 import datasets
 import multiprocess as mp
@@ -11,6 +12,7 @@ __all__ = [
     "convert_long_df_to_hf_dataset",
     "infer_column_types",
     "validate_time_series_dataset",
+    "generate_univariate_targets_from_multivariate",
 ]
 
 
@@ -216,3 +218,62 @@ def generate_fingerprint(dataset: datasets.Dataset, num_rows_to_check: int = 3) 
         # In case the private API `Dataset._data` breaks at some point
         warnings.warn(f"generate_fingerprint failed with exception '{str(e)}'")
         return None
+
+
+def _expand_target_columns(
+    batch: dict, id_column: str, target_column: str, generate_univariate_targets_from: list[str]
+) -> dict:
+    """Create a separate record for each column listed in generate_univariate_targets_from.
+
+    It is required to set batched=True when using method in `dataset.map`.
+    """
+    expanded_batch = defaultdict(list)
+    batch_size = len(batch[id_column])
+    for i in range(batch_size):
+        for target_col in generate_univariate_targets_from:
+            for key in batch.keys():
+                if key not in generate_univariate_targets_from:
+                    value = batch[key][i]
+                    if key == id_column:
+                        value = value + "_" + target_col
+                    expanded_batch[key].append(value)
+            expanded_batch[target_column].append(batch[target_col][i])
+    return dict(expanded_batch)
+
+
+def generate_univariate_targets_from_multivariate(
+    dataset: datasets.Dataset,
+    id_column: str,
+    new_target_column: str,
+    generate_univariate_targets_from: list[str],
+    num_proc: int = DEFAULT_NUM_PROC,
+):
+    """Convert each multivariate time series in the dataset into multiple univariate series.
+
+    Creates separate univariate time series from specified columns by expanding each
+    record into multiple records with modified IDs (format: "{id}_{column_name}").
+
+    Parameters
+    ----------
+    ds
+        Input multivariate time series dataset.
+    id_column
+        Column containing unique time series identifiers.
+    new_target_column
+        Output column name for target values.
+    generate_univariate_targets_from
+        Columns to convert into separate univariate series.
+    num_proc
+        Number of processes for parallel processing.
+    """
+    return dataset.map(
+        _expand_target_columns,
+        batched=True,
+        fn_kwargs=dict(
+            id_column=id_column,
+            target_column=new_target_column,
+            generate_univariate_targets_from=generate_univariate_targets_from,
+        ),
+        remove_columns=generate_univariate_targets_from,
+        num_proc=num_proc,
+    )

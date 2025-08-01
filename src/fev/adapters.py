@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal, Type
 
 import datasets
 import numpy as np
 import pandas as pd
 
+from . import utils
 from .task import Task
 
 if TYPE_CHECKING:
@@ -13,16 +15,22 @@ if TYPE_CHECKING:
     import gluonts.dataset.pandas
 
 
-class DatasetAdapter:
+class DatasetAdapter(ABC):
     """Convert a time series dataset into format suitable for other frameworks."""
 
+    @classmethod
+    @abstractmethod
     def convert_input_data(
-        self,
+        cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
-        task: Task,
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
     ) -> Any:
-        raise NotImplementedError
+        """Convert the input data of the task into a format compatible with the framework."""
+        pass
 
 
 class PandasAdapter(DatasetAdapter):
@@ -44,18 +52,22 @@ class PandasAdapter(DatasetAdapter):
                 df_dict[col] = np.concatenate(df[col])
         return pd.DataFrame(df_dict).astype({id_column: str})
 
+    @classmethod
     def convert_input_data(
-        self,
+        cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
-        task: Task,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        past_df = self._to_long_df(past.remove_columns(task.static_columns), id_column=task.id_column)
-        future_df = self._to_long_df(future.remove_columns(task.static_columns), id_column=task.id_column)
-        if len(task.static_columns) > 0:
-            static_df = past.select_columns([task.id_column] + task.static_columns).to_pandas()
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
+        past_df = cls._to_long_df(past.remove_columns(static_columns), id_column=id_column)
+        future_df = cls._to_long_df(future.remove_columns(static_columns), id_column=id_column)
+        if len(static_columns) > 0:
+            static_df = past.select_columns([id_column] + static_columns).to_pandas()
             # Infer numeric dtypes if possible (e.g., object -> float), but make sure that id_column has str dtype
-            static_df = static_df.infer_objects().astype({task.id_column: str})
+            static_df = static_df.infer_objects().astype({id_column: str})
         else:
             static_df = None
         return past_df, future_df, static_df
@@ -78,35 +90,50 @@ class GluonTSAdapter(PandasAdapter):
                 astype_dict[col] = float_dtype
         return df.astype(astype_dict)
 
+    @classmethod
     def convert_input_data(
-        self,
+        cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
-        task: Task,
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
     ) -> tuple["gluonts.dataset.pandas.PandasDataset", "gluonts.dataset.pandas.PandasDataset"]:
         try:
             from gluonts.dataset.pandas import PandasDataset
         except ModuleNotFoundError:
-            raise ModuleNotFoundError(f"Please install GluonTS before using {self.__class__.__name__}")
-        if task.is_multivariate:
-            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
-        past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
+            raise ModuleNotFoundError(f"Please install GluonTS before using {cls.__name__}")
+        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
 
-        past_df = self._convert_dtypes(past_df)
-        future_df = self._convert_dtypes(future_df)
+        past_df, future_df, static_df = super().convert_input_data(
+            past=past,
+            future=future,
+            target_column=target_column,
+            id_column=id_column,
+            timestamp_column=timestamp_column,
+            static_columns=static_columns,
+        )
+
+        past_df = cls._convert_dtypes(past_df)
+        future_df = cls._convert_dtypes(future_df)
         if static_df is not None:
-            static_df = self._convert_dtypes(static_df.set_index(task.id_column))
+            static_df = cls._convert_dtypes(static_df.set_index(id_column))
+        else:
+            static_df = pd.DataFrame()
 
+        # GluonTS needs to know the data frequency, we infer it from the timestamps
+        freq = pd.infer_freq(np.concatenate([past[0][timestamp_column], future[0][timestamp_column]]))
         # GluonTS uses pd.Period, which requires frequencies like 'M' instead of 'ME'
-        gluonts_freq = pd.tseries.frequencies.get_period_alias(task.freq)
+        gluonts_freq = pd.tseries.frequencies.get_period_alias(freq)
         # We compute names of feature columns after non-numeric columns have been removed
-        feat_dynamic_real = list(future_df.columns.drop([task.id_column, task.timestamp_column]))
-        past_feat_dynamic_real = list(past_df.columns.drop(list(future_df.columns) + [task.target_column]))
+        feat_dynamic_real = list(future_df.columns.drop([id_column, timestamp_column]))
+        past_feat_dynamic_real = list(past_df.columns.drop(list(future_df.columns) + [target_column]))
         past_dataset = PandasDataset.from_long_dataframe(
             past_df,
-            item_id=task.id_column,
-            timestamp=task.timestamp_column,
-            target=task.target_column,
+            item_id=id_column,
+            timestamp=timestamp_column,
+            target=target_column,
             static_features=static_df,
             freq=gluonts_freq,
             feat_dynamic_real=feat_dynamic_real,
@@ -114,12 +141,12 @@ class GluonTSAdapter(PandasAdapter):
         )
         prediction_dataset = PandasDataset.from_long_dataframe(
             pd.concat([past_df, future_df]),
-            item_id=task.id_column,
-            timestamp=task.timestamp_column,
-            target=task.target_column,
+            item_id=id_column,
+            timestamp=timestamp_column,
+            target=target_column,
             static_features=static_df,
             freq=gluonts_freq,
-            future_length=task.horizon,
+            future_length=len(future[0][timestamp_column]),
             feat_dynamic_real=feat_dynamic_real,
             past_feat_dynamic_real=past_feat_dynamic_real,
         )
@@ -143,30 +170,41 @@ class NixtlaAdapter(PandasAdapter):
     timestamp_column: str = "ds"
     target_column: str = "y"
 
+    @classmethod
     def convert_input_data(
-        self,
+        cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
-        task: Task,
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        if task.is_multivariate:
-            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
-        past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
+        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
+
+        past_df, future_df, static_df = super().convert_input_data(
+            past=past,
+            future=future,
+            target_column=target_column,
+            id_column=id_column,
+            timestamp_column=timestamp_column,
+            static_columns=static_columns,
+        )
         past_df = past_df.rename(
             columns={
-                task.id_column: self.id_column,
-                task.timestamp_column: self.timestamp_column,
-                task.target_column: self.target_column,
+                id_column: cls.id_column,
+                timestamp_column: cls.timestamp_column,
+                target_column: cls.target_column,
             }
         )
         future_df = future_df.rename(
             columns={
-                task.id_column: self.id_column,
-                task.timestamp_column: self.timestamp_column,
+                id_column: cls.id_column,
+                timestamp_column: cls.timestamp_column,
             }
         )
         if static_df is not None:
-            static_df = static_df.rename(columns={task.id_column: self.id_column})
+            static_df = static_df.rename(columns={id_column: cls.id_column})
 
         return past_df, future_df, static_df
 
@@ -176,38 +214,48 @@ class AutoGluonAdapter(PandasAdapter):
 
     Returns
     -------
-    past_df : autogluon.timeseries.TimeSeriesDataFrame
+    past_data : autogluon.timeseries.TimeSeriesDataFrame
         Dataframe containing the past values of the time series as well as all dynamic features.
 
-        If static features are present in the dataset, they are stored as `past_df.static_features`.
+        If static features are present in the dataset, they are stored as `past_data.static_features`.
     known_covariates : autogluon.timeseries.TimeSeriesDataFrame
         Dataframe containing the future values of the dynamic features that are known in the future.
     """
 
+    @classmethod
     def convert_input_data(
-        self,
+        cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
-        task: Task,
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
     ) -> tuple["autogluon.timeseries.TimeSeriesDataFrame", "autogluon.timeseries.TimeSeriesDataFrame"]:
         try:
             from autogluon.timeseries import TimeSeriesDataFrame
         except ModuleNotFoundError:
-            raise ModuleNotFoundError(f"Please install AutoGluon before using {self.__class__.__name__}")
-        if task.is_multivariate:
-            raise ValueError(f"{self.__class__.__name__} currently does not support multivariate tasks.")
+            raise ModuleNotFoundError(f"Please install AutoGluon before using {cls.__name__}")
+        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
 
-        past_df, future_df, static_df = super().convert_input_data(past=past, future=future, task=task)
+        past_df, future_df, static_df = super().convert_input_data(
+            past=past,
+            future=future,
+            target_column=target_column,
+            id_column=id_column,
+            timestamp_column=timestamp_column,
+            static_columns=static_columns,
+        )
         past_data = TimeSeriesDataFrame.from_data_frame(
             past_df,
-            id_column=task.id_column,
-            timestamp_column=task.timestamp_column,
+            id_column=id_column,
+            timestamp_column=timestamp_column,
             static_features_df=static_df,
         )
         known_covariates = TimeSeriesDataFrame.from_data_frame(
             future_df,
-            id_column=task.id_column,
-            timestamp_column=task.timestamp_column,
+            id_column=id_column,
+            timestamp_column=timestamp_column,
         )
         return past_data, known_covariates
 
@@ -228,6 +276,8 @@ DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
 def convert_input_data(
     task: Task,
     adapter: Literal["pandas", "gluonts", "nixtla", "darts", "autogluon"] = "pandas",
+    *,
+    as_univariate: bool = False,
     **kwargs,
 ) -> Any:
     """Convert the output of `task.get_input_data()` to a format compatible with popular forecasting frameworks.
@@ -238,10 +288,40 @@ def convert_input_data(
         Task object for which input data must be converted.
     adapter : {"pandas", "gluonts", "nixtla", "darts", "autogluon"}
         Format to which the dataset must be converted.
+    as_univariate : bool
+        If True, separate instances will be created from each target column before passing the data to the adapter.
+
+        Equivalent to setting `generate_univariate_targets_from = "__ALL__"` in `Task` constructor.
     **kwargs
         Keyword arguments passed to :meth:`fev.Task.get_input_data`.
     """
     past, future = task.get_input_data(**kwargs)
     if adapter not in DATASET_ADAPTERS:
         raise KeyError(f"`adapter` must be one of {list(DATASET_ADAPTERS)}")
-    return DATASET_ADAPTERS[adapter]().convert_input_data(past=past, future=future, task=task)
+    adapter_cls = DATASET_ADAPTERS[adapter]
+
+    if as_univariate and task.is_multivariate:
+        target_column = "target"
+        past = utils.generate_univariate_targets_from_multivariate(
+            past,
+            id_column=task.id_column,
+            new_target_column=target_column,
+            generate_univariate_targets_from=task.target_columns_list,
+        )
+        future = utils.generate_univariate_targets_from_multivariate(
+            future,
+            id_column=task.id_column,
+            new_target_column=target_column,
+            generate_univariate_targets_from=task.target_columns_list,
+        )
+    else:
+        target_column = task.target_column
+
+    return adapter_cls().convert_input_data(
+        past=past,
+        future=future,
+        target_column=target_column,
+        id_column=task.id_column,
+        timestamp_column=task.timestamp_column,
+        static_columns=task.static_columns,
+    )
