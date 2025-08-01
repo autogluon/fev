@@ -277,3 +277,34 @@ def generate_univariate_targets_from_multivariate(
         remove_columns=generate_univariate_targets_from,
         num_proc=num_proc,
     )
+
+
+def combine_univariate_predictions_to_multivariate(
+    predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
+    target_columns_list: list[str],
+) -> datasets.DatasetDict:
+    """Combine univariate predictions back into multivariate format.
+
+    Assumes predictions are ordered by cycling through target columns. For example: if target_columns_list = ["X", "Y"],
+    predictions should be ordered as [item1_X, item1_Y, item2_X, item2_Y, ...].
+
+    Returns a DatasetDict with one key per target column.
+    """
+    if isinstance(predictions, (dict, datasets.DatasetDict)):
+        assert len(predictions) == 1, "Univariate predictions must contain a single key/value"
+        predictions = next(iter(predictions.values()))
+    if isinstance(predictions, list):
+        try:
+            predictions = datasets.Dataset.from_list(predictions)
+        except Exception:
+            raise ValueError(
+                "`datasets.Dataset.from_list(predictions)` failed. Please convert predictions to `datasets.Dataset` format."
+            )
+    assert isinstance(predictions, datasets.Dataset), "predictions must be a datasets.Dataset object"
+    assert len(predictions) % len(target_columns_list) == 0, (
+        "Number of predictions must be divisible by the number of target columns"
+    )
+    prediction_dict = {}
+    for i, col in enumerate(target_columns_list):
+        prediction_dict[col] = predictions.select(range(i, len(predictions), len(target_columns_list)))
+    return datasets.DatasetDict(prediction_dict)

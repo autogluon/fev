@@ -24,6 +24,7 @@ class DatasetAdapter(ABC):
         cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
+        *,
         target_column: str | list[str],
         id_column: str,
         timestamp_column: str,
@@ -33,7 +34,26 @@ class DatasetAdapter(ABC):
         pass
 
 
+class DatasetsAdapter(DatasetAdapter):
+    """Keeps data formatted as datasets.Dataset objects."""
+
+    @classmethod
+    def convert_input_data(
+        cls,
+        past: datasets.Dataset,
+        future: datasets.Dataset,
+        *,
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
+    ) -> tuple[datasets.Dataset, datasets.Dataset]:
+        return past, future
+
+
 class PandasAdapter(DatasetAdapter):
+    """Converts data to pandas.DataFrame objects."""
+
     @staticmethod
     def _to_long_df(dataset: datasets.Dataset, id_column: str) -> pd.DataFrame:
         """Convert time series dataset into long DataFrame format.
@@ -57,6 +77,7 @@ class PandasAdapter(DatasetAdapter):
         cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
+        *,
         target_column: str | list[str],
         id_column: str,
         timestamp_column: str,
@@ -74,10 +95,7 @@ class PandasAdapter(DatasetAdapter):
 
 
 class GluonTSAdapter(PandasAdapter):
-    """Converts dataset to format required by GluonTS.
-
-    Optionally, this adapter can fill in missing values in the dynamic & static feature columns.
-    """
+    """Converts dataset to format required by GluonTS."""
 
     @staticmethod
     def _convert_dtypes(df: pd.DataFrame, float_dtype: str = "float32") -> pd.DataFrame:
@@ -95,6 +113,7 @@ class GluonTSAdapter(PandasAdapter):
         cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
+        *,
         target_column: str | list[str],
         id_column: str,
         timestamp_column: str,
@@ -175,6 +194,7 @@ class NixtlaAdapter(PandasAdapter):
         cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
+        *,
         target_column: str | list[str],
         id_column: str,
         timestamp_column: str,
@@ -217,16 +237,21 @@ class AutoGluonAdapter(PandasAdapter):
     past_data : autogluon.timeseries.TimeSeriesDataFrame
         Dataframe containing the past values of the time series as well as all dynamic features.
 
+        Target column is always renamed to "target".
+
         If static features are present in the dataset, they are stored as `past_data.static_features`.
     known_covariates : autogluon.timeseries.TimeSeriesDataFrame
         Dataframe containing the future values of the dynamic features that are known in the future.
     """
+
+    target_column: str = "target"
 
     @classmethod
     def convert_input_data(
         cls,
         past: datasets.Dataset,
         future: datasets.Dataset,
+        *,
         target_column: str | list[str],
         id_column: str,
         timestamp_column: str,
@@ -247,7 +272,7 @@ class AutoGluonAdapter(PandasAdapter):
             static_columns=static_columns,
         )
         past_data = TimeSeriesDataFrame.from_data_frame(
-            past_df,
+            past_df.rename(columns={target_column: cls.target_column}),
             id_column=id_column,
             timestamp_column=timestamp_column,
             static_features_df=static_df,
@@ -266,6 +291,7 @@ class DartsAdapter(DatasetAdapter):
 
 DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
     "pandas": PandasAdapter,
+    "datasets": DatasetsAdapter,
     "gluonts": GluonTSAdapter,
     "nixtla": NixtlaAdapter,
     "darts": DartsAdapter,
@@ -275,47 +301,51 @@ DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
 
 def convert_input_data(
     task: Task,
-    adapter: Literal["pandas", "gluonts", "nixtla", "darts", "autogluon"] = "pandas",
+    adapter: Literal["pandas", "datasets", "gluonts", "nixtla", "darts", "autogluon"] = "pandas",
     *,
     as_univariate: bool = False,
+    univariate_target_column: str = "target",
     **kwargs,
 ) -> Any:
     """Convert the output of `task.get_input_data()` to a format compatible with popular forecasting frameworks.
 
     Parameters
     ----------
-    task : fev.Task
+    task
         Task object for which input data must be converted.
-    adapter : {"pandas", "gluonts", "nixtla", "darts", "autogluon"}
+    adapter : {"pandas", "datasets", "gluonts", "nixtla", "darts", "autogluon"}
         Format to which the dataset must be converted.
-    as_univariate : bool
+    as_univariate
         If True, separate instances will be created from each target column before passing the data to the adapter.
 
         Equivalent to setting `generate_univariate_targets_from = "__ALL__"` in `Task` constructor.
+    univariate_target_column
+        Target column name used when as_univariate=True. Only used by the "datasets" adapter.
     **kwargs
         Keyword arguments passed to :meth:`fev.Task.get_input_data`.
     """
     past, future = task.get_input_data(**kwargs)
-    if adapter not in DATASET_ADAPTERS:
-        raise KeyError(f"`adapter` must be one of {list(DATASET_ADAPTERS)}")
-    adapter_cls = DATASET_ADAPTERS[adapter]
 
     if as_univariate and task.is_multivariate:
-        target_column = "target"
+        target_column = univariate_target_column
         past = utils.generate_univariate_targets_from_multivariate(
             past,
             id_column=task.id_column,
             new_target_column=target_column,
             generate_univariate_targets_from=task.target_columns_list,
         )
-        future = utils.generate_univariate_targets_from_multivariate(
-            future,
-            id_column=task.id_column,
-            new_target_column=target_column,
-            generate_univariate_targets_from=task.target_columns_list,
-        )
+        # We cannot apply generate_univariate_targets_from_multivariate to future since it does not contain target cols,
+        # so we just repeat each entry and insert the IDs from past
+        original_column_order = future.column_names
+        future = future.select([i for i in range(len(future)) for _ in range(len(task.target_columns_list))])
+        future = future.remove_columns(task.id_column).add_column(name=task.id_column, column=past[task.id_column])
+        future = future.select_columns(original_column_order)
     else:
         target_column = task.target_column
+
+    if adapter not in DATASET_ADAPTERS:
+        raise KeyError(f"`adapter` must be one of {list(DATASET_ADAPTERS)}")
+    adapter_cls = DATASET_ADAPTERS[adapter]
 
     return adapter_cls().convert_input_data(
         past=past,
