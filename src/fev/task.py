@@ -3,7 +3,6 @@ import dataclasses
 import logging
 import pprint
 import warnings
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
 
@@ -223,6 +222,8 @@ class Task(_TaskBase):
         if isinstance(self.target_column, list):
             if len(self.target_column) < 1:
                 raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
+            # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
+            self.target_column = sorted(self.target_column)
         self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
         self._freq: str | None = None
@@ -481,15 +482,12 @@ class Task(_TaskBase):
                 ]
             else:
                 generate_univariate_targets_from = self.generate_univariate_targets_from
-            ds = ds.map(
-                _expand_target_columns,
-                batched=True,
-                fn_kwargs=dict(
-                    id_column=self.id_column,
-                    target_column=self.target_column,
-                    generate_univariate_targets_from=generate_univariate_targets_from,
-                ),
-                remove_columns=generate_univariate_targets_from,
+            assert isinstance(self.target_column, str)
+            ds = utils.generate_univariate_targets_from_multivariate(
+                ds,
+                id_column=self.id_column,
+                new_target_column=self.target_column,
+                generate_univariate_targets_from=generate_univariate_targets_from,
                 num_proc=num_proc,
             )
 
@@ -921,24 +919,3 @@ def _has_enough_past_and_future_observations(
         before = timestamps[:cutoff]
         after = timestamps[cutoff:]
     return len(before) >= min_context_length and len(after) >= horizon
-
-
-def _expand_target_columns(
-    batch: dict, id_column: str, target_column: str, generate_univariate_targets_from: list[str]
-) -> dict:
-    """Create a separate record for each column listed in generate_univariate_targets_from.
-
-    It is required to set batched=True when using method in `dataset.map`.
-    """
-    expanded_batch = defaultdict(list)
-    batch_size = len(batch[id_column])
-    for i in range(batch_size):
-        for target_col in generate_univariate_targets_from:
-            for key in batch.keys():
-                if key not in generate_univariate_targets_from:
-                    value = batch[key][i]
-                    if key == id_column:
-                        value = value + "_" + target_col
-                    expanded_batch[key].append(value)
-            expanded_batch[target_column].append(batch[target_col][i])
-    return dict(expanded_batch)
