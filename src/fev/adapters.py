@@ -326,20 +326,28 @@ def convert_input_data(
     """
     past, future = task.get_input_data(**kwargs)
 
-    if as_univariate and task.is_multivariate:
+    if as_univariate:
+        if univariate_target_column in past.column_names and univariate_target_column != task.target_column:
+            raise ValueError(
+                f"Column '{univariate_target_column}' already exists. Choose a different univariate_target_column."
+            )
         target_column = univariate_target_column
-        past = utils.generate_univariate_targets_from_multivariate(
-            past,
-            id_column=task.id_column,
-            new_target_column=target_column,
-            generate_univariate_targets_from=task.target_columns_list,
-        )
-        # We cannot apply generate_univariate_targets_from_multivariate to future since it does not contain target cols,
-        # so we just repeat each entry and insert the IDs from past
-        original_column_order = future.column_names
-        future = future.select([i for i in range(len(future)) for _ in range(len(task.target_columns_list))])
-        future = future.remove_columns(task.id_column).add_column(name=task.id_column, column=past[task.id_column])
-        future = future.select_columns(original_column_order)
+        if task.is_multivariate:
+            past = utils.generate_univariate_targets_from_multivariate(
+                past,
+                id_column=task.id_column,
+                new_target_column=target_column,
+                generate_univariate_targets_from=task.target_columns_list,
+            )
+            # We cannot apply generate_univariate_targets_from_multivariate to future since it does not contain target cols,
+            # so we just repeat each entry and insert the IDs from past, repeating entries as [0, 0, ..., 1, 1, ..., N -1, N - 1, ...]
+            original_column_order = future.column_names
+            future = future.select([i for i in range(len(future)) for _ in range(len(task.target_columns_list))])
+            future = future.remove_columns(task.id_column).add_column(name=task.id_column, column=past[task.id_column])
+            future = future.select_columns(original_column_order)
+        else:
+            if target_column not in past.column_names:
+                past = past.rename_column(task.target_column, target_column)
     else:
         target_column = task.target_column
 

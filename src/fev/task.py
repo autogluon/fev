@@ -222,6 +222,8 @@ class Task(_TaskBase):
         if isinstance(self.target_column, list):
             if len(self.target_column) < 1:
                 raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
+            # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
+            self.target_column = sorted(self.target_column)
         self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
         self._freq: str | None = None
