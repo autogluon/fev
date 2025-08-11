@@ -291,7 +291,7 @@ class AutoGluonAdapter(PandasAdapter):
         return past_data, known_covariates
 
 
-class DartsAdapter(PandasAdapter):
+class DartsAdapter(DatasetAdapter):
     @classmethod
     def convert_input_data(
         cls,
