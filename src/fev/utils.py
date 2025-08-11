@@ -5,6 +5,7 @@ from collections import defaultdict
 import datasets
 import multiprocess as mp
 import pandas as pd
+import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
 
@@ -13,6 +14,7 @@ __all__ = [
     "infer_column_types",
     "validate_time_series_dataset",
     "generate_univariate_targets_from_multivariate",
+    "combine_univariate_predictions_to_multivariate",
 ]
 
 
@@ -48,6 +50,7 @@ def validate_time_series_dataset(
     timestamp_column
         Name of the column containing the timestamp of time series observations.
     """
+    dataset = dataset.with_format("numpy")
     if required_columns is None:
         required_columns = []
     required_columns += [id_column, timestamp_column]
@@ -70,35 +73,37 @@ def validate_time_series_dataset(
     if len(set(dataset[id_column])) != len(dataset[id_column]):
         raise AssertionError(f"ID column {id_column} must contain unique values for each record")
 
-    dynamic_columns, static_columns = infer_column_types(
-        dataset,
-        id_column,
-        timestamp_column,
-    )
+    dynamic_columns, static_columns = infer_column_types(dataset, id_column, timestamp_column)
 
     if len(dynamic_columns) == 0:
         raise AssertionError("Dataset must contain at least a single dynamic column of type Sequence")
 
     if num_records_to_validate is not None:
         dataset = dataset.select(range(num_records_to_validate))
+
     dataset.map(
-        _validate_dynamic_columns,
+        _validate_frequency,
         num_proc=min(num_proc, len(dataset)),
         desc="Validating dataset format",
-        fn_kwargs={"id_column": id_column, "timestamp_column": timestamp_column, "dynamic_columns": dynamic_columns},
+        batched=True,
+        input_columns=[timestamp_column],
     )
 
-
-def _validate_dynamic_columns(record: dict, id_column: str, timestamp_column: str, dynamic_columns: list[str]) -> None:
-    """Validate dynamic columns for a single record."""
-    timestamps = record[timestamp_column]
-    if pd.infer_freq(timestamps) is None:
-        raise AssertionError(f"pd.infer_freq failed to infer timestamp frequency for record {record[id_column]}.")
+    # Ensure that for each row all entries in columns of type Sequence have the same length
+    table = dataset.data.table
+    expected_lengths = pc.list_value_length(table[timestamp_column])
     for col in dynamic_columns:
-        if len(record[col]) != len(timestamps):
+        if not pc.list_value_length(table[col]) == expected_lengths:
             raise AssertionError(
-                f"Length of dynamic column {col} doesn't match the length of the timestamp column for record {record[id_column]}"
+                f"Lengths of entries in {col} does not match the lengths in {timestamp_column} for all records"
             )
+
+
+def _validate_frequency(batch_of_timestamps: list) -> None:
+    """Assert that the frequency can be inferred for each record."""
+    for timestamps in batch_of_timestamps:
+        if pd.infer_freq(timestamps) is None:
+            raise AssertionError("pd.infer_freq failed to infer timestamp frequency.")
 
 
 def infer_column_types(
@@ -275,7 +280,7 @@ def generate_univariate_targets_from_multivariate(
             generate_univariate_targets_from=generate_univariate_targets_from,
         ),
         remove_columns=generate_univariate_targets_from,
-        num_proc=num_proc,
+        num_proc=min(num_proc, len(dataset)),
     )
 
 

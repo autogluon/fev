@@ -410,7 +410,7 @@ class Task(_TaskBase):
                 cutoff=self.cutoff,
                 min_context_length=self.min_context_length,
             ),
-            num_proc=num_proc,
+            num_proc=min(num_proc, len(dataset)),
             desc="Filtering short time series",
         )
         num_items_after = len(filtered_dataset)
@@ -442,7 +442,7 @@ class Task(_TaskBase):
                 cutoff=self.cutoff,
                 max_context_length=self.max_context_length,
             ),
-            num_proc=num_proc,
+            num_proc=min(num_proc, len(dataset)),
             desc="Selecting past data",
         )
 
@@ -454,7 +454,7 @@ class Task(_TaskBase):
                 cutoff=self.cutoff,
                 horizon=self.horizon,
             ),
-            num_proc=num_proc,
+            num_proc=min(num_proc, len(dataset)),
             desc="Selecting future data",
         )
         future_known = future_data.remove_columns(self.target_columns_list + self.past_dynamic_columns)
