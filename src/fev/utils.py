@@ -5,6 +5,7 @@ from collections import defaultdict
 import datasets
 import multiprocess as mp
 import pandas as pd
+import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
 
@@ -81,24 +82,27 @@ def validate_time_series_dataset(
 
     if num_records_to_validate is not None:
         dataset = dataset.select(range(num_records_to_validate))
+
     dataset.map(
-        _validate_dynamic_columns,
+        _validate_frequency,
         num_proc=min(num_proc, len(dataset)),
         desc="Validating dataset format",
-        fn_kwargs={"id_column": id_column, "timestamp_column": timestamp_column, "dynamic_columns": dynamic_columns},
+        fn_kwargs={"id_column": id_column, "timestamp_column": timestamp_column},
     )
 
-
-def _validate_dynamic_columns(record: dict, id_column: str, timestamp_column: str, dynamic_columns: list[str]) -> None:
-    """Validate dynamic columns for a single record."""
-    timestamps = record[timestamp_column]
-    if pd.infer_freq(timestamps) is None:
-        raise AssertionError(f"pd.infer_freq failed to infer timestamp frequency for record {record[id_column]}.")
+    table = dataset.data.table
+    expected_lengths = pc.list_value_length(table[timestamp_column])
     for col in dynamic_columns:
-        if len(record[col]) != len(timestamps):
+        if not pc.list_value_length(table[col]) == expected_lengths:
             raise AssertionError(
-                f"Length of dynamic column {col} doesn't match the length of the timestamp column for record {record[id_column]}"
+                f"Lengths of entries in {col} does not match the timestamp columns {timestamp_column} for all records"
             )
+
+
+def _validate_frequency(record: dict, id_column: str, timestamp_column: str) -> None:
+    """Assert that the frequency can be inferred for each record."""
+    if pd.infer_freq(record[timestamp_column]) is None:
+        raise AssertionError(f"pd.infer_freq failed to infer timestamp frequency for record {record[id_column]}.")
 
 
 def infer_column_types(

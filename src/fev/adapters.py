@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal, Type
 
@@ -123,7 +124,6 @@ class GluonTSAdapter(PandasAdapter):
             from gluonts.dataset.pandas import PandasDataset
         except ModuleNotFoundError:
             raise ModuleNotFoundError(f"Please install GluonTS before using {cls.__name__}")
-        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
 
         past_df, future_df, static_df = super().convert_input_data(
             past=past,
@@ -147,28 +147,33 @@ class GluonTSAdapter(PandasAdapter):
         gluonts_freq = pd.tseries.frequencies.get_period_alias(freq)
         # We compute names of feature columns after non-numeric columns have been removed
         feat_dynamic_real = list(future_df.columns.drop([id_column, timestamp_column]))
-        past_feat_dynamic_real = list(past_df.columns.drop(list(future_df.columns) + [target_column]))
-        past_dataset = PandasDataset.from_long_dataframe(
-            past_df,
-            item_id=id_column,
-            timestamp=timestamp_column,
-            target=target_column,
-            static_features=static_df,
-            freq=gluonts_freq,
-            feat_dynamic_real=feat_dynamic_real,
-            past_feat_dynamic_real=past_feat_dynamic_real,
+        exclude_from_past_features = list(future_df.columns) + (
+            target_column if isinstance(target_column, list) else [target_column]
         )
-        prediction_dataset = PandasDataset.from_long_dataframe(
-            pd.concat([past_df, future_df]),
-            item_id=id_column,
-            timestamp=timestamp_column,
-            target=target_column,
-            static_features=static_df,
-            freq=gluonts_freq,
-            future_length=len(future[0][timestamp_column]),
-            feat_dynamic_real=feat_dynamic_real,
-            past_feat_dynamic_real=past_feat_dynamic_real,
-        )
+        past_feat_dynamic_real = list(past_df.columns.drop(exclude_from_past_features))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            past_dataset = PandasDataset.from_long_dataframe(
+                past_df,
+                item_id=id_column,
+                timestamp=timestamp_column,
+                target=target_column,
+                static_features=static_df,
+                freq=gluonts_freq,
+                feat_dynamic_real=feat_dynamic_real,
+                past_feat_dynamic_real=past_feat_dynamic_real,
+            )
+            prediction_dataset = PandasDataset.from_long_dataframe(
+                pd.concat([past_df, future_df]),
+                item_id=id_column,
+                timestamp=timestamp_column,
+                target=target_column,
+                static_features=static_df,
+                freq=gluonts_freq,
+                future_length=len(future[0][timestamp_column]),
+                feat_dynamic_real=feat_dynamic_real,
+                past_feat_dynamic_real=past_feat_dynamic_real,
+            )
         return past_dataset, prediction_dataset
 
 
