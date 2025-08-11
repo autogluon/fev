@@ -50,6 +50,7 @@ def validate_time_series_dataset(
     timestamp_column
         Name of the column containing the timestamp of time series observations.
     """
+    dataset = dataset.with_format("numpy")
     if required_columns is None:
         required_columns = []
     required_columns += [id_column, timestamp_column]
@@ -80,7 +81,7 @@ def validate_time_series_dataset(
     if num_records_to_validate is not None:
         dataset = dataset.select(range(num_records_to_validate))
 
-    dataset.with_format("numpy").map(
+    dataset.map(
         _validate_frequency,
         num_proc=min(num_proc, len(dataset)),
         desc="Validating dataset format",
