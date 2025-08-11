@@ -95,7 +95,7 @@ def validate_time_series_dataset(
     for col in dynamic_columns:
         if not pc.list_value_length(table[col]) == expected_lengths:
             raise AssertionError(
-                f"Lengths of entries in {col} does not match the timestamp columns {timestamp_column} for all records"
+                f"Lengths of entries in {col} does not match the lengths in {timestamp_column} for all records"
             )
 
 
