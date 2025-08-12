@@ -13,6 +13,7 @@ from .task import Task
 
 if TYPE_CHECKING:
     import autogluon.timeseries
+    import darts
     import gluonts.dataset.pandas
 
 
@@ -291,7 +292,75 @@ class AutoGluonAdapter(PandasAdapter):
 
 
 class DartsAdapter(DatasetAdapter):
-    pass
+    @classmethod
+    def convert_input_data(
+        cls,
+        past: datasets.Dataset,
+        future: datasets.Dataset,
+        *,
+        target_column: str | list[str],
+        id_column: str,
+        timestamp_column: str,
+        static_columns: list[str],
+    ) -> tuple["list[darts.TimeSeries]", "list[darts.TimeSeries] | None", "list[darts.TimeSeries] | None"]:
+        try:
+            from darts import TimeSeries
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(f"Please install darts before using {cls.__name__}")
+
+        if isinstance(target_column, str):
+            target_column = [target_column]
+
+        past_covariates_names = []
+        future_covariates_names = []
+        for col, feat in past.features.items():
+            if col not in [id_column, timestamp_column, *target_column, *static_columns]:
+                assert isinstance(feat, datasets.Sequence)
+                # Only include numeric dtypes for past/future covariates
+                if any(t in feat.feature.dtype for t in ["int", "float", "double"]):
+                    if col in future.column_names:
+                        future_covariates_names.append(col)
+                    else:
+                        past_covariates_names.append(col)
+
+        target_series = []
+        past_covariates = []
+        future_covariates = []
+        for i in range(len(past)):
+            past_i = past[i]
+            future_i = future[i]
+            target_series.append(
+                TimeSeries(
+                    times=pd.DatetimeIndex(past_i[timestamp_column]),
+                    values=np.stack([past_i[col] for col in target_column], axis=1).astype("float32"),
+                    static_covariates=pd.Series({col: past_i[col] for col in static_columns}),
+                    components=target_column,
+                ),
+            )
+            if len(past_covariates_names) > 0:
+                past_covariates.append(
+                    TimeSeries(
+                        times=pd.DatetimeIndex(past_i[timestamp_column]),
+                        values=np.stack([past_i[col] for col in past_covariates_names], axis=1),
+                        components=past_covariates_names,
+                    ).astype("float32"),
+                )
+            if len(future_covariates_names) > 0:
+                future_covariates.append(
+                    TimeSeries(
+                        times=pd.DatetimeIndex(np.concatenate([past_i[timestamp_column], future_i[timestamp_column]])),
+                        values=np.stack(
+                            [np.concatenate([past_i[col], future_i[col]]) for col in future_covariates_names],
+                            axis=1,
+                        ).astype("float32"),
+                        components=future_covariates_names,
+                    )
+                )
+        if len(past_covariates_names) == 0:
+            past_covariates = None
+        if len(future_covariates_names) == 0:
+            future_covariates = None
+        return target_series, past_covariates, future_covariates
 
 
 DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
