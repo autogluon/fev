@@ -335,7 +335,6 @@ class DartsAdapter(DatasetAdapter):
                     values=np.stack([past_i[col] for col in target_column], axis=1).astype("float32"),
                     static_covariates=pd.Series({col: past_i[col] for col in static_columns}),
                     components=target_column,
-                    fillna_value=0.0,
                 ),
             )
             if len(past_covariates_names) > 0:
@@ -344,7 +343,6 @@ class DartsAdapter(DatasetAdapter):
                         times=pd.DatetimeIndex(past_i[timestamp_column]),
                         values=np.stack([past_i[col] for col in past_covariates_names], axis=1),
                         components=past_covariates_names,
-                        fillna_value=0.0,
                     ).astype("float32"),
                 )
             if len(future_covariates_names) > 0:
@@ -356,7 +354,6 @@ class DartsAdapter(DatasetAdapter):
                             axis=1,
                         ).astype("float32"),
                         components=future_covariates_names,
-                        fillna_value=0.0,
                     )
                 )
         if len(past_covariates_names) == 0:
