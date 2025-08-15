@@ -18,6 +18,7 @@ from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 GENERATE_UNIVARIATE_TARGETS_FROM_ALL = "__ALL__"
+EXCLUDE_ALL_REMAINING_COLUMNS = "__ALL__"
 
 logger = logging.getLogger("fev")
 logger.setLevel(logging.INFO)
@@ -33,7 +34,6 @@ class _TaskBase:
     # Forecast horizon parameters
     horizon: int = 1
     cutoff: int | str | None = None
-    lead_time: int = 1
     min_context_length: int = 1
     max_context_length: int | None = None
     # Evaluation parameters
@@ -47,7 +47,7 @@ class _TaskBase:
     target_column: str | list[str] = "target"
     generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
-    excluded_columns: list[str] = dataclasses.field(default_factory=list)
+    excluded_columns: list[str] | Literal["__ALL__"] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert task definition to a dictionary."""
@@ -87,6 +87,14 @@ class _TaskBase:
                     data.kwargs["min_context_length"] = max(
                         data.kwargs.pop("min_ts_length") - data.kwargs.get("horizon", 1), 1
                     )
+            if "lead_time" in data.kwargs:
+                # TODO: `lead_time` will be replaced by `horizon_weight` in a future version
+                warnings.warn(
+                    "Field `lead_time` is deprecated and will be ignored.",
+                    category=FutureWarning,
+                    stacklevel=3,
+                )
+                data.kwargs.pop("lead_time")
         return data
 
 
@@ -126,8 +134,6 @@ class Task(_TaskBase):
         If some time series are too short for the chosen cutoff (i.e., there are no observations before the cutoff or
         there are fewer than `horizon` observations after the cutoff), an exception will be raised when loading the
         data.
-    lead_time : int, default 1
-        Number of time steps between the end of observed data and the start of the forecast horizon.
     min_context_length : int, default 1
         Time series with fewer than `min_context_length` observations before the `cutoff` will be removed from the dataset.
     max_context_length : int | None, default None
@@ -163,8 +169,13 @@ class Task(_TaskBase):
     past_dynamic_columns : list[str], default None
         Names of columns that are known only in the past. These will be available in the past data, but not in the
         future or test data.
-    excluded_columns : list[str], default None
+    excluded_columns : list[str] | Literal["__ALL__"], default []
         Names of columns that are removed from the dataset during preprocessing.
+
+        If set to "__ALL__", all columns except those specified in `id_column`, `timestamps_column`, `target_column`,
+        `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
+
+        If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
 
     Examples
     --------
@@ -182,10 +193,6 @@ class Task(_TaskBase):
     """
 
     def __post_init__(self):
-        # TODO: Add support for lead_time > 1
-        if self.lead_time > 1:
-            raise ValueError("lead_time > 1 is currently not supported")
-
         if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
                 "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
@@ -224,6 +231,15 @@ class Task(_TaskBase):
                 raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
             # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
             self.target_column = sorted(self.target_column)
+
+        if (
+            self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL
+            and self.excluded_columns == EXCLUDE_ALL_REMAINING_COLUMNS
+        ):
+            raise ValueError(
+                "Cannot set 'generate_univariate_targets_from' and 'excluded_columns' to '__ALL__' simultaneously"
+            )
+
         self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
         self._freq: str | None = None
@@ -370,9 +386,11 @@ class Task(_TaskBase):
                 "Failed to load the dataset when calling `datasets.load_dataset` with arguments\n"
                 f"{pprint.pformat(load_dataset_kwargs)}"
             )
+        # Since we loaded with split=TRAIN and streaming=False, ds is a datasets.Dataset object
+        assert isinstance(ds, datasets.Dataset)
         ds.set_format("numpy")
 
-        required_columns = self.past_dynamic_columns + self.excluded_columns
+        required_columns = self.past_dynamic_columns.copy()
         if self.generate_univariate_targets_from is None:
             required_columns += self.target_columns_list
         elif self.generate_univariate_targets_from == GENERATE_UNIVARIATE_TARGETS_FROM_ALL:
@@ -388,7 +406,14 @@ class Task(_TaskBase):
             num_proc=num_proc,
         )
 
-        ds = ds.remove_columns(self.excluded_columns)
+        if self.excluded_columns == EXCLUDE_ALL_REMAINING_COLUMNS:
+            excluded_columns = [
+                col for col in ds.column_names if col not in required_columns + [self.id_column, self.timestamp_column]
+            ]
+        else:
+            excluded_columns = self.excluded_columns
+        if len(excluded_columns) > 0:
+            ds = ds.remove_columns(excluded_columns)
         return ds
 
     def _filter_short_series(
@@ -533,7 +558,7 @@ class Task(_TaskBase):
         each of the predicted quantiles (e.g., if `quantile_levels = [0.1, 0.9]`, then keys `"0.1"` and `"0.9"` must be
         included in the forecast).
         """
-        predictions_length = self.horizon + self.lead_time - 1
+        predictions_length = self.horizon
         predictions_schema = {
             PREDICTIONS: datasets.Sequence(datasets.Value("float64"), length=predictions_length),
         }
