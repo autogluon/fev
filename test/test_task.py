@@ -272,3 +272,17 @@ def test_when_all_series_have_too_few_observations_then_exception_is_raised(hori
     )
     with pytest.raises(ValueError, match="All time series in the dataset are too short"):
         task.get_input_data()
+
+
+@pytest.mark.parametrize("target_column", ["OT", ["OT", "HULL"]])
+def test_when_excluded_columns_is_all_then_all_remaining_columns_are_excluded(target_column):
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets_extra",
+        dataset_config="ETTh",
+        target_column=target_column,
+        past_dynamic_columns=["LUFL"],
+        excluded_columns=fev.task.EXCLUDE_ALL_REMAINING_COLUMNS,
+    )
+    past, future = task.get_input_data()
+    assert set(past.column_names) == set(["id", "timestamp", "LUFL"] + task.target_columns_list)
+    assert set(future.column_names) == set(["id", "timestamp"])

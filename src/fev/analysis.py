@@ -13,7 +13,6 @@ TASK_DEF_DTYPES = {
     "dataset_config": pd.StringDtype(),
     "horizon": pd.Int64Dtype(),
     "cutoff": pd.StringDtype(),
-    "lead_time": pd.Int64Dtype(),
     "min_context_length": pd.Int64Dtype(),
     "max_context_length": pd.Int64Dtype(),
     "seasonality": pd.Int64Dtype(),
