@@ -17,7 +17,7 @@ from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
-ALL_AVAILABLE_COLUMNS = "__ALL__"
+ALL_AVAILABLE_COLUMNS: Literal["__ALL__"] = "__ALL__"
 
 logger = logging.getLogger("fev")
 logger.setLevel(logging.INFO)
