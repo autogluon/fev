@@ -74,7 +74,7 @@ def test_when_multiple_target_columns_set_to_all_used_then_all_columns_are_explo
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets",
         dataset_config="monash_rideshare",
-        generate_univariate_targets_from=fev.task.GENERATE_UNIVARIATE_TARGETS_FROM_ALL,
+        generate_univariate_targets_from=fev.task.USE_ALL_COLUMNS,
     )
     original_ds = task._load_dataset()
     num_sequence_columns = len(
