@@ -17,7 +17,7 @@ from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
-USE_ALL_COLUMNS = "__ALL__"
+ALL_AVAILABLE_COLUMNS = "__ALL__"
 
 logger = logging.getLogger("fev")
 logger.setLevel(logging.INFO)
@@ -248,7 +248,10 @@ class Task(_TaskBase):
             # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
             self.target_column = sorted(self.target_column)
 
-        if self.generate_univariate_targets_from == USE_ALL_COLUMNS and self.excluded_columns == USE_ALL_COLUMNS:
+        if (
+            self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS
+            and self.excluded_columns == ALL_AVAILABLE_COLUMNS
+        ):
             raise ValueError(
                 "Cannot set 'generate_univariate_targets_from' and 'excluded_columns' to '__ALL__' simultaneously"
             )
@@ -396,7 +399,7 @@ class Task(_TaskBase):
         required_columns = self.past_dynamic_columns.copy()
         if self.generate_univariate_targets_from is None:
             required_columns += self.target_columns_list
-        elif self.generate_univariate_targets_from == USE_ALL_COLUMNS:
+        elif self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
             pass
         else:
             required_columns += self.generate_univariate_targets_from
@@ -409,7 +412,7 @@ class Task(_TaskBase):
             num_proc=num_proc,
         )
 
-        if self.excluded_columns == USE_ALL_COLUMNS:
+        if self.excluded_columns == ALL_AVAILABLE_COLUMNS:
             excluded_columns = [
                 col for col in ds.column_names if col not in required_columns + [self.id_column, self.timestamp_column]
             ]
@@ -502,7 +505,7 @@ class Task(_TaskBase):
             num_proc=num_proc,
         )
         if self.generate_univariate_targets_from is not None:
-            if self.generate_univariate_targets_from == USE_ALL_COLUMNS:
+            if self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
                 generate_univariate_targets_from = [
                     col
                     for col, feat in ds.features.items()

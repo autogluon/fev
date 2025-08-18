@@ -74,7 +74,7 @@ def test_when_multiple_target_columns_set_to_all_used_then_all_columns_are_explo
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets",
         dataset_config="monash_rideshare",
-        generate_univariate_targets_from=fev.task.USE_ALL_COLUMNS,
+        generate_univariate_targets_from=fev.task.ALL_AVAILABLE_COLUMNS,
     )
     original_ds = task._load_dataset()
     num_sequence_columns = len(
@@ -281,7 +281,7 @@ def test_when_excluded_columns_is_all_then_all_remaining_columns_are_excluded(ta
         dataset_config="ETTh",
         target_column=target_column,
         past_dynamic_columns=["LUFL"],
-        excluded_columns=fev.task.EXCLUDE_ALL_REMAINING_COLUMNS,
+        excluded_columns=fev.task.ALL_AVAILABLE_COLUMNS,
     )
     past, future = task.get_input_data()
     assert set(past.column_names) == set(["id", "timestamp", "LUFL"] + task.target_columns_list)
