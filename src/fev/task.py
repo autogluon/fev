@@ -186,6 +186,11 @@ class Task(_TaskBase):
         `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
 
         If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
+    task_name : str, optional
+        Human-readable name for the task. Defaults to `dataset_config` for datasets stored on HF hub, and to the
+        name of 2 parent directories for local or S3-based datasets.
+
+        This field is only here for convenience and is not used for any validation when computing the results.
 
     Examples
     --------
