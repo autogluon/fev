@@ -189,9 +189,7 @@ class Task:
     - generating train/test splits
     - evaluating the predictions accuracy
 
-    A single `Task` object corresponds to a single train-test split of the data (i.e., a single cutoff).
-    This means that, for example, to perform evaluation on `N` rolling windows, it is necessary to create `N` separate
-    `Task` objects (one for each window).
+    A single `Task` object may correspond to multiple rolling windows used for evaluation.
 
     Parameters
     ----------
