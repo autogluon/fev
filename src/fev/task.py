@@ -258,13 +258,16 @@ class Task:
         For example, if `generate_univariate_targets_from = ["X", "Y"]` then the raw multivariate time series
         `{"id": "A", "timestamp": [...], "X": [...], "Y": [...]}` will be split into two univariate time series
         `{"id": "A_X", "timestamp": [...], "target": [...]}` and `{"id": "A_Y", "timestamp": [...], "target": [...]}`.
-    known_dynamic_columns: list[str], default []
-        Names of columns that will be used as known future covariates in the forecasting task. These will be available
-        both in the past data and the future data.
     past_dynamic_columns : list[str], default []
         Names of columns that are known only in the past. These will be available in the past data, but not in the
         future or test data.
-    static_columns: list[str], default []
+    excluded_columns : list[str] | Literal["__ALL__"], default []
+        Names of columns that are removed from the dataset during preprocessing.
+
+        If set to "__ALL__", all columns except those specified in `id_column`, `timestamps_column`, `target_column`,
+        `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
+
+        If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
     task_name : str, optional
         Human-readable name for the task. Defaults to `dataset_config` for datasets stored on HF hub, and to the
         name of 2 parent directories for local or S3-based datasets.
