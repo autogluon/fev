@@ -28,8 +28,8 @@ import fev
 
 task = fev.Task(
     dataset_path="autogluon/chronos_datasets",
-    dataset_config="monash_kdd_cup_2018",
-    horizon=12,
+    dataset_config="m4_hourly",
+    horizon=24,
 )
 ```
 Iterate over the rolling evaluation windows:
@@ -62,10 +62,10 @@ task.evaluation_summary(predictions_per_window, model_name="naive")
 # {'model_name': 'naive',
 #  'dataset_path': 'autogluon/chronos_datasets',
 #  'dataset_config': 'm4_hourly',
-#  'horizon': 12,
-#  'num_rolling_windows': 1,
-#  'initial_cutoff': -12,
-#  'rolling_step_size': 12,
+#  'horizon': 24,
+#  'num_windows': 1,
+#  'initial_cutoff': -24,
+#  'window_step_size': 24,
 #  'min_context_length': 1,
 #  'max_context_length': None,
 #  'seasonality': 1,
@@ -79,13 +79,13 @@ task.evaluation_summary(predictions_per_window, model_name="naive")
 #  'past_dynamic_columns': [],
 #  'excluded_columns': [],
 #  'task_name': 'm4_hourly',
-#  'test_error': 3.3935745406334745,
+#  'test_error': 3.815112047601983,
 #  'training_time_s': None,
 #  'inference_time_s': None,
 #  'dataset_fingerprint': '19e36bb78b718d8d',
 #  'trained_on_this_dataset': False,
 #  'fev_version': '0.6.0',
-#  'MASE': 3.3935745406334745}
+#  'MASE': 3.815112047601983}
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
 

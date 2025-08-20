@@ -25,9 +25,9 @@ logger.addHandler(logging.StreamHandler())
 
 
 @dataclasses.dataclass
-class RollingWindow:
+class EvaluationWindow:
     """
-    A single rolling window used for evaluation.
+    A single evaluation window on which the forecast accuracy is measured.
     """
 
     dataset: datasets.Dataset = dataclasses.field(repr=False)
@@ -50,7 +50,7 @@ class RollingWindow:
             self._dataset_dict = self._prepare_dataset_dict()
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
-    def get_test_data(self) -> datasets.Dataset:
+    def get_ground_truth(self) -> datasets.Dataset:
         """Get ground truth future test data. This data should never be provided to the model!"""
         if self._dataset_dict is None:
             self._dataset_dict = self._prepare_dataset_dict()
@@ -63,7 +63,7 @@ class RollingWindow:
         seasonality: int,
         quantile_levels: list[float] | None,
     ) -> dict[str, float]:
-        test_data = self.get_test_data().with_format("numpy")
+        test_data = self.get_ground_truth().with_format("numpy")
         past_data = self.get_input_data()[0].with_format("numpy")
 
         for target_column, predictions_for_column in predictions.items():
@@ -161,23 +161,6 @@ class RollingWindow:
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
 
-# # Usage example - native datasets
-# task = fev.Task(...)
-# predictions = []
-# for split in task.iter_splits():
-#     past, future = split.get_input_data()
-#     preds = model.predict(past, future)
-#     predictions.append(preds)
-
-# # Usage example - with adapters
-# task = fev.Task(...)
-# predictions = []
-# for split in task.iter_splits():
-#     custom_dataset = fev.convert_input_data(split, adapter="gluonts")
-#     preds = model.predict(custom_dataset)
-#     predictions.append(fev.convert_predictions(preds, adapter="gluonts"))
-
-
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
 class Task:
     """
@@ -202,10 +185,10 @@ class Task:
         S3 path.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
-    num_rolling_windows : int, default 1
+    num_windows : int, default 1
         Number of rolling evaluation windows included in the task.
     initial_cutoff : int | str | None, default None
-        Starting position for the first rolling evaluation window that separates past from future data.
+        Starting position for the first evaluation window that separates past from future data.
 
         Can be specified as:
         - **Integer**: Index position using pandas-like indexing. `y[:initial_cutoff]` becomes the past/training data,
@@ -213,19 +196,19 @@ class Task:
         - **Timestamp string**: Date/datetime (e.g., `"2024-02-01"`). Data up to and including this timestamp becomes
         past data, and the next `horizon` observations become the first forecast horizon.
 
-        If None, defaults to `-num_rolling_windows * horizon`.
+        If None, defaults to `-horizon - (num_windows - 1) * window_step_size`.
 
-        **Note**: Time series that are too short for any rolling window (i.e., have fewer than `min_context_length`
+        **Note**: Time series that are too short for any evaluation window (i.e., have fewer than `min_context_length`
         observations before a cutoff or fewer than `horizon` observations after a cutoff) will be filtered out during
         data loading.
-    rolling_step_size : int | str | None
-        Step size between consecutive rolling evaluation windows.
-        If `initial_cutoff` is an integer, `rolling_step_size` must be a positive integer.
-        If `initial_cutoff` is a timestamp-like string, `rolling_step_size` must be pandas-compatible offset string
+    window_step_size : int | str | None
+        Step size between consecutive evaluation windows.
+        If `initial_cutoff` is an integer, `window_step_size` must be a positive integer.
+        If `initial_cutoff` is a timestamp-like string, `window_step_size` must be pandas-compatible offset string
         (e.g., `D` for daily, `15min` for quarter-hourly).
         Defaults to `horizon`.
     min_context_length : int, default 1
-        Time series with fewer than `min_context_length` observations before the `cutoff` will be removed from the dataset.
+        Time series with fewer than `min_context_length` observations before a cutoff will be ignored during evaluation.
     max_context_length : int | None, default None
         If provided, the past time series will be shortened to at most this many observations.
     seasonality : int, default 1
@@ -291,9 +274,9 @@ class Task:
     dataset_config: str | None = None
     # Forecast horizon parameters
     horizon: int = 1
-    num_rolling_windows: int = 1
+    num_windows: int = 1
     initial_cutoff: int | str | None = None
-    rolling_step_size: int | str | None = None
+    window_step_size: int | str | None = None
     min_context_length: int = 1
     max_context_length: int | None = None
     # Evaluation parameters
@@ -320,39 +303,43 @@ class Task:
                 # e.g. /home/foo/bar/data.parquet -> foo/bar
                 self.task_name = "/".join(Path(self.dataset_path).parts[-3:-1])
 
-        assert self.num_rolling_windows >= 1, "`num_rolling_windows` must satisfy >= 1"
-        if self.rolling_step_size is None:
-            self.rolling_step_size = self.horizon
+        assert self.num_windows >= 1, "`num_windows` must satisfy >= 1"
+        if self.window_step_size is None:
+            self.window_step_size = self.horizon
+
         if self.initial_cutoff is None:
-            self.initial_cutoff = -self.num_rolling_windows * self.horizon
+            assert isinstance(self.window_step_size, int), (
+                "If `initial_cutoff` is None, `window_step_size` must be an int"
+            )
+            self.initial_cutoff = -self.horizon - (self.num_windows - 1) * self.window_step_size
 
         self.cutoffs: list[int] | list[str]
         if isinstance(self.initial_cutoff, int):
-            if not isinstance(self.rolling_step_size, int):
-                raise ValueError("`rolling_step_size` must be an int if `initial_cutoff` is an int")
-            assert self.rolling_step_size >= 1
-            if self.initial_cutoff < 0 and self.initial_cutoff > -self.num_rolling_windows * self.horizon:
+            if not isinstance(self.window_step_size, int):
+                raise ValueError("`window_step_size` must be an int if `initial_cutoff` is an int")
+            assert self.window_step_size >= 1
+            max_allowed_cutoff = -self.horizon - (self.num_windows - 1) * self.window_step_size
+            if self.initial_cutoff < 0 and self.initial_cutoff > max_allowed_cutoff:
                 raise ValueError(
-                    "Negative `initial_cutoff` must be less than or equal to `-num_rolling_windows * horizon`"
+                    "Negative `initial_cutoff` must be <= `-horizon - (num_windows - 1) * window_step_size`"
                 )
             self.cutoffs = [
-                self.initial_cutoff + window_idx * self.rolling_step_size
-                for window_idx in range(self.num_rolling_windows)
+                self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)
             ]
         else:
-            if not isinstance(self.rolling_step_size, str):
-                raise ValueError("`rolling_step_size` must be a string if `initial_cutoff` is a string")
+            if not isinstance(self.window_step_size, str):
+                raise ValueError("`window_step_size` must be a string if `initial_cutoff` is a string")
             self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
-            offset = pd.tseries.frequencies.to_offset(self.rolling_step_size)
-            assert offset.n >= 1, "If `rolling_step_size` is a string, it must correspond to a positive timedelta"
-            self.rolling_step_size = offset.freqstr
+            offset = pd.tseries.frequencies.to_offset(self.window_step_size)
+            assert offset.n >= 1, "If `window_step_size` is a string, it must correspond to a positive timedelta"
+            self.window_step_size = offset.freqstr
             self.cutoffs = []
-            for window_idx in range(self.num_rolling_windows):
+            for window_idx in range(self.num_windows):
                 cutoff = pd.Timestamp(self.initial_cutoff)
                 # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
                 # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
                 if window_idx != 0:
-                    cutoff += window_idx * pd.tseries.frequencies.to_offset(self.rolling_step_size)
+                    cutoff += window_idx * pd.tseries.frequencies.to_offset(self.window_step_size)
                 self.cutoffs.append(cutoff.isoformat())
 
         self.eval_metric = self.eval_metric.upper()
@@ -404,16 +391,16 @@ class Task:
         """Convert task definition to a dictionary."""
         return dataclasses.asdict(self)
 
-    def iter_windows(self) -> Iterable[RollingWindow]:
+    def iter_windows(self) -> Iterable[EvaluationWindow]:
         """Iterate over rolling windows in the task."""
-        for window_idx in range(self.num_rolling_windows):
+        for window_idx in range(self.num_windows):
             yield self.get_window(window_idx)
 
-    def get_window(self, window_idx: int) -> RollingWindow:
+    def get_window(self, window_idx: int) -> EvaluationWindow:
         if self._dataset is None:
             self._dataset = self._load_dataset()
 
-        return RollingWindow(
+        return EvaluationWindow(
             dataset=self._dataset,
             cutoff=self.cutoffs[window_idx],
             horizon=self.horizon,
@@ -724,9 +711,9 @@ class Task:
             Dictionary that summarizes the model performance on this task. Includes following keys:
 
             - `model_name` - name of the model
-            - `test_error` - value of the `task.eval_metric` achieved by the `predictions` on the test set (lower is better)
+            - `test_error` - value of the `task.eval_metric` averaged over all evaluation windows (lower is better)
             - all `Task` attributes obtained via `task.to_dict()`.
-            - values of `task.extra_metrics` achieved by the `predictions` on the test
+            - values of `task.extra_metrics` averaged all evaluation windows
             - `dataset_fingerprint` - fingerprint of the dataset generated by the HF `datasets` library
             - `trained_on_this_dataset` - whether the model was trained on the dataset used in the task
             - `fev_version` - version of the `fev` package used to obtain the summary
@@ -744,17 +731,18 @@ class Task:
             )
             for metric, value in metric_scores.items():
                 metrics_per_window[metric].append(value)
+        metrics_averaged = {metric: float(np.mean(values)) for metric, values in metrics_per_window.items()}
         summary.update(
             {
-                "test_error": float(metric_scores[self.eval_metric]),
+                "test_error": metrics_averaged[self.eval_metric],
                 "training_time_s": training_time_s,
                 "inference_time_s": inference_time_s,
                 "dataset_fingerprint": self._dataset_fingerprint,
                 "trained_on_this_dataset": trained_on_this_dataset,
                 "fev_version": FEV_VERSION,
+                **metrics_averaged,
             }
         )
-        summary.update({metric: float(np.mean(values)) for metric, values in metrics_per_window.items()})
         if extra_info is not None:
             summary.update(extra_info)
         return summary

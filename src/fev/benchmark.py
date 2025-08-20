@@ -18,7 +18,7 @@ class Benchmark:
     def __init__(self, tasks: list[Task]):
         for t in tasks:
             if not isinstance(t, Task):
-                raise ValueError(f"`tasks` must be a list of `Task` or `TaskGenerator` objects (got {type(t)})")
+                raise ValueError(f"`tasks` must be a list of `Task` objects (got {type(t)})")
         self.tasks = tasks
 
     @classmethod
@@ -31,7 +31,7 @@ class Benchmark:
             - dataset_path: autogluon/chronos_datasets
               dataset_config: m4_hourly
               horizon: 24
-              num_rolling_windows: 2
+              num_windows: 2
             - dataset_path: autogluon/chronos_datasets
               dataset_config: monash_cif_2016
               horizon: 12
