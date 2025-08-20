@@ -32,9 +32,10 @@ task = fev.Task(
     horizon=12,
 )
 ```
-Load data available as input to the forecasting model
+Iterate over the rolling evaluation windows:
 ```python
-past_data, future_data = task.get_input_data()
+for window in task.iter_windows():
+    past_data, future_data = window.get_input_data()
 ```
 - `past_data` contains the past data before the forecast horizon (item ID, past timestamps, target, all covariates).
 - `future_data` contains future data that is known at prediction time (item ID, future timestamps, and known covariates)
@@ -44,22 +45,27 @@ Make predictions
 def naive_forecast(y: list, horizon: int) -> list:
     return [y[-1] for _ in range(horizon)]
 
-predictions = []
-for ts in past_data:
-    predictions.append(
-        {"predictions": naive_forecast(y=ts[task.target_column], horizon=task.horizon)}
-    )
+predictions_per_window = []
+for window in task.iter_windows():
+    past_data, future_data = window.get_input_data()
+
+    predictions = []
+    for ts in past_data:
+        predictions.append(
+            {"predictions": naive_forecast(y=ts[task.target_column], horizon=task.horizon)}
+        )
+    predictions_per_window.append(predictions)
 ```
 Get an evaluation summary
 ```python
-task.evaluation_summary(predictions, model_name="naive")
+task.evaluation_summary(predictions_per_window, model_name="naive")
 # {'model_name': 'naive',
-#  'dataset_name': 'chronos_datasets_monash_kdd_cup_2018',
 #  'dataset_path': 'autogluon/chronos_datasets',
-#  'dataset_config': 'monash_kdd_cup_2018',
+#  'dataset_config': 'm4_hourly',
 #  'horizon': 12,
-#  'cutoff': -12,
-#  'lead_time': 1,
+#  'num_rolling_windows': 1,
+#  'initial_cutoff': -12,
+#  'rolling_step_size': 12,
 #  'min_context_length': 1,
 #  'max_context_length': None,
 #  'seasonality': 1,
@@ -72,13 +78,14 @@ task.evaluation_summary(predictions, model_name="naive")
 #  'generate_univariate_targets_from': None,
 #  'past_dynamic_columns': [],
 #  'excluded_columns': [],
-#  'test_error': 3.3784518866750513,
+#  'task_name': 'm4_hourly',
+#  'test_error': 3.3935745406334745,
 #  'training_time_s': None,
 #  'inference_time_s': None,
-#  'dataset_fingerprint': 'a22d13d4c1e8641c',
+#  'dataset_fingerprint': '19e36bb78b718d8d',
 #  'trained_on_this_dataset': False,
-#  'fev_version': '0.5.0',
-#  'MASE': 3.3784518866750513}
+#  'fev_version': '0.6.0',
+#  'MASE': 3.3935745406334745}
 ```
 The evaluation summary contains all information necessary to uniquely identify the forecasting task.
 

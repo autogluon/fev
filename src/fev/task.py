@@ -753,7 +753,7 @@ class Task:
                 "fev_version": FEV_VERSION,
             }
         )
-        summary.update({metric: np.mean(values) for metric, values in metrics_per_window.items()})
+        summary.update({metric: float(np.mean(values)) for metric, values in metrics_per_window.items()})
         if extra_info is not None:
             summary.update(extra_info)
         return summary
