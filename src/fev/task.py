@@ -30,7 +30,7 @@ class EvaluationWindow:
     A single evaluation window on which the forecast accuracy is measured.
     """
 
-    dataset: datasets.Dataset = dataclasses.field(repr=False)
+    full_dataset: datasets.Dataset = dataclasses.field(repr=False)
     cutoff: int | str
     horizon: int
     min_context_length: int | None
@@ -131,7 +131,7 @@ class EvaluationWindow:
         return filtered_dataset
 
     def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
-        dataset = self._filter_short_series(self.dataset, num_proc=num_proc)
+        dataset = self._filter_short_series(self.full_dataset, num_proc=num_proc)
         columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
         past_data = dataset.map(
             _select_past,
@@ -306,6 +306,12 @@ class Task:
         assert self.num_windows >= 1, "`num_windows` must satisfy >= 1"
         if self.window_step_size is None:
             self.window_step_size = self.horizon
+        if isinstance(self.window_step_size, int):
+            assert self.window_step_size >= 1, "`window_step_size` must satisfy >= 1"
+        else:
+            offset = pd.tseries.frequencies.to_offset(self.window_step_size)
+            assert offset.n >= 1, "If `window_step_size` is a string, it must correspond to a positive timedelta"
+            self.window_step_size = offset.freqstr
 
         if self.initial_cutoff is None:
             assert isinstance(self.window_step_size, int), (
@@ -313,7 +319,6 @@ class Task:
             )
             self.initial_cutoff = -self.horizon - (self.num_windows - 1) * self.window_step_size
 
-        self.cutoffs: list[int] | list[str]
         if isinstance(self.initial_cutoff, int):
             if not isinstance(self.window_step_size, int):
                 raise ValueError("`window_step_size` must be an int if `initial_cutoff` is an int")
@@ -323,24 +328,8 @@ class Task:
                 raise ValueError(
                     "Negative `initial_cutoff` must be <= `-horizon - (num_windows - 1) * window_step_size`"
                 )
-            self.cutoffs = [
-                self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)
-            ]
         else:
-            if not isinstance(self.window_step_size, str):
-                raise ValueError("`window_step_size` must be a string if `initial_cutoff` is a string")
             self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
-            offset = pd.tseries.frequencies.to_offset(self.window_step_size)
-            assert offset.n >= 1, "If `window_step_size` is a string, it must correspond to a positive timedelta"
-            self.window_step_size = offset.freqstr
-            self.cutoffs = []
-            for window_idx in range(self.num_windows):
-                cutoff = pd.Timestamp(self.initial_cutoff)
-                # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
-                # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
-                if window_idx != 0:
-                    cutoff += window_idx * pd.tseries.frequencies.to_offset(self.window_step_size)
-                self.cutoffs.append(cutoff.isoformat())
 
         self.eval_metric = self.eval_metric.upper()
         self.extra_metrics = [m.upper() for m in self.extra_metrics]
@@ -381,27 +370,65 @@ class Task:
             )
 
         # Attributes computed after the dataset is loaded
-        self._dataset: datasets.Dataset | None = None
+        self._full_dataset: datasets.Dataset | None = None
         self._freq: str | None = None
         self._dataset_fingerprint: str | None = None
         self._dynamic_columns: list[str] | None = None
         self._static_columns: list[str] | None = None
 
+    @property
+    def cutoffs(self) -> list[int] | list[str]:
+        """List of cutoffs for each evaluation window."""
+        if isinstance(self.initial_cutoff, int):
+            assert isinstance(self.window_step_size, int)
+            return [self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)]
+        else:
+            assert isinstance(self.initial_cutoff, str)
+            if isinstance(self.window_step_size, str):
+                offset = pd.tseries.frequencies.to_offset(self.window_step_size)
+            else:
+                assert isinstance(self.window_step_size, int)
+                offset = pd.tseries.frequencies.to_offset(self.freq) * self.window_step_size
+
+            cutoffs = []
+            for window_idx in range(self.num_windows):
+                cutoff = pd.Timestamp(self.initial_cutoff)
+                # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
+                # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
+                if window_idx != 0:
+                    cutoff += window_idx * offset
+                cutoffs.append(cutoff.isoformat())
+            return cutoffs
+
     def to_dict(self) -> dict:
         """Convert task definition to a dictionary."""
         return dataclasses.asdict(self)
 
-    def iter_windows(self) -> Iterable[EvaluationWindow]:
-        """Iterate over rolling windows in the task."""
+    def load_full_dataset(
+        self,
+        storage_options: dict | None = None,
+        trust_remote_code: bool | None = None,
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> datasets.Dataset:
+        """Load the full raw dataset. For model evaluation, use iter_windows() instead."""
+        if self._full_dataset is None:
+            self._full_dataset = self._load_dataset(
+                storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
+            )
+        return self._full_dataset
+
+    def iter_windows(self, **load_full_dataset_kwargs) -> Iterable[EvaluationWindow]:
+        """Iterate over the rolling evaluation windows in the task."""
         for window_idx in range(self.num_windows):
-            yield self.get_window(window_idx)
+            yield self.get_window(window_idx, **load_full_dataset_kwargs)
 
-    def get_window(self, window_idx: int) -> EvaluationWindow:
-        if self._dataset is None:
-            self._dataset = self._load_dataset()
-
+    def get_window(self, window_idx: int, **load_full_dataset_kwargs) -> EvaluationWindow:
+        """Get a single evaluation window in range(0, num_windows)."""
+        full_dataset = self.load_full_dataset(**load_full_dataset_kwargs)
+        if window_idx >= self.num_windows:
+            raise ValueError(f"Window index {window_idx} is out of range (num_windows={self.num_windows})")
         return EvaluationWindow(
-            dataset=self._dataset,
+            full_dataset=full_dataset,
             cutoff=self.cutoffs[window_idx],
             horizon=self.horizon,
             min_context_length=self.min_context_length,
@@ -464,25 +491,25 @@ class Task:
         for the list of possible values.
         """
         if self._freq is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
+            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
         return self._freq
 
     @property
     def dynamic_columns(self) -> list[str]:
         if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
+            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
         return self._dynamic_columns
 
     @property
     def known_dynamic_columns(self) -> list[str]:
         if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
+            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
         return sorted(set(self.dynamic_columns) - set(self.past_dynamic_columns))
 
     @property
     def static_columns(self) -> list[str]:
         if self._static_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
+            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
         return self._static_columns
 
     def _load_dataset(
@@ -491,7 +518,7 @@ class Task:
         trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
-        """Load the raw dataset and select the columns provided in the Task definition."""
+        """Load the raw dataset and apply initial preprocessing based on the Task definition."""
         if self.dataset_config is not None:
             # Load dataset from HF Hub
             path = self.dataset_path
@@ -685,7 +712,7 @@ class Task:
         Parameters
         ----------
         predictions_per_window : Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]]
-            Predictions generated by the model for each rolling window in the task.
+            Predictions generated by the model for each evaluation window in the task.
 
             For univariate tasks (if `task.target_column` is a string), predictions for each window must be formatted
             as a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.

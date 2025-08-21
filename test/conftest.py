@@ -7,15 +7,10 @@ from fev import Task
     params=[
         {
             "dataset_path": "autogluon/chronos_datasets",
-            "dataset_config": "monash_cif_2016",
-            "horizon": 12,
-            "seasonality": 12,
-        },
-        {
-            "dataset_path": "autogluon/chronos_datasets",
             "dataset_config": "monash_m3_quarterly",
             "horizon": 8,
             "seasonality": 4,
+            "num_windows": 2,
         },
         {
             "dataset_path": "autogluon/chronos_datasets",
