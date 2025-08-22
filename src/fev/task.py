@@ -443,36 +443,6 @@ class Task:
     @classmethod
     def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
         if data.kwargs is not None:
-            # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
-            if "multiple_target_columns" in data.kwargs:
-                if "generate_univariate_targets_from" in data.kwargs:
-                    raise ValueError(
-                        "Do not specify both 'generate_univariate_targets_from' and deprecated 'multiple_target_columns'"
-                    )
-                else:
-                    warnings.warn(
-                        "Field 'multiple_target_columns' is deprecated and will be removed in v1.0. "
-                        "Please use 'generate_univariate_targets_from' instead",
-                        category=FutureWarning,
-                        stacklevel=3,
-                    )
-                    data.kwargs["generate_univariate_targets_from"] = data.kwargs.pop("multiple_target_columns")
-            # Field 'min_ts_length' was deprecated in favor of 'min_context_length' in v0.5.
-            # Previously, series with fewer than `min_ts_length` observations were filtered.
-            # Currently, series with fewer than `min_context_length` observations before `cutoff` are filtered.
-            if "min_ts_length" in data.kwargs:
-                if "min_context_length" in data.kwargs:
-                    raise ValueError("Do not specify both 'min_context_length' and deprecated 'min_ts_length'")
-                else:
-                    warnings.warn(
-                        "Field 'min_ts_length' is deprecated and will be removed in v1.0. "
-                        "Please use 'min_context_length' instead",
-                        category=FutureWarning,
-                        stacklevel=3,
-                    )
-                    data.kwargs["min_context_length"] = max(
-                        data.kwargs.pop("min_ts_length") - data.kwargs.get("horizon", 1), 1
-                    )
             if "lead_time" in data.kwargs:
                 # TODO: `lead_time` will be replaced by `horizon_weight` in a future version
                 warnings.warn(
@@ -481,6 +451,17 @@ class Task:
                     stacklevel=3,
                 )
                 data.kwargs.pop("lead_time")
+            if "cutoff" in data.kwargs:
+                if "initial_cutoff" in data.kwargs:
+                    raise ValueError("Do not specify both 'initial_cutoff' and deprecated 'cutoff'")
+                else:
+                    warnings.warn(
+                        "Field 'cutoff' is deprecated and will be removed in a future release. "
+                        "Please use 'initial_cutoff' instead",
+                        category=FutureWarning,
+                        stacklevel=3,
+                    )
+                    data.kwargs["initial_cutoff"] = data.kwargs.pop("cutoff")
         return data
 
     @property
