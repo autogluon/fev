@@ -451,17 +451,30 @@ class Task:
                     stacklevel=3,
                 )
                 data.kwargs.pop("lead_time")
+            if "num_rolling_windows" in data.kwargs:
+                warnings.warn(
+                    "Field 'num_rolling_windows' is deprecated and will be removed in a future release. "
+                    "Please use 'num_windows' instead",
+                    category=FutureWarning,
+                    stacklevel=3,
+                )
+                data.kwargs.setdefault("num_windows", data.kwargs.pop("num_rolling_windows"))
+            if "rolling_step_size" in data.kwargs:
+                warnings.warn(
+                    "Field 'rolling_step_size' is deprecated and will be removed in a future release. "
+                    "Please use 'window_step_size' instead",
+                    category=FutureWarning,
+                    stacklevel=3,
+                )
+                data.kwargs.setdefault("window_step_size", data.kwargs.pop("rolling_step_size"))
             if "cutoff" in data.kwargs:
-                if "initial_cutoff" in data.kwargs:
-                    raise ValueError("Do not specify both 'initial_cutoff' and deprecated 'cutoff'")
-                else:
-                    warnings.warn(
-                        "Field 'cutoff' is deprecated and will be removed in a future release. "
-                        "Please use 'initial_cutoff' instead",
-                        category=FutureWarning,
-                        stacklevel=3,
-                    )
-                    data.kwargs["initial_cutoff"] = data.kwargs.pop("cutoff")
+                warnings.warn(
+                    "Field 'cutoff' is deprecated and will be removed in a future release. "
+                    "Please use 'initial_cutoff' instead",
+                    category=FutureWarning,
+                    stacklevel=3,
+                )
+                data.kwargs.setdefault("initial_cutoff", data.kwargs.pop("cutoff"))
         return data
 
     @property

@@ -56,6 +56,6 @@ def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_me
     for _, pred in ag_predictions.groupby("item_id", as_index=False):
         fev_predictions.append(pred.to_dict("list"))
 
-    fev_score = task.compute_metrics(fev_predictions)[eval_metric]
+    fev_score = task.evaluation_summary([fev_predictions], model_name="")[eval_metric]
 
     assert np.isclose(ag_score, fev_score)
