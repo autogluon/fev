@@ -113,7 +113,7 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
 def pivot_table(
     summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
-    task_columns: str | list[str] = "dataset_name",
+    task_columns: str | list[str] = "task_name",
     aggfunc: str = "mean",
     baseline_model: str | None = None,
 ) -> pd.DataFrame:
