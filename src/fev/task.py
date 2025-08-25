@@ -202,10 +202,8 @@ class Task:
         observations before a cutoff or fewer than `horizon` observations after a cutoff) will be filtered out during
         data loading.
     window_step_size : int | str | None
-        Step size between consecutive evaluation windows.
-        If `initial_cutoff` is an integer, `window_step_size` must be a positive integer.
-        If `initial_cutoff` is a timestamp-like string, `window_step_size` must be pandas-compatible offset string
-        (e.g., `D` for daily, `15min` for quarter-hourly).
+        Step size between consecutive evaluation windows. Must be an integer if `initial_cutoff` is an integer.
+        Can be an integer or pandas offset string (e.g., 'D', '15min') if `initial_cutoff` is a timestamp.
         Defaults to `horizon`.
     min_context_length : int, default 1
         Time series with fewer than `min_context_length` observations before a cutoff will be ignored during evaluation.
@@ -216,7 +214,7 @@ class Task:
         computing metrics like Mean Absolute Scaled Error (MASE).
     eval_metric : str, default 'MASE'
         Evaluation metric used for ultimate evaluation on the test set.
-    extra_metrics : list[str], default None
+    extra_metrics : list[str], default []
         Additional metrics to be included in the results.
     quantile_levels : list[float] | None, default None
         Quantiles that must be predicted. List of floats between 0 and 1 (for example, [0.1, 0.5, 0.9]).
@@ -229,10 +227,7 @@ class Task:
         If a list of strings is provided, a multivariate forecasting task is created.
     generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
         If provided, a separate univariate time series will be created from each of the
-        `generate_univariate_targets_from` columns.
-
-        This argument can only set for univariate tasks where `target_column` is a string. If `target_column` is set to
-        a list (in a multivariate task) and `generate_univariate_targets_from` is provided, an error will be raised.
+        `generate_univariate_targets_from` columns. Only valid for univariate tasks.
 
         If set to `"__ALL__"`, then a separate univariate instance will be created from each column of type `Sequence`.
 
@@ -245,7 +240,7 @@ class Task:
     excluded_columns : list[str] | Literal["__ALL__"], default []
         Names of columns that are removed from the dataset during preprocessing.
 
-        If set to "__ALL__", all columns except those specified in `id_column`, `timestamps_column`, `target_column`,
+        If set to "__ALL__", all columns except those specified in `id_column`, `timestamp_column`, `target_column`,
         `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
 
         If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
