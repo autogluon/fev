@@ -39,7 +39,9 @@ class EvaluationWindow:
     id_column: str
     timestamp_column: str
     target_columns_list: list[str]
+    known_dynamic_columns: list[str]
     past_dynamic_columns: list[str]
+    static_columns: list[str]
 
     def __post_init__(self):
         self._dataset_dict: datasets.DatasetDict | None = None
@@ -431,7 +433,9 @@ class Task:
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
             target_columns_list=self.target_columns_list,
+            known_dynamic_columns=self.known_dynamic_columns,
             past_dynamic_columns=self.past_dynamic_columns,
+            static_columns=self.static_columns,
         )
 
     @pydantic.model_validator(mode="before")

@@ -396,6 +396,7 @@ def convert_input_data(
         Format to which the dataset must be converted.
     as_univariate
         If True, the separate instances will be created from each target column before passing the data to the adapter.
+        Covariate columns will not be affected, only targets will be modified.
 
         Setting as_univariate=True makes it easy to evaluate a univariate model on a multivariate task.
 
@@ -447,9 +448,5 @@ def convert_input_data(
         target_columns_list=target_columns_list,
         id_column=window.id_column,
         timestamp_column=window.timestamp_column,
-        static_columns=[
-            col
-            for col, feat in past.features.items()
-            if not isinstance(feat, datasets.Sequence) and col != window.id_column
-        ],
+        static_columns=window.static_columns,
     )
