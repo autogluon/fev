@@ -42,18 +42,16 @@ for window in task.iter_windows():
 
 Make predictions
 ```python
-def naive_forecast(y: list, horizon: int) -> list:
-    return [y[-1] for _ in range(horizon)]
+def naive_forecast(y: list, horizon: int) -> dict[str, list]:
+    # Make predictions for a single time series
+    return {"predictions": [y[-1] for _ in range(horizon)]}
 
 predictions_per_window = []
 for window in task.iter_windows():
     past_data, future_data = window.get_input_data()
-
-    predictions = []
-    for ts in past_data:
-        predictions.append(
-            {"predictions": naive_forecast(y=ts[task.target_column], horizon=task.horizon)}
-        )
+    predictions = [
+        naive_forecast(ts[task.target_column], task.horizon) for ts in past_data
+    ]
     predictions_per_window.append(predictions)
 ```
 Get an evaluation summary
