@@ -3,7 +3,7 @@ from pathlib import Path
 import requests
 import yaml
 
-from .task import Task, TaskGenerator
+from .task import Task
 
 
 class Benchmark:
@@ -13,19 +13,13 @@ class Benchmark:
     ----------
     tasks : list[Task]
         Collection of tasks in the benchmark.
-    task_generators : list[TaskGenerator]
-        Collection of task generators used to create individual tasks in the benchmark.
     """
 
-    def __init__(self, tasks: list[Task | TaskGenerator]):
-        self.task_generators = []
+    def __init__(self, tasks: list[Task]):
         for t in tasks:
-            if isinstance(t, TaskGenerator):
-                self.task_generators.append(t)
-            elif isinstance(t, Task):
-                self.task_generators.append(TaskGenerator(**t.to_dict()))
-            else:
-                raise ValueError(f"`tasks` must be a list of `Task` or `TaskGenerator` objects (got {type(t)})")
+            if not isinstance(t, Task):
+                raise ValueError(f"`tasks` must be a list of `Task` objects (got {type(t)})")
+        self.tasks = tasks
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "Benchmark":
@@ -37,21 +31,10 @@ class Benchmark:
             - dataset_path: autogluon/chronos_datasets
               dataset_config: m4_hourly
               horizon: 24
+              num_windows: 2
             - dataset_path: autogluon/chronos_datasets
               dataset_config: monash_cif_2016
               horizon: 12
-
-        It is possible to create multiple variants of each task using the `variants` key. For example, the following
-        YAML config will generate 3 tasks corresponding to a 3-window backtest:
-
-            tasks:
-            - dataset_path: autogluon/chronos_datasets
-              dataset_config: m4_hourly
-              horizon: 24
-              variants:
-                - cutoff: -64
-                - cutoff: -48
-                - cutoff: -24
 
         Parameters
         ----------
@@ -75,14 +58,6 @@ class Benchmark:
     def from_list(cls, task_configs: list[dict]) -> "Benchmark":
         """Load benchmark definition from a list of dictionaries.
 
-        Each dictionary must follow the schema compatible with a `fev.task.TaskGenerator`.
+        Each dictionary must follow the schema compatible with a `fev.task.Task`.
         """
-        return cls(tasks=[TaskGenerator(**conf) for conf in task_configs])
-
-    @property
-    def tasks(self) -> list[Task]:
-        """List of tasks in the benchmark."""
-        tasks = []
-        for task_gen in self.task_generators:
-            tasks.extend(task_gen.generate_tasks())
-        return tasks
+        return cls(tasks=[Task(**conf) for conf in task_configs])

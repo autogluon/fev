@@ -62,4 +62,4 @@ exclude = [
 ]
 
 [tool.hatch.version]
-path = "src/fev/__about__.py"
+path = "src/fev/__init__.py"

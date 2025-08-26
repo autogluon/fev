@@ -21,8 +21,9 @@ def model_setup(tmp_path_factory, request):
         seasonality=3,
         quantile_levels=[0.1, 0.5, 0.9],
     )
-    train, future = task.get_input_data()
-    test = task.get_test_data()
+    window = task.get_window(0)
+    train, future = window.get_input_data()
+    test = window.get_ground_truth()
 
     train_df = _to_pandas(train).rename(columns={"id": "item_id"})
     test_df = _to_pandas(test).rename(columns={"id": "item_id"})
@@ -55,6 +56,6 @@ def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_me
     for _, pred in ag_predictions.groupby("item_id", as_index=False):
         fev_predictions.append(pred.to_dict("list"))
 
-    fev_score = task.compute_metrics(fev_predictions)[eval_metric]
+    fev_score = task.evaluation_summary([fev_predictions], model_name="")[eval_metric]
 
     assert np.isclose(ag_score, fev_score)
