@@ -194,9 +194,10 @@ class Task:
 
         Can be specified as:
         - **Integer**: Index position using pandas-like indexing. `y[:initial_cutoff]` becomes the past/training data,
-        and `y[initial_cutoff:initial_cutoff+horizon]` becomes the first forecast horizon to predict.
+            and `y[initial_cutoff:initial_cutoff+horizon]` becomes the first forecast horizon to predict.
+            Negative values are interpreted as steps from the end of the series.
         - **Timestamp string**: Date/datetime (e.g., `"2024-02-01"`). Data up to and including this timestamp becomes
-        past data, and the next `horizon` observations become the first forecast horizon.
+            past data, and the next `horizon` observations become the first forecast horizon.
 
         If None, defaults to `-horizon - (num_windows - 1) * window_step_size`.
 
@@ -407,21 +408,97 @@ class Task:
         trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
-        """Load the full raw dataset. For model evaluation, use iter_windows() instead."""
+        """Load the full raw dataset with preprocessing applied.
+
+        This method loads and preprocesses the dataset according to the task configuration,
+        including filtering columns, generating univariate targets, and validating the data.
+
+        For model evaluation, use iter_windows() instead to get properly split train/test data.
+
+        Parameters
+        ----------
+        storage_options : dict, optional
+            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing and splitting.
+
+        Returns
+        -------
+        datasets.Dataset
+            The preprocessed dataset with all time series.
+        """
         if self._full_dataset is None:
             self._full_dataset = self._load_dataset(
                 storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
             )
         return self._full_dataset
 
-    def iter_windows(self, **load_full_dataset_kwargs) -> Iterable[EvaluationWindow]:
-        """Iterate over the rolling evaluation windows in the task."""
-        for window_idx in range(self.num_windows):
-            yield self.get_window(window_idx, **load_full_dataset_kwargs)
+    def iter_windows(
+        self,
+        storage_options: dict | None = None,
+        trust_remote_code: bool | None = None,
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> Iterable[EvaluationWindow]:
+        """Iterate over the rolling evaluation windows in the task.
 
-    def get_window(self, window_idx: int, **load_full_dataset_kwargs) -> EvaluationWindow:
-        """Get a single evaluation window in range(0, num_windows)."""
-        full_dataset = self.load_full_dataset(**load_full_dataset_kwargs)
+        Each window contains train/test splits at different cutoff points for time series
+        cross-validation. Use this method for model evaluation and benchmarking.
+
+        Parameters
+        ----------
+        storage_options : dict, optional
+            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing and splitting.
+
+        Yields
+        ------
+        EvaluationWindow
+            A single evaluation window at a specific cutoff containing the data needed to make and evaluate forecasts.
+
+        Examples
+        --------
+        >>> for window in task.iter_windows():
+        ...     past_data, future_data = window.get_input_data()
+        ...     # Make predictions using past_data and future_data
+        """
+        for window_idx in range(self.num_windows):
+            yield self.get_window(
+                window_idx, storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
+            )
+
+    def get_window(
+        self,
+        window_idx: int,
+        storage_options: dict | None = None,
+        trust_remote_code: bool | None = None,
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> EvaluationWindow:
+        """Get a single evaluation window by index.
+
+        Parameters
+        ----------
+        window_idx : int
+            Index of the evaluation window in [0, 1, ..., num_windows - 1].
+        storage_options : dict, optional
+            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing and splitting.
+
+        Returns
+        -------
+        EvaluationWindow
+            A single evaluation window at a specific cutoff containing the data needed to make and evaluate forecasts.
+        """
+        full_dataset = self.load_full_dataset(
+            storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
+        )
         if window_idx >= self.num_windows:
             raise ValueError(f"Window index {window_idx} is out of range (num_windows={self.num_windows})")
         return EvaluationWindow(
