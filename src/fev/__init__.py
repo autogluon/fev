@@ -1,4 +1,4 @@
-__version__ = "1.0.0"
+__version__ = "0.6.0rc3"
 from .adapters import convert_input_data
 from .analysis import leaderboard, pivot_table
 from .benchmark import Benchmark
