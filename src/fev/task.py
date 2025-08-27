@@ -46,16 +46,44 @@ class EvaluationWindow:
     def __post_init__(self):
         self._dataset_dict: datasets.DatasetDict | None = None
 
-    def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
-        """Get data that is available as input to the model at prediction time."""
+    def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
+        """Get data available to the model at prediction time for this evaluation window.
+
+        To convert the input data to a different format, use `fev.convert_input_data(window, adapter="...").
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+
+        Returns
+        -------
+        past_data : datasets.Dataset
+            Historical observations up to the cutoff point.
+            Contains: id, timestamps, target values, static covariates, and all dynamic covariates.
+
+            Columns: `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
+            `past_dynamic_columns`, `known_dynamic_columns`.
+        future_data : datasets.Dataset
+            Known future information for the forecast horizon.
+            Contains: id, future timestamps, static covariates, and known future covariates only.
+
+            Columns: `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
+        """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
-    def get_ground_truth(self) -> datasets.Dataset:
-        """Get ground truth future test data. This data should never be provided to the model!"""
+    def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
+        """Get ground truth future test data. This data should never be provided to the model!
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+        """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TEST]
 
     def compute_metrics(
@@ -133,7 +161,14 @@ class EvaluationWindow:
         return filtered_dataset
 
     def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
-        dataset = self._filter_short_series(self.full_dataset, num_proc=num_proc)
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
+        )
+        dataset = self._filter_short_series(dataset, num_proc=num_proc)
         columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
         past_data = dataset.map(
             _select_past,
@@ -265,6 +300,15 @@ class Task:
     Dataset consisting of multiple parquet files (local or S3)
 
     >>> Task(dataset_path="s3://my-bucket/m4_hourly/*.parquet", ...)
+
+    Create a `Task` consisting of multiple rolling evaluation windows
+
+    >>> task = Task(..., num_windows=3)
+    >>> predictions_per_window = []
+    >>> for window in task.iter_windows():
+    >>>     past_data, future_data = window.get_input_data()
+    >>>     predictions_per_window.append(model.predict(past_data, future_data))
+    >>> task.evaluation_summary(predictions_per_window, model_name="my_model")
     """
 
     dataset_path: str
@@ -417,7 +461,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Returns
         -------
@@ -448,7 +492,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Yields
         ------
@@ -484,7 +528,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Returns
         -------
@@ -663,9 +707,6 @@ class Task:
         missing_static = set(self.static_columns) - set(available_static_columns)
         if len(missing_static) > 0:
             raise ValueError(f"Static columns not found in dataset: {sorted(missing_static)}")
-        ds = ds.select_columns(
-            [self.id_column, self.timestamp_column] + self.target_columns + self.dynamic_columns + self.static_columns
-        )
         self._dataset_fingerprint = utils.generate_fingerprint(ds)
         return ds
 
@@ -674,7 +715,7 @@ class Task:
         return {
             "id_column": self.id_column,
             "timestamp_column": self.timestamp_column,
-            "target_column": self.target,
+            "target": self.target,
             "static_columns": self.static_columns,
             "dynamic_columns": self.dynamic_columns,
             "known_dynamic_columns": self.known_dynamic_columns,
@@ -727,7 +768,7 @@ class Task:
                         f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
                     )
             else:
-                predictions = datasets.DatasetDict({self.target: _to_dataset(predictions)})
+                predictions = datasets.DatasetDict({self.target_columns[0]: _to_dataset(predictions)})
 
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
@@ -796,6 +837,10 @@ class Task:
         summary.update(self.to_dict())
         metrics = sorted(set([self.eval_metric] + self.extra_metrics))
         metrics_per_window = {metric: [] for metric in metrics}
+        if not isinstance(predictions_per_window, Iterable):
+            raise ValueError(
+                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
+            )
         for predictions, window in zip(predictions_per_window, self.iter_windows()):
             metric_scores = window.compute_metrics(
                 self.clean_and_validate_predictions(predictions),
