@@ -20,10 +20,11 @@ TASK_DEF_DTYPES = {
     "quantile_levels": pd.StringDtype(),
     "id_column": pd.StringDtype(),
     "timestamp_column": pd.StringDtype(),
-    "target_column": pd.StringDtype(),
+    "target": pd.StringDtype(),
     "generate_univariate_targets_from": pd.StringDtype(),
+    "known_dynamic_columns": pd.StringDtype(),
     "past_dynamic_columns": pd.StringDtype(),
-    "excluded_columns": pd.StringDtype(),
+    "static_columns": pd.StringDtype(),
 }
 
 RESULTS_DTYPES = {
@@ -63,6 +64,7 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
         )
+    # TODO: Improve handling of deprecated columns
     # Handle deprecated columns
     if "multiple_target_columns" in df.columns:
         if "generate_univariate_targets_from" in df.columns:
@@ -91,6 +93,14 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
             )
             df = df.rename(columns={"min_ts_length": "min_context_length"})
             df["min_context_length"] = df["min_context_length"].astype(int) - df["horizon"].astype(int)
+    if "dataset_name" in df.columns:
+        if "task_name" in df.columns:
+            raise ValueError(
+                "Provided DataFrame contains both 'task_name' and the deprecated "
+                "'dataset_name' columns. Please only keep the 'dataset_name'.\n"
+                f"{df.head(3)}",
+            )
+        df = df.rename(columns={"dataset_name": "task_name"})
     return df
 
 
@@ -103,10 +113,10 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
         summaries = [summaries]
     summaries_df = pd.concat([_summary_to_df(summary) for summary in summaries])
 
-    for col in RESULTS_DTYPES:
-        if col not in summaries_df:
-            warnings.warn(f"Column '{col}' is missing from summaries, filling with None", stacklevel=3)
-            summaries_df[col] = None
+    missing_columns = sorted([col for col in RESULTS_DTYPES if col not in summaries_df])
+    warnings.warn(f"Columns {missing_columns} are missing from summaries, filling them with None", stacklevel=3)
+    for col in missing_columns:
+        summaries_df[col] = None
     return summaries_df.astype(RESULTS_DTYPES)
 
 

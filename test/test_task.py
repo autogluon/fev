@@ -131,7 +131,7 @@ def test_when_multivariate_task_is_created_then_data_contains_correct_columns(ta
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets_extra",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target_column,
     )
     all_column_names = task.load_full_dataset(trust_remote_code=True).column_names
     past_data, future_data = task.get_window(0).get_input_data()
@@ -146,7 +146,7 @@ def test_when_predictions_provided_as_dataset_dict_for_univariate_task_then_pred
         for window in task.iter_windows():
             past_data, future_data = window.get_input_data()
             predictions = []
-            target = window.target_columns_list[0]
+            target = window.target_columns[0]
             for ts in past_data:
                 predictions.append({"predictions": [ts[target][-1] for _ in range(task.horizon)]})
             if return_dict:
@@ -176,7 +176,7 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target_co
         for window in task.iter_windows():
             past_data, future_data = window.get_input_data()
             predictions = {}
-            for col in task.target_columns_list:
+            for col in task.target_columns:
                 predictions_for_column = []
                 for ts in past_data:
                     predictions_for_column.append({"predictions": [ts[col][-1] for _ in range(task.horizon)]})
@@ -189,7 +189,7 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target_co
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets_extra",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target_column,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
         horizon=4,
@@ -233,7 +233,7 @@ def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_pred
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets_extra",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target_column,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
         horizon=4,
@@ -242,9 +242,7 @@ def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_pred
     predictions_per_window = []
     for predictions in naive_forecast_univariate(task):
         predictions_per_window.append(
-            fev.utils.combine_univariate_predictions_to_multivariate(
-                predictions, target_columns_list=task.target_columns_list
-            )
+            fev.utils.combine_univariate_predictions_to_multivariate(predictions, target_columns=task.target_columns)
         )
     summary = task.evaluation_summary(predictions_per_window, model_name="naive")
     for metric in ["MASE", "WAPE"]:
@@ -291,11 +289,11 @@ def test_when_excluded_columns_is_all_then_all_remaining_columns_are_excluded(ta
     task = fev.Task(
         dataset_path="autogluon/chronos_datasets_extra",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target_column,
         past_dynamic_columns=["LUFL"],
         excluded_columns=fev.task.ALL_AVAILABLE_COLUMNS,
     )
     for window in task.iter_windows():
         past, future = window.get_input_data()
-        assert set(past.column_names) == set(["id", "timestamp", "LUFL"] + task.target_columns_list)
+        assert set(past.column_names) == set(["id", "timestamp", "LUFL"] + task.target_columns)
         assert set(future.column_names) == set(["id", "timestamp"])
