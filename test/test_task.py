@@ -18,7 +18,7 @@ def test_when_get_input_data_called_then_datasets_contain_correct_columns(task_d
     for window in task_def.iter_windows():
         past_data, future_data = window.get_input_data()
         expected_train_columns = (
-            [task_def.id_column, task_def.timestamp_column, task_def.target_column]
+            [task_def.id_column, task_def.timestamp_column, task_def.target]
             + task_def.static_columns
             + task_def.dynamic_columns
         )
@@ -126,17 +126,16 @@ def test_when_using_rolling_evaluation_then_tasks_are_generated_with_correct_off
     assert task.cutoffs == expected_cutoffs
 
 
-@pytest.mark.parametrize("target_column", [["OT"], ["OT", "LULL", "HULL"]])
-def test_when_multivariate_task_is_created_then_data_contains_correct_columns(target_column):
+@pytest.mark.parametrize("target", [["OT"], ["OT", "LULL", "HULL"]])
+def test_when_multivariate_task_is_created_then_data_contains_correct_columns(target):
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets_extra",
+        dataset_path="autogluon/fev_datasets",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target,
     )
-    all_column_names = task.load_full_dataset(trust_remote_code=True).column_names
     past_data, future_data = task.get_window(0).get_input_data()
-    assert set(past_data.column_names) == set(all_column_names)
-    assert set(future_data.column_names) == set(all_column_names) - set(target_column)
+    assert set(past_data.column_names) == set([task.id_column, task.timestamp_column] + target)
+    assert set(future_data.column_names) == set([task.id_column, task.timestamp_column])
 
 
 @pytest.mark.parametrize("return_dict", [True, False])
@@ -146,7 +145,7 @@ def test_when_predictions_provided_as_dataset_dict_for_univariate_task_then_pred
         for window in task.iter_windows():
             past_data, future_data = window.get_input_data()
             predictions = []
-            target = window.target_columns_list[0]
+            target = window.target_columns[0]
             for ts in past_data:
                 predictions.append({"predictions": [ts[target][-1] for _ in range(task.horizon)]})
             if return_dict:
@@ -168,44 +167,58 @@ def test_when_predictions_provided_as_dataset_dict_for_univariate_task_then_pred
         assert np.isfinite(summary[metric])
 
 
-@pytest.mark.parametrize("target_column", [["OT"], ["OT", "LULL", "HULL"]])
-@pytest.mark.parametrize("return_dict", [True, False])
-def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target_column, return_dict):
-    def naive_forecast_multivariate(task: fev.Task) -> list[datasets.DatasetDict | dict]:
-        predictions_per_window = []
-        for window in task.iter_windows():
-            past_data, future_data = window.get_input_data()
-            predictions = {}
-            for col in task.target_columns_list:
-                predictions_for_column = []
-                for ts in past_data:
-                    predictions_for_column.append({"predictions": [ts[col][-1] for _ in range(task.horizon)]})
-                predictions[col] = predictions_for_column
-            if not return_dict:
-                predictions = datasets.DatasetDict({k: datasets.Dataset.from_list(v) for k, v in predictions.items()})
-            predictions_per_window.append(predictions)
-        return predictions_per_window
+def naive_forecast_multivariate(task: fev.Task, return_dict: bool) -> list[datasets.DatasetDict | dict]:
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, future_data = window.get_input_data()
+        predictions = {}
+        for col in task.target:
+            predictions_for_column = []
+            for ts in past_data:
+                predictions_for_column.append({"predictions": [ts[col][-1] for _ in range(task.horizon)]})
+            predictions[col] = predictions_for_column
+        if not return_dict:
+            predictions = datasets.DatasetDict({k: datasets.Dataset.from_list(v) for k, v in predictions.items()})
+        predictions_per_window.append(predictions)
+    return predictions_per_window
 
+
+@pytest.mark.parametrize("target", [["OT"], ["OT", "LULL", "HULL"]])
+@pytest.mark.parametrize("return_dict", [True, False])
+def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, return_dict):
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets_extra",
+        dataset_path="autogluon/fev_datasets",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
         horizon=4,
     )
 
-    predictions = naive_forecast_multivariate(task)
+    predictions = naive_forecast_multivariate(task, return_dict=return_dict)
     summary = task.evaluation_summary(predictions, model_name="naive")
     for metric in ["MASE", "WAPE"]:
         assert np.isfinite(summary[metric])
 
 
-@pytest.mark.parametrize("target_column", [["OT"], ["OT", "LULL", "HULL"]])
+def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
+    task = fev.Task(
+        dataset_path="autogluon/fev_datasets",
+        dataset_config="ETTh",
+        target=["OT", "LULL"],
+        horizon=4,
+    )
+    predictions = naive_forecast_multivariate(task, return_dict=False)
+    predictions[0].pop("LULL")
+    with pytest.raises(ValueError, match="Missing predictions for columns"):
+        task.evaluation_summary(predictions, model_name="naive")
+
+
+@pytest.mark.parametrize("target", [["OT"], ["OT", "LULL", "HULL"]])
 @pytest.mark.parametrize("return_type", ["dict", "list", "DatasetDict", "Dataset"])
 @pytest.mark.parametrize("univariate_target_column", ["target", "CUSTOM_TARGET"])
 def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_predictions_can_be_scores(
-    target_column, return_type, univariate_target_column
+    target, return_type, univariate_target_column
 ):
     def naive_forecast_univariate(task: fev.Task):
         predictions_per_window = []
@@ -231,9 +244,9 @@ def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_pred
         return predictions_per_window
 
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets_extra",
+        dataset_path="autogluon/fev_datasets",
         dataset_config="ETTh",
-        target_column=target_column,
+        target=target,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
         horizon=4,
@@ -242,9 +255,7 @@ def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_pred
     predictions_per_window = []
     for predictions in naive_forecast_univariate(task):
         predictions_per_window.append(
-            fev.utils.combine_univariate_predictions_to_multivariate(
-                predictions, target_columns_list=task.target_columns_list
-            )
+            fev.utils.combine_univariate_predictions_to_multivariate(predictions, target_columns=task.target_columns)
         )
     summary = task.evaluation_summary(predictions_per_window, model_name="naive")
     for metric in ["MASE", "WAPE"]:
@@ -286,16 +297,23 @@ def test_when_all_series_have_too_few_observations_then_exception_is_raised(
         task.get_window(0).get_input_data()
 
 
-@pytest.mark.parametrize("target_column", ["OT", ["OT", "HULL"]])
-def test_when_excluded_columns_is_all_then_all_remaining_columns_are_excluded(target_column):
+@pytest.mark.parametrize(
+    "target, known_cols, past_cols",
+    [
+        ("OT", [], []),
+        ("OT", ["LULL"], ["HULL", "HUFL"]),
+        (["OT", "LUFL"], ["LULL"], ["HULL", "HUFL"]),
+    ],
+)
+def test_when_covariate_columns_are_provided_then_only_correct_columns_are_loaded(target, known_cols, past_cols):
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets_extra",
+        dataset_path="autogluon/fev_datasets",
         dataset_config="ETTh",
-        target_column=target_column,
-        past_dynamic_columns=["LUFL"],
-        excluded_columns=fev.task.ALL_AVAILABLE_COLUMNS,
+        target=target,
+        past_dynamic_columns=past_cols,
+        known_dynamic_columns=known_cols,
     )
     for window in task.iter_windows():
         past, future = window.get_input_data()
-        assert set(past.column_names) == set(["id", "timestamp", "LUFL"] + task.target_columns_list)
-        assert set(future.column_names) == set(["id", "timestamp"])
+        assert set(past.column_names) == set(["id", "timestamp"] + task.target_columns + past_cols + known_cols)
+        assert set(future.column_names) == set(["id", "timestamp"] + known_cols)

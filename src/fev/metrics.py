@@ -20,8 +20,8 @@ class Metric:
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ) -> float:
         raise NotImplementedError
@@ -36,8 +36,8 @@ class MAE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -54,8 +54,8 @@ class WAPE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -72,8 +72,8 @@ class MASE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -94,8 +94,8 @@ class RMSE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -112,8 +112,8 @@ class RMSSE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -133,8 +133,8 @@ class MSE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -151,8 +151,8 @@ class RMSLE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -169,8 +169,8 @@ class MAPE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -188,8 +188,8 @@ class SMAPE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -206,8 +206,8 @@ class MQL(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         if quantile_levels is None or len(quantile_levels) == 0:
@@ -230,8 +230,8 @@ class SQL(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         ql = _quantile_loss(
@@ -256,8 +256,8 @@ class WQL(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         ql = _quantile_loss(

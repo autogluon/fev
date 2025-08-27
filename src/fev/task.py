@@ -38,7 +38,7 @@ class EvaluationWindow:
     # Dataset info
     id_column: str
     timestamp_column: str
-    target_columns_list: list[str]
+    target_columns: list[str]
     known_dynamic_columns: list[str]
     past_dynamic_columns: list[str]
     static_columns: list[str]
@@ -46,16 +46,44 @@ class EvaluationWindow:
     def __post_init__(self):
         self._dataset_dict: datasets.DatasetDict | None = None
 
-    def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
-        """Get data that is available as input to the model at prediction time."""
+    def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
+        """Get data available to the model at prediction time for this evaluation window.
+
+        To convert the input data to a different format, use `fev.convert_input_data(window, adapter="...").
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+
+        Returns
+        -------
+        past_data : datasets.Dataset
+            Historical observations up to the cutoff point.
+            Contains: id, timestamps, target values, static covariates, and all dynamic covariates.
+
+            Columns: `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
+            `past_dynamic_columns`, `known_dynamic_columns`.
+        future_data : datasets.Dataset
+            Known future information for the forecast horizon.
+            Contains: id, future timestamps, static covariates, and known future covariates only.
+
+            Columns: `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
+        """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
-    def get_ground_truth(self) -> datasets.Dataset:
-        """Get ground truth future test data. This data should never be provided to the model!"""
+    def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
+        """Get ground truth future test data. This data should never be provided to the model!
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+        """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TEST]
 
     def compute_metrics(
@@ -63,7 +91,7 @@ class EvaluationWindow:
         predictions: datasets.DatasetDict,
         metrics: list[str],
         seasonality: int,
-        quantile_levels: list[float] | None,
+        quantile_levels: list[float],
     ) -> dict[str, float]:
         test_data = self.get_ground_truth().with_format("numpy")
         past_data = self.get_input_data()[0].with_format("numpy")
@@ -81,7 +109,7 @@ class EvaluationWindow:
             for eval_metric in metrics:
                 metric = AVAILABLE_METRICS[eval_metric]()
                 scores = []
-                for col in self.target_columns_list:
+                for col in self.target_columns:
                     scores.append(
                         metric.compute(
                             test_data=test_data,
@@ -133,7 +161,14 @@ class EvaluationWindow:
         return filtered_dataset
 
     def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
-        dataset = self._filter_short_series(self.full_dataset, num_proc=num_proc)
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
+        )
+        dataset = self._filter_short_series(dataset, num_proc=num_proc)
         columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
         past_data = dataset.map(
             _select_past,
@@ -158,8 +193,8 @@ class EvaluationWindow:
             num_proc=min(num_proc, len(dataset)),
             desc="Selecting future data",
         )
-        future_known = future_data.remove_columns(self.target_columns_list + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns_list)
+        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
+        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
 
@@ -219,13 +254,13 @@ class Task:
         Evaluation metric used for ultimate evaluation on the test set.
     extra_metrics : list[str], default []
         Additional metrics to be included in the results.
-    quantile_levels : list[float] | None, default None
+    quantile_levels : list[float], default []
         Quantiles that must be predicted. List of floats between 0 and 1 (for example, [0.1, 0.5, 0.9]).
     id_column : str, default 'id'
         Name of the column with the unique identifier of each time series.
     timestamp_column : str, default 'timestamp'
         Name of the column with the timestamps of the observations.
-    target_column : str or list[str], default 'target'
+    target : str or list[str], default 'target'
         Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
         If a list of strings is provided, a multivariate forecasting task is created.
     generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
@@ -238,15 +273,14 @@ class Task:
         `{"id": "A", "timestamp": [...], "X": [...], "Y": [...]}` will be split into two univariate time series
         `{"id": "A_X", "timestamp": [...], "target": [...]}` and `{"id": "A_Y", "timestamp": [...], "target": [...]}`.
     past_dynamic_columns : list[str], default []
-        Names of columns that are known only in the past. These will be available in the past data, but not in the
-        future or test data.
-    excluded_columns : list[str] | Literal["__ALL__"], default []
-        Names of columns that are removed from the dataset during preprocessing.
-
-        If set to "__ALL__", all columns except those specified in `id_column`, `timestamp_column`, `target_column`,
-        `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
-
-        If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
+        Names of covariate columns that are known only in the past. These will be available in the past data, but not
+        in the future data. An error will be raised if these columns are missing from the dataset.
+    known_dynamic_columns: list[str], default []
+        Names of covariate columns that are known in both past and future. These will be available in past data
+        and future data. An error will be raised if these columns are missing from the dataset.
+    static_columns: list[str], default []
+        Names of columns containing static covariates that don't change over time. An error will be raised if these
+        columns are missing from the dataset.
     task_name : str, optional
         Human-readable name for the task. Defaults to `dataset_config` for datasets stored on HF hub, and to the
         name of 2 parent directories for local or S3-based datasets.
@@ -266,6 +300,15 @@ class Task:
     Dataset consisting of multiple parquet files (local or S3)
 
     >>> Task(dataset_path="s3://my-bucket/m4_hourly/*.parquet", ...)
+
+    Create a `Task` consisting of multiple rolling evaluation windows
+
+    >>> task = Task(..., num_windows=3)
+    >>> predictions_per_window = []
+    >>> for window in task.iter_windows():
+    >>>     past_data, future_data = window.get_input_data()
+    >>>     predictions_per_window.append(model.predict(past_data, future_data))
+    >>> task.evaluation_summary(predictions_per_window, model_name="my_model")
     """
 
     dataset_path: str
@@ -281,14 +324,15 @@ class Task:
     seasonality: int = 1
     eval_metric: str = "MASE"
     extra_metrics: list[str] = dataclasses.field(default_factory=list)
-    quantile_levels: list[float] | None = None
+    quantile_levels: list[float] = dataclasses.field(default_factory=list)
     # Feature information
     id_column: str = "id"
     timestamp_column: str = "timestamp"
-    target_column: str | list[str] = "target"
+    target: str | list[str] = "target"
     generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
+    known_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
-    excluded_columns: list[str] | Literal["__ALL__"] = dataclasses.field(default_factory=list)
+    static_columns: list[str] = dataclasses.field(default_factory=list)
     task_name: str | None = None
 
     def __post_init__(self):
@@ -329,6 +373,9 @@ class Task:
         else:
             self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
 
+        assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
+        self.quantile_levels = sorted(self.quantile_levels)
+
         self.eval_metric = self.eval_metric.upper()
         self.extra_metrics = [m.upper() for m in self.extra_metrics]
         for metric in [self.eval_metric] + self.extra_metrics:
@@ -336,43 +383,35 @@ class Task:
                 raise ValueError(
                     f"Evaluation metric '{metric}' is not available. Available metrics: {sorted(AVAILABLE_METRICS)}"
                 )
-            if metric in QUANTILE_METRICS and self.quantile_levels is None:
-                raise ValueError(f"Please set quantile_levels when using a quantile metric '{metric}'")
+            if metric in QUANTILE_METRICS and len(self.quantile_levels) == 0:
+                raise ValueError(f"Please provide quantile_levels when using a quantile metric '{metric}'")
 
-        if self.quantile_levels is not None:
-            assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
-            self.quantile_levels = sorted(self.quantile_levels)
         if self.min_context_length < 1:
             raise ValueError("`min_context_length` must satisfy >= 1")
         if self.max_context_length is not None:
             if self.max_context_length < 1:
                 raise ValueError("If provided, `max_context_length` must satisfy >= 1")
 
-        if isinstance(self.target_column, list):
-            if len(self.target_column) < 1:
+        if isinstance(self.target, list):
+            if len(self.target) < 1:
                 raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
             # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
-            self.target_column = sorted(self.target_column)
+            self.target = sorted(self.target)
+
+        # Ensure that column names are sorted alphabetically for deterministic task comparison
+        self.known_dynamic_columns = sorted(self.known_dynamic_columns)
+        self.past_dynamic_columns = sorted(self.past_dynamic_columns)
+        self.static_columns = sorted(self.static_columns)
 
         if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
                 "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
             )
 
-        if (
-            self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS
-            and self.excluded_columns == ALL_AVAILABLE_COLUMNS
-        ):
-            raise ValueError(
-                "Cannot set 'generate_univariate_targets_from' and 'excluded_columns' to '__ALL__' simultaneously"
-            )
-
         # Attributes computed after the dataset is loaded
         self._full_dataset: datasets.Dataset | None = None
         self._freq: str | None = None
         self._dataset_fingerprint: str | None = None
-        self._dynamic_columns: list[str] | None = None
-        self._static_columns: list[str] | None = None
 
     @property
     def cutoffs(self) -> list[int] | list[str]:
@@ -422,7 +461,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Returns
         -------
@@ -453,7 +492,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Yields
         ------
@@ -489,7 +528,7 @@ class Task:
         trust_remote_code : bool, optional
             Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use for dataset preprocessing and splitting.
+            Number of processes to use for dataset preprocessing.
 
         Returns
         -------
@@ -509,7 +548,7 @@ class Task:
             max_context_length=self.max_context_length,
             id_column=self.id_column,
             timestamp_column=self.timestamp_column,
-            target_columns_list=self.target_columns_list,
+            target_columns=self.target_columns,
             known_dynamic_columns=self.known_dynamic_columns,
             past_dynamic_columns=self.past_dynamic_columns,
             static_columns=self.static_columns,
@@ -566,21 +605,7 @@ class Task:
 
     @property
     def dynamic_columns(self) -> list[str]:
-        if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
-        return self._dynamic_columns
-
-    @property
-    def known_dynamic_columns(self) -> list[str]:
-        if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
-        return sorted(set(self.dynamic_columns) - set(self.past_dynamic_columns))
-
-    @property
-    def static_columns(self) -> list[str]:
-        if self._static_columns is None:
-            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
-        return self._static_columns
+        return self.known_dynamic_columns + self.past_dynamic_columns
 
     def _load_dataset(
         self,
@@ -630,9 +655,9 @@ class Task:
         assert isinstance(ds, datasets.Dataset)
         ds.set_format("numpy")
 
-        required_columns = self.past_dynamic_columns.copy()
+        required_columns = self.known_dynamic_columns + self.past_dynamic_columns + self.static_columns
         if self.generate_univariate_targets_from is None:
-            required_columns += self.target_columns_list
+            required_columns += self.target_columns
         elif self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
             pass
         else:
@@ -646,15 +671,6 @@ class Task:
             num_proc=num_proc,
         )
 
-        if self.excluded_columns == ALL_AVAILABLE_COLUMNS:
-            excluded_columns = [
-                col for col in ds.column_names if col not in required_columns + [self.id_column, self.timestamp_column]
-            ]
-        else:
-            excluded_columns = self.excluded_columns
-        if len(excluded_columns) > 0:
-            ds = ds.remove_columns(excluded_columns)
-
         # Create separate instances from columns listed in `generate_univariate_targets_from`
         if self.generate_univariate_targets_from is not None:
             if self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
@@ -665,11 +681,11 @@ class Task:
                 ]
             else:
                 generate_univariate_targets_from = self.generate_univariate_targets_from
-            assert isinstance(self.target_column, str)
+            assert isinstance(self.target, str)
             ds = utils.generate_univariate_targets_from_multivariate(
                 ds,
                 id_column=self.id_column,
-                new_target_column=self.target_column,
+                new_target_column=self.target,
                 generate_univariate_targets_from=generate_univariate_targets_from,
                 num_proc=num_proc,
             )
@@ -681,13 +697,17 @@ class Task:
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
-        self._dataset_fingerprint = utils.generate_fingerprint(ds)
-        self._dynamic_columns, self._static_columns = utils.infer_column_types(
-            ds,
-            id_column=self.id_column,
-            timestamp_column=self.timestamp_column,
+
+        available_dynamic_columns, available_static_columns = utils.infer_column_types(
+            ds, id_column=self.id_column, timestamp_column=self.timestamp_column
         )
-        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self.target_columns_list]
+        missing_dynamic = set(self.dynamic_columns) - set(available_dynamic_columns)
+        if len(missing_dynamic) > 0:
+            raise ValueError(f"Dynamic columns not found in dataset: {sorted(missing_dynamic)}")
+        missing_static = set(self.static_columns) - set(available_static_columns)
+        if len(missing_static) > 0:
+            raise ValueError(f"Static columns not found in dataset: {sorted(missing_static)}")
+        self._dataset_fingerprint = utils.generate_fingerprint(ds)
         return ds
 
     @property
@@ -695,7 +715,7 @@ class Task:
         return {
             "id_column": self.id_column,
             "timestamp_column": self.timestamp_column,
-            "target_column": self.target_column,
+            "target": self.target,
             "static_columns": self.static_columns,
             "dynamic_columns": self.dynamic_columns,
             "known_dynamic_columns": self.known_dynamic_columns,
@@ -708,17 +728,15 @@ class Task:
 
         Forecast must always include the key `"predictions"` corresponding to the point forecast.
 
-        Moreover, if `quantile_levels` were specified when creating the `Task`, then predictions must contain a key for
-        each of the predicted quantiles (e.g., if `quantile_levels = [0.1, 0.9]`, then keys `"0.1"` and `"0.9"` must be
-        included in the forecast).
+        The predictions must also include a key for each of the `quantile_levels`.
+        For example, if `quantile_levels = [0.1, 0.9]`, then keys `"0.1"` and `"0.9"` must be included in the forecast.
         """
         predictions_length = self.horizon
         predictions_schema = {
             PREDICTIONS: datasets.Sequence(datasets.Value("float64"), length=predictions_length),
         }
-        if self.quantile_levels is not None:
-            for q in sorted(self.quantile_levels):
-                predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
+        for q in sorted(self.quantile_levels):
+            predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
         return datasets.Features(predictions_schema)
 
     def clean_and_validate_predictions(
@@ -741,17 +759,18 @@ class Task:
                 raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
             return preds
 
-        if not isinstance(predictions, datasets.DatasetDict):
-            if self.is_multivariate:
-                if isinstance(predictions, dict):
-                    predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
-                else:
-                    raise ValueError(
-                        f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
-                    )
-            else:
-                predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
-
+        if isinstance(predictions, datasets.DatasetDict):
+            pass
+        elif isinstance(predictions, dict):
+            predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+        elif isinstance(predictions, (list, datasets.Dataset)):
+            predictions = datasets.DatasetDict({self.target_columns[0]: _to_dataset(predictions)})
+        else:
+            raise ValueError(
+                f"Expected predictions to be a `DatasetDict`, `Dataset`, `list` or `dict` (got {type(predictions)})"
+            )
+        if missing_columns := set(self.target_columns) - set(predictions.keys()):
+            raise ValueError(f"Missing predictions for columns {missing_columns} (got {sorted(predictions.keys())})")
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
             self._assert_all_columns_finite(predictions_for_column)
@@ -819,6 +838,10 @@ class Task:
         summary.update(self.to_dict())
         metrics = sorted(set([self.eval_metric] + self.extra_metrics))
         metrics_per_window = {metric: [] for metric in metrics}
+        if not isinstance(predictions_per_window, Iterable):
+            raise ValueError(
+                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
+            )
         for predictions, window in zip(predictions_per_window, self.iter_windows()):
             metric_scores = window.compute_metrics(
                 self.clean_and_validate_predictions(predictions),
@@ -846,15 +869,15 @@ class Task:
 
     @property
     def is_multivariate(self) -> bool:
-        return isinstance(self.target_column, list)
+        return isinstance(self.target, list)
 
     @property
-    def target_columns_list(self) -> list[str]:
+    def target_columns(self) -> list[str]:
         """A list including names of all target columns for this task."""
-        if isinstance(self.target_column, list):
-            return self.target_column
+        if isinstance(self.target, list):
+            return self.target
         else:
-            return [self.target_column]
+            return [self.target]
 
 
 # These methods are stored outside of classes to ensure that HF datasets caching logic recognizes them
