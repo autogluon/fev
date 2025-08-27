@@ -759,17 +759,18 @@ class Task:
                 raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
             return preds
 
-        if not isinstance(predictions, datasets.DatasetDict):
-            if self.is_multivariate:
-                if isinstance(predictions, dict):
-                    predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
-                else:
-                    raise ValueError(
-                        f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
-                    )
-            else:
-                predictions = datasets.DatasetDict({self.target_columns[0]: _to_dataset(predictions)})
-
+        if isinstance(predictions, datasets.DatasetDict):
+            pass
+        elif isinstance(predictions, dict):
+            predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+        elif isinstance(predictions, (list, datasets.Dataset)):
+            predictions = datasets.DatasetDict({self.target_columns[0]: _to_dataset(predictions)})
+        else:
+            raise ValueError(
+                f"Expected predictions to be a `DatasetDict`, `Dataset`, `list` or `dict` (got {type(predictions)})"
+            )
+        if missing_columns := set(self.target_columns) - set(predictions.keys()):
+            raise ValueError(f"Missing predictions for columns {missing_columns} (got {sorted(predictions.keys())})")
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
             self._assert_all_columns_finite(predictions_for_column)

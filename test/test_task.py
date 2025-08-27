@@ -167,24 +167,25 @@ def test_when_predictions_provided_as_dataset_dict_for_univariate_task_then_pred
         assert np.isfinite(summary[metric])
 
 
+def naive_forecast_multivariate(task: fev.Task, return_dict: bool) -> list[datasets.DatasetDict | dict]:
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, future_data = window.get_input_data()
+        predictions = {}
+        for col in task.target:
+            predictions_for_column = []
+            for ts in past_data:
+                predictions_for_column.append({"predictions": [ts[col][-1] for _ in range(task.horizon)]})
+            predictions[col] = predictions_for_column
+        if not return_dict:
+            predictions = datasets.DatasetDict({k: datasets.Dataset.from_list(v) for k, v in predictions.items()})
+        predictions_per_window.append(predictions)
+    return predictions_per_window
+
+
 @pytest.mark.parametrize("target", [["OT"], ["OT", "LULL", "HULL"]])
 @pytest.mark.parametrize("return_dict", [True, False])
 def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, return_dict):
-    def naive_forecast_multivariate(task: fev.Task) -> list[datasets.DatasetDict | dict]:
-        predictions_per_window = []
-        for window in task.iter_windows():
-            past_data, future_data = window.get_input_data()
-            predictions = {}
-            for col in task.target:
-                predictions_for_column = []
-                for ts in past_data:
-                    predictions_for_column.append({"predictions": [ts[col][-1] for _ in range(task.horizon)]})
-                predictions[col] = predictions_for_column
-            if not return_dict:
-                predictions = datasets.DatasetDict({k: datasets.Dataset.from_list(v) for k, v in predictions.items()})
-            predictions_per_window.append(predictions)
-        return predictions_per_window
-
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
         dataset_config="ETTh",
@@ -194,10 +195,23 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, r
         horizon=4,
     )
 
-    predictions = naive_forecast_multivariate(task)
+    predictions = naive_forecast_multivariate(task, return_dict=return_dict)
     summary = task.evaluation_summary(predictions, model_name="naive")
     for metric in ["MASE", "WAPE"]:
         assert np.isfinite(summary[metric])
+
+
+def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
+    task = fev.Task(
+        dataset_path="autogluon/fev_datasets",
+        dataset_config="ETTh",
+        target=["OT", "LULL"],
+        horizon=4,
+    )
+    predictions = naive_forecast_multivariate(task, return_dict=False)
+    predictions[0].pop("LULL")
+    with pytest.raises(ValueError, match="Missing predictions for columns"):
+        task.evaluation_summary(predictions, model_name="naive")
 
 
 @pytest.mark.parametrize("target", [["OT"], ["OT", "LULL", "HULL"]])
