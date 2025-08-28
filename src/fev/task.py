@@ -15,7 +15,9 @@ from pydantic_core import ArgsKwargs
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
-from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
+from .metrics import Metric, get_metric
+
+# from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 ALL_AVAILABLE_COLUMNS: Literal["__ALL__"] = "__ALL__"
 
@@ -89,7 +91,7 @@ class EvaluationWindow:
     def compute_metrics(
         self,
         predictions: datasets.DatasetDict,
-        metrics: list[str],
+        metrics: list[Metric],
         seasonality: int,
         quantile_levels: list[float],
     ) -> dict[str, float]:
@@ -103,11 +105,10 @@ class EvaluationWindow:
                     f"match the length of test data ({len(test_data)})"
                 )
 
-        test_scores = {}
+        test_scores: dict[str, Any] = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
-            for eval_metric in metrics:
-                metric = AVAILABLE_METRICS[eval_metric]()
+            for metric in metrics:
                 scores = []
                 for col in self.target_columns:
                     scores.append(
@@ -120,7 +121,7 @@ class EvaluationWindow:
                             target_column=col,
                         )
                     )
-                test_scores[eval_metric] = float(np.mean(scores))
+                test_scores[metric.name] = float(np.mean(scores))
         return test_scores
 
     def _filter_short_series(
@@ -376,15 +377,20 @@ class Task:
         assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
         self.quantile_levels = sorted(self.quantile_levels)
 
-        self.eval_metric = self.eval_metric.upper()
-        self.extra_metrics = [m.upper() for m in self.extra_metrics]
-        for metric in [self.eval_metric] + self.extra_metrics:
-            if metric not in AVAILABLE_METRICS:
-                raise ValueError(
-                    f"Evaluation metric '{metric}' is not available. Available metrics: {sorted(AVAILABLE_METRICS)}"
-                )
-            if metric in QUANTILE_METRICS and len(self.quantile_levels) == 0:
-                raise ValueError(f"Please provide quantile_levels when using a quantile metric '{metric}'")
+        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+
+        metric_names = [m.name for m in metrics]
+        duplicate_metric_names = {x for x in metric_names if metric_names.count(x) > 1}
+        if duplicate_metric_names:
+            raise ValueError(
+                f"Duplicate metric names found: {duplicate_metric_names}. Please configure "
+                "only one instance for each metric."
+            )
+
+        if len(self.quantile_levels) == 0:
+            for m in metrics:
+                if m.needs_quantiles:
+                    raise ValueError(f"Please provide quantile_levels when using a quantile metric '{m.name}'")
 
         if self.min_context_length < 1:
             raise ValueError("`min_context_length` must satisfy >= 1")
@@ -836,8 +842,8 @@ class Task:
         """
         summary: dict[str, Any] = {"model_name": model_name}
         summary.update(self.to_dict())
-        metrics = sorted(set([self.eval_metric] + self.extra_metrics))
-        metrics_per_window = {metric: [] for metric in metrics}
+        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+        metrics_per_window = {metric.name: [] for metric in metrics}
         if not isinstance(predictions_per_window, Iterable):
             raise ValueError(
                 f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
@@ -851,7 +857,7 @@ class Task:
             )
             for metric, value in metric_scores.items():
                 metrics_per_window[metric].append(value)
-        metrics_averaged = {metric: float(np.mean(values)) for metric, values in metrics_per_window.items()}
+        metrics_averaged = {metric_name: float(np.mean(values)) for metric_name, values in metrics_per_window.items()}
         summary.update(
             {
                 "test_error": metrics_averaged[self.eval_metric],
