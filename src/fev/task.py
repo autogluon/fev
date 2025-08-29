@@ -843,7 +843,7 @@ class Task:
         eval_metric = metrics[0]
 
         metrics_per_window = {metric.name: [] for metric in metrics}
-        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict)):
+        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
             raise ValueError(
                 f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
             )
