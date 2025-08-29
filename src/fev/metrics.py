@@ -76,6 +76,9 @@ class MAE(Metric):
 class WAPE(Metric):
     """Weighted absolute percentage error."""
 
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
     def compute(
         self,
         *,
@@ -88,14 +91,16 @@ class WAPE(Metric):
     ):
         y_test = np.array(test_data[target_column])
         y_pred = np.array(predictions[PREDICTIONS])
-        return np.nanmean(np.abs(y_test - y_pred)) / np.nanmean(np.abs(y_test))
+
+        scale = np.clip(np.abs(y_test), self.epsilon, None)
+        return np.nanmean(np.abs(y_test - y_pred)) / np.nanmean(scale)
 
 
 class MASE(Metric):
     """Mean absolute scaled error."""
 
-    def __init__(self, min_error: float = 0.0) -> None:
-        self.min_error = min_error
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
 
     def compute(
         self,
@@ -113,7 +118,7 @@ class MASE(Metric):
         seasonal_error = _abs_seasonal_error_per_item(
             past_data=past_data, seasonality=seasonality, target_column=target_column
         )
-        seasonal_error = np.clip(seasonal_error, self.min_error, None)
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return self._safemean(np.abs(y_test - y_pred) / seasonal_error[:, None])
 
 
@@ -138,8 +143,8 @@ class RMSE(Metric):
 class RMSSE(Metric):
     """Root mean squared scaled error."""
 
-    def __init__(self, min_error: float = 0.0) -> None:
-        self.min_error = min_error
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
 
     def compute(
         self,
@@ -156,7 +161,7 @@ class RMSSE(Metric):
         seasonal_error = _squared_seasonal_error_per_item(
             past_data, seasonality=seasonality, target_column=target_column
         )
-        seasonal_error = np.clip(seasonal_error, self.min_error, None)
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return np.sqrt(self._safemean((y_test - y_pred) ** 2 / seasonal_error[:, None]))
 
 
@@ -264,8 +269,8 @@ class SQL(Metric):
 
     needs_quantiles: bool = True
 
-    def __init__(self, min_error: float = 0.0) -> None:
-        self.min_error = min_error
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
 
     def compute(
         self,
@@ -287,7 +292,7 @@ class SQL(Metric):
         seasonal_error = _abs_seasonal_error_per_item(
             past_data=past_data, seasonality=seasonality, target_column=target_column
         )
-        seasonal_error = np.clip(seasonal_error, self.min_error, None)
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return self._safemean(ql_per_time_step / seasonal_error[:, None])
 
 
@@ -295,6 +300,9 @@ class WQL(Metric):
     """Weighted quantile loss."""
 
     needs_quantiles: bool = True
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
 
     def compute(
         self,
@@ -312,7 +320,8 @@ class WQL(Metric):
             quantile_levels=quantile_levels,
             target_column=target_column,
         )
-        return np.nanmean(ql) / np.nanmean(np.abs(np.array(test_data[target_column])))
+        scale = np.clip(np.abs(np.array(test_data[target_column])), self.epsilon, None)
+        return np.nanmean(ql) / np.nanmean(scale)
 
 
 def _seasonal_diff(array: np.ndarray, seasonality: int) -> np.ndarray:

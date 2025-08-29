@@ -105,7 +105,7 @@ class EvaluationWindow:
                     f"match the length of test data ({len(test_data)})"
                 )
 
-        test_scores: dict[str, Any] = {}
+        test_scores: dict[str, float] = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for metric in metrics:
@@ -251,10 +251,14 @@ class Task:
     seasonality : int, default 1
         Seasonal period of the dataset (e.g., 24 for hourly data, 12 for monthly data). This parameter is used when
         computing metrics like Mean Absolute Scaled Error (MASE).
-    eval_metric : str, default 'MASE'
-        Evaluation metric used for ultimate evaluation on the test set.
-    extra_metrics : list[str], default []
-        Additional metrics to be included in the results.
+    eval_metric : str or dict[str, Any], default 'MASE'
+        Evaluation metric used for ultimate evaluation on the test set. Can be specified as either a single string
+        with the metric's name or a dictionary containing a "name" key and extra hyperparameters for the metric.
+        For example, MASE can also be specified as `{"name": "MASE", "epsilon": 0.0001}` to prevent near-zero
+        denominators when scaling errors.
+    extra_metrics : list[str] or list[dict[str, Any]], default []
+        Additional metrics to be included in the results. Can be specified as a list of strings with the metric's
+        name or a list of dictionaries. See documentation for `eval_metric` for more details.
     quantile_levels : list[float], default []
         Quantiles that must be predicted. List of floats between 0 and 1 (for example, [0.1, 0.5, 0.9]).
     id_column : str, default 'id'
@@ -323,8 +327,8 @@ class Task:
     max_context_length: int | None = None
     # Evaluation parameters
     seasonality: int = 1
-    eval_metric: str = "MASE"
-    extra_metrics: list[str] = dataclasses.field(default_factory=list)
+    eval_metric: str | dict[str, Any] = "MASE"
+    extra_metrics: list[str | dict[str, Any]] = dataclasses.field(default_factory=list)
     quantile_levels: list[float] = dataclasses.field(default_factory=list)
     # Feature information
     id_column: str = "id"
@@ -843,6 +847,8 @@ class Task:
         summary: dict[str, Any] = {"model_name": model_name}
         summary.update(self.to_dict())
         metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+        eval_metric = metrics[0]
+
         metrics_per_window = {metric.name: [] for metric in metrics}
         if not isinstance(predictions_per_window, Iterable):
             raise ValueError(
@@ -860,7 +866,7 @@ class Task:
         metrics_averaged = {metric_name: float(np.mean(values)) for metric_name, values in metrics_per_window.items()}
         summary.update(
             {
-                "test_error": metrics_averaged[self.eval_metric],
+                "test_error": metrics_averaged[eval_metric.name],
                 "training_time_s": training_time_s,
                 "inference_time_s": inference_time_s,
                 "dataset_fingerprint": self._dataset_fingerprint,
