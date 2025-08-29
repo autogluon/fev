@@ -92,8 +92,7 @@ class WAPE(Metric):
         y_test = np.array(test_data[target_column])
         y_pred = np.array(predictions[PREDICTIONS])
 
-        scale = np.clip(np.abs(y_test), self.epsilon, None)
-        return np.nanmean(np.abs(y_test - y_pred)) / np.nanmean(scale)
+        return np.nanmean(np.abs(y_test - y_pred)) / max(self.epsilon, np.nanmean(np.abs(y_test)))
 
 
 class MASE(Metric):
