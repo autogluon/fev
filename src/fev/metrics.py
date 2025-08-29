@@ -320,8 +320,7 @@ class WQL(Metric):
             quantile_levels=quantile_levels,
             target_column=target_column,
         )
-        scale = np.clip(np.abs(np.array(test_data[target_column])), self.epsilon, None)
-        return np.nanmean(ql) / np.nanmean(scale)
+        return np.nanmean(ql) / max(self.epsilon, np.nanmean(np.abs(np.array(test_data[target_column]))))
 
 
 def _seasonal_diff(array: np.ndarray, seasonality: int) -> np.ndarray:
