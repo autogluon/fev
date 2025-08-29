@@ -1,11 +1,17 @@
 import pathlib
-import pprint
 import warnings
+from typing import Callable
 
+import numpy as np
 import pandas as pd
-from scipy.stats import gmean
+import scipy.stats
+from packaging.version import parse as parse_version
 
-from fev.benchmark import Benchmark
+__all__ = [
+    "leaderboard",
+    "pairwise_comparison",
+    "pivot_table",
+]
 
 # Use Arrow dtypes to correctly handle missing values
 TASK_DEF_DTYPES = {
@@ -34,9 +40,11 @@ RESULTS_DTYPES = {
     "training_time_s": float,
     "trained_on_this_dataset": pd.BooleanDtype(),
     "inference_time_s": float,
+    "fev_version": pd.StringDtype(),
 }
 
 TASK_DEF_COLUMNS = list(TASK_DEF_DTYPES)
+LAST_BREAKING_VERSION = "0.6.0"
 
 # Valid types for summaries
 SummaryType = pd.DataFrame | list[dict] | str | pathlib.Path
@@ -64,43 +72,6 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
         )
-    # TODO: Improve handling of deprecated columns
-    # Handle deprecated columns
-    if "multiple_target_columns" in df.columns:
-        if "generate_univariate_targets_from" in df.columns:
-            raise ValueError(
-                "Provided DataFrame contains both 'generate_univariate_targets_from' and the deprecated "
-                "'multiple_target_columns' columns. Please only keep the 'generate_univariate_targets_from'.\n"
-                f"{df.head(3)}",
-            )
-        else:
-            warnings.warn(
-                "Deprecated column name 'multiple_target_columns' was renamed to 'generate_univariate_targets_from'",
-                category=DeprecationWarning,
-            )
-            df = df.rename(columns={"multiple_target_columns": "generate_univariate_targets_from"})
-    if "min_ts_length" in df.columns:
-        if "min_context_length" in df.columns:
-            raise ValueError(
-                "Provided DataFrame contains both 'min_context_length' and the deprecated "
-                "'min_ts_length' columns. Please only keep the 'min_context_length'.\n"
-                f"{df.head(3)}",
-            )
-        else:
-            warnings.warn(
-                "Deprecated column 'min_ts_length' was converted to 'min_context_length'",
-                category=DeprecationWarning,
-            )
-            df = df.rename(columns={"min_ts_length": "min_context_length"})
-            df["min_context_length"] = df["min_context_length"].astype(int) - df["horizon"].astype(int)
-    if "dataset_name" in df.columns:
-        if "task_name" in df.columns:
-            raise ValueError(
-                "Provided DataFrame contains both 'task_name' and the deprecated "
-                "'dataset_name' columns. Please only keep the 'dataset_name'.\n"
-                f"{df.head(3)}",
-            )
-        df = df.rename(columns={"dataset_name": "task_name"})
     return df
 
 
@@ -117,13 +88,27 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
     warnings.warn(f"Columns {missing_columns} are missing from summaries, filling them with None", stacklevel=3)
     for col in missing_columns:
         summaries_df[col] = None
-    return summaries_df.astype(RESULTS_DTYPES)
+    summaries_df = summaries_df.astype(RESULTS_DTYPES)
+    try:
+        min_version = summaries_df["fev_version"].apply(parse_version).min()
+        if min_version < parse_version(LAST_BREAKING_VERSION):
+            warnings.warn(
+                f"Evaluation summaries contain results from fev < {LAST_BREAKING_VERSION}. "
+                "Results may not be comparable due to breaking changes.",
+                stacklevel=3,
+            )
+    except Exception:
+        raise ValueError(
+            "Unable to parse `fev_version` column in the evaluation summaries. "
+            "Make sure all summaries are produced by `fev`"
+        )
+    return summaries_df
 
 
 def pivot_table(
     summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
-    task_columns: str | list[str] = "task_name",
+    task_columns: str | list[str] = ["dataset_path", "dataset_config"],
     aggfunc: str = "mean",
     baseline_model: str | None = None,
 ) -> pd.DataFrame:
@@ -143,138 +128,169 @@ def pivot_table(
     return pivot_df
 
 
-def leaderboard(
-    summaries: SummaryType | list[SummaryType],
-    metric_column: str = "test_error",
-    baseline_model: str = "seasonal_naive",
-    min_relative_error: float = 1e-3,
-    max_relative_error: float = 5,
-    remove_failures: bool = True,
-    rel_score_failures: float | None = None,
+def _filter_models(
+    summaries_df: pd.DataFrame,
+    model_column: str = "model_name",
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
-    benchmark: Benchmark | None = None,
-    validate_dataset_fingerprints: bool = False,
-):
-    """Summarize benchmark results into a single table reporting aggregate performance of each model.
-
-    For each task, we compute the relative error of each model as `test_error[model] / test_error[baseline_model]`.
-    Relative scores are clipped in the range `[min_relative_error, max_relative_error]`, and all model failures
-    are replaced with `max_relative_error`.
-
-    For each model, the following metrics are reported:
-
-    - `gmean_relative_error` - geometric mean of relative scores across all tasks
-    - `avg_rank` - average rank across all tasks
-    - `avg_inference_time_s` - average inference time of each model (in seconds)
-    - `median_inference_time_s` - median inference time of each model (in seconds)
-    - `avg_training_time_s` - average training time of each model (in seconds)
-    - `median_training_time_s` - median training time of each model (in seconds)
-    - `training_corpus_overlap` - fraction of the datasets used in the benchmark that were included in the model's training corpus
-    - `num_failures` - number of tasks for which each model failed
-
-    Parameters
-    ----------
-    summaries : pd.DataFrame | list[dict] | str | list[pd.DataFrame] | list[list[dict]] | list[str]
-        One or multiple summary objects containing evaluation results.
-        Each summary object can be represented as a:
-
-        - list of dictionaries produced by :meth:`fev.Task.evaluation_summary`
-        - a DataFrame where each row corresponds to the evaluation summary on one task
-        - path to a JSON (orient="records") or CSV file with the evaluation summaries
-    baseline_model : str, default "seasonal_naive"
-        Name of the baseline model that is used to compute relative scores.
-    min_relative_error : float, default 1e-3
-        Relative scores below this value are clipped.
-    max_relative_error : float, default 5
-        Relative scores above this value are clipped.
-    remove_failures : bool, default True
-        If True, tasks where at least one model failed will be excluded from the summaries. If False, relative scores
-        for failed tasks will be replaced with `max_relative_error`.
-    rel_score_failures : float, optional
-        If provided and `remove_failures=False`, relative scores for failed models will be replaced with this value.
-    included_models : list[str], optional
-        If provided, only results for these models will be considered.
-    excluded_models : list[str], optional
-        If provided, results for these models will be excluded. Cannot be used if `included_models` is also provided.
-    benchmark : fev.Benchmark, optional
-        If provided, the results will be computed using only the tasks included in the benchmark. If results for some
-        tasks of this benchmark are missing, an exception will be raised.
-    validate_dataset_fingerprints : bool, default False
-        If `True`, this method will assert that the dataset fingerprint is unique for each task. This ensures that
-        the same dataset version was used by all models.
-    """
-    summaries = _load_summaries(summaries).astype({metric_column: "float64"}).set_index(TASK_DEF_COLUMNS)
-
-    if validate_dataset_fingerprints:
-        num_fingerprints_per_task = summaries.groupby(TASK_DEF_COLUMNS, dropna=False)["dataset_fingerprint"].nunique()
-        tasks_with_different_fingerprints = num_fingerprints_per_task.index[num_fingerprints_per_task > 1]
-        if len(tasks_with_different_fingerprints) > 0:
-            raise ValueError(
-                f"{len(tasks_with_different_fingerprints)} tasks have different dataset fingerprints:\n"
-                f"{tasks_with_different_fingerprints.to_frame(index=False)}"
-            )
-
-    if benchmark is not None:
-        expected_tasks = pd.MultiIndex.from_frame(
-            pd.DataFrame([task.to_dict() for task in benchmark.tasks]).astype(TASK_DEF_DTYPES)[TASK_DEF_COLUMNS]
-        )
-        available_tasks = summaries.index.drop_duplicates()
-        missing_tasks = expected_tasks.difference(available_tasks).to_frame().to_dict(orient="records")
-        if len(missing_tasks):
-            raise ValueError(
-                f"Missing results for {len(missing_tasks)} tasks:\n{pprint.pformat(missing_tasks, sort_dicts=False)}"
-            )
-        summaries = summaries.loc[expected_tasks]
-    summaries = summaries.set_index(["model_name"], append=True)
-
+) -> pd.DataFrame:
     if excluded_models is not None and included_models is not None:
         raise ValueError("Only one of `excluded_models` and `included_models` can be provided")
     elif excluded_models is not None:
-        summaries = summaries.query("model_name not in @excluded_models")
+        summaries_df = summaries_df[~summaries_df[model_column].isin(excluded_models)]
     elif included_models is not None:
-        summaries = summaries.query("model_name in @included_models")
+        summaries_df = summaries_df[summaries_df[model_column].isin(included_models)]
+    return summaries_df
 
-    error_per_model = summaries[metric_column].unstack()
-    if baseline_model not in error_per_model.columns:
-        raise ValueError(
-            f"baseline_model '{baseline_model}' not found. Available models: {error_per_model.columns.tolist()}"
-        )
-    if error_per_model[baseline_model].isna().any():
-        missing_baseline = error_per_model[error_per_model[baseline_model].isna()].index
-        raise ValueError(
-            f"baseline_model must have valid test_error for all tasks. Missing tasks:\n{missing_baseline}"
-        )
 
-    num_failures_per_model = error_per_model.isna().sum()
-    rel_error_per_model = error_per_model.divide(error_per_model[baseline_model], axis=0).clip(
-        lower=min_relative_error, upper=max_relative_error
+def leaderboard(
+    summaries: SummaryType | list[SummaryType],
+    metric_column: str = "test_error",
+    task_columns: str | list[str] = "task_name",
+    model_column: str = "model_name",
+    baseline_model: str | None = None,
+    min_relative_error: float = 1e-3,
+    max_relative_error: float = 5,
+    included_models: list[str] | None = None,
+    excluded_models: list[str] | None = None,
+    n_resamples: int = 1000,
+    seed: int = 123,
+):
+    """Compute aggregate scores for all models."""
+    summaries = _load_summaries(summaries)
+    summaries = _filter_models(
+        summaries, model_column=model_column, included_models=included_models, excluded_models=excluded_models
     )
-    inference_time_s_per_model = summaries["inference_time_s"].unstack()
-    training_time_s_per_model = summaries["training_time_s"].unstack()
-    trained_on_this_dataset = summaries["trained_on_this_dataset"].unstack()
-    if remove_failures:
-        rel_error_per_model = rel_error_per_model.dropna(how="any")
-        if len(rel_error_per_model) < len(error_per_model):
-            print(f"Keeping {len(rel_error_per_model)} / {len(error_per_model)} tasks where no model failed.")
-        inference_time_s_per_model = inference_time_s_per_model.reindex(rel_error_per_model.index)
-        training_time_s_per_model = training_time_s_per_model.reindex(rel_error_per_model.index)
-        trained_on_this_dataset = trained_on_this_dataset.reindex(rel_error_per_model.index)
-    else:
-        rel_error_per_model = rel_error_per_model.fillna(rel_score_failures or max_relative_error)
-    avg_rank_per_model = error_per_model.rank(axis=1).mean()
-
-    agg_scores = pd.concat(
+    num_results_per_model = summaries.groupby(model_column).size()
+    models_with_missing = num_results_per_model.index[num_results_per_model != num_results_per_model.max()]
+    if len(models_with_missing):
+        raise ValueError(f"Some results are missing for following models: {models_with_missing.to_list()}")
+    errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
+    if errors_df.isna().any().any():
+        raise ValueError(
+            "Results are missing for some models. Run `pivot_table(summaries)` to see which ones are missing."
+        )
+    inference_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="inference_time_s")
+    win_rate, win_rate_lower, win_rate_upper = bootstrap(
+        errors_df.to_numpy(), statistic=_win_rate, n_resamples=n_resamples, seed=seed
+    )
+    if baseline_model is not None:
+        errors_df = errors_df.divide(errors_df[baseline_model], axis=0)
+        errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
+    gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
+        errors_df.to_numpy(), statistic=_gmean_rel_error, n_resamples=n_resamples, seed=seed
+    )
+    return pd.DataFrame(
         {
-            "gmean_relative_error": rel_error_per_model.apply(gmean),
-            "avg_rank": avg_rank_per_model,
-            "avg_inference_time_s": inference_time_s_per_model.mean(),
-            "median_inference_time_s": inference_time_s_per_model.median(),
-            "avg_training_time_s": training_time_s_per_model.mean(),
-            "median_training_time_s": training_time_s_per_model.median(),
-            "training_corpus_overlap": trained_on_this_dataset.mean(),
-            "num_failures": num_failures_per_model,
+            "gmean_rel_error": gmean_rel_error,
+            "gmean_rel_error_lower": gmean_rel_error_lower,
+            "gmean_rel_error_upper": gmean_rel_error_upper,
+            "win_rate": win_rate,
+            "win_rate_lower": win_rate_lower,
+            "win_rate_upper": win_rate_upper,
+            "median_inference_time_s": inference_time_df.median(),
         },
-        axis=1,
+        index=errors_df.columns,
+    ).sort_values(by="gmean_rel_error")
+
+
+def pairwise_comparison(
+    summaries: SummaryType | list[SummaryType],
+    metric_column: str = "test_error",
+    task_columns: str | list[str] = "dataset_path",
+    model_column: str = "model_name",
+    included_models: list[str] | None = None,
+    excluded_models: list[str] | None = None,
+    n_resamples: int = 1000,
+    seed: int = 123,
+) -> pd.DataFrame:
+    """Compute pairwise pairwise scores for all models."""
+    summaries = _load_summaries(summaries)
+    summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
+    errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
+    if errors_df.isna().any().any():
+        raise ValueError("Results are missing for some models")
+    gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
+        errors_df.to_numpy(),
+        statistic=_pairwise_gmean_rel_error,
+        n_resamples=n_resamples,
+        seed=seed,
     )
-    return agg_scores.sort_values(by="gmean_relative_error")
+    win_rate, win_rate_lower, win_rate_upper = bootstrap(
+        errors_df.to_numpy(),
+        statistic=_pairwise_win_rate,
+        n_resamples=n_resamples,
+        seed=seed,
+    )
+    return pd.DataFrame(
+        {
+            "gmean_rel_error": gmean_rel_error.flatten(),
+            "gmean_rel_error_lower": gmean_rel_error_lower.flatten(),
+            "gmean_rel_error_upper": gmean_rel_error_upper.flatten(),
+            "win_rate": win_rate.flatten(),
+            "win_rate_lower": win_rate_lower.flatten(),
+            "win_rate_upper": win_rate_upper.flatten(),
+        },
+        index=pd.MultiIndex.from_product([errors_df.columns, errors_df.columns], names=["model_1", "model_2"]),
+    )
+
+
+def _win_rate(errors: np.ndarray) -> np.ndarray:
+    A, B = errors[:, :, None], errors[:, None, :]
+    wins = (A < B).mean(0) + 0.5 * (A == B).mean(0)  # [n_models, n_models, ...]
+    # Fill diagonal with NaN to avoid counting self-ties as wins
+    diag_indices = np.arange(wins.shape[0])
+    wins[diag_indices, diag_indices] = float("nan")
+    return np.nanmean(wins, axis=1)  # [n_models, ...]
+
+
+def _gmean_rel_error(errors: np.ndarray) -> np.ndarray:
+    return scipy.stats.gmean(errors, axis=0)  # [n_models, ...]
+
+
+def _pairwise_win_rate(errors: np.ndarray) -> np.ndarray:
+    A, B = errors[:, :, None], errors[:, None, :]
+    return (A < B).mean(0) + 0.5 * (A == B).mean(0)  # [n_models, n_models, ...]
+
+
+def _pairwise_gmean_rel_error(errors: np.ndarray) -> np.ndarray:
+    A, B = errors[:, :, None], errors[:, None, :]
+    return scipy.stats.gmean(A / B, axis=0)  # [n_models, n_models, ...]
+
+
+def bootstrap(
+    errors: np.ndarray,
+    statistic: Callable[[np.ndarray], np.ndarray],
+    n_resamples: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 123,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return point estimate and the (1-alpha) CI of the statistic on provided data.
+
+    Parameters
+    ----------
+    errors:
+        Error of each model on each task, shape [n_tasks, n_models]
+    statistic:
+        A function working on numpy arrays [n_samples, n_models, ...] -> [n_models, ...]
+
+    Returns
+    -------
+    point_estimate:
+        Point estimate computed on full data, shape [n_models, ...]
+    lower:
+        (1-alpha) CI computed as maximum(upper-point_estimate, point_estimate-lower), shape [n_models, ...]
+    """
+    assert errors.ndim == 2, "errors must have shape [n_tasks, n_models]"
+    assert 0 < alpha < 1, "alpha must be in (0, 1)"
+    n_tasks, n_models = errors.shape
+    point_estimate = statistic(errors)
+    assert point_estimate.shape[0] == n_models
+
+    rng = np.random.default_rng(seed=seed)
+    indices = rng.integers(0, len(errors), size=(n_resamples, len(errors)))  # [n_resamples, n_tasks]
+    errors_resampled = errors[indices, :].transpose(1, 2, 0)  # [n_tasks, n_models, n_resamples]
+    output = statistic(errors_resampled)  # [n_models, ..., n_resamples]
+    lower = np.quantile(output, 0.5 * alpha, axis=-1)
+    upper = np.quantile(output, 1 - 0.5 * alpha, axis=-1)
+    return point_estimate, lower, upper
