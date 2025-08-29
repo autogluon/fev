@@ -49,8 +49,7 @@ def get_metric(metric: MetricConfig) -> Metric:
     if isinstance(metric, str):
         return metric_type()
     elif isinstance(metric, dict):
-        metric_name = metric.pop("name")
-        return metric_type(**metric)
+        return metric_type(**{k: v for k, v in metric.items() if k != "name"})
     else:
         raise ValueError(f"Invalid metric configuration: {metric}")
 
