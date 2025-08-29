@@ -23,6 +23,7 @@ TASK_DEF_DTYPES = {
     "max_context_length": pd.Int64Dtype(),
     "seasonality": pd.Int64Dtype(),
     "eval_metric": pd.StringDtype(),
+    "extra_metrics": pd.StringDtype(),
     "quantile_levels": pd.StringDtype(),
     "id_column": pd.StringDtype(),
     "timestamp_column": pd.StringDtype(),
@@ -31,6 +32,7 @@ TASK_DEF_DTYPES = {
     "known_dynamic_columns": pd.StringDtype(),
     "past_dynamic_columns": pd.StringDtype(),
     "static_columns": pd.StringDtype(),
+    "task_name": pd.StringDtype(),
 }
 
 RESULTS_DTYPES = {
@@ -156,7 +158,48 @@ def leaderboard(
     n_resamples: int = 1000,
     seed: int = 123,
 ):
-    """Compute aggregate scores for all models."""
+    """Generate a leaderboard with aggregate performance metrics for all models.
+
+    Computes geometric mean relative error and win rate with bootstrap confidence
+    intervals across all tasks. Models are ranked by geometric mean relative error.
+
+    Parameters
+    ----------
+    summaries : SummaryType | list[SummaryType]
+        Evaluation summaries as DataFrame, list of dicts, or file path(s)
+    metric_column : str, default "test_error"
+        Column name containing the metric to evaluate
+    task_columns : str | list[str], default "task_name"
+        Column(s) defining unique tasks for grouping
+    model_column : str, default "model_name"
+        Column name containing model identifiers
+    baseline_model : str, optional
+        Model name to use for relative error computation
+    min_relative_error : float, default 1e-3
+        Lower bound for clipping relative errors when baseline_model is used
+    max_relative_error : float, default 5
+        Upper bound for clipping relative errors when baseline_model is used
+    included_models : list[str], optional
+        Models to include (mutually exclusive with excluded_models)
+    excluded_models : list[str], optional
+        Models to exclude (mutually exclusive with included_models)
+    n_resamples : int, default 1000
+        Number of bootstrap samples for confidence intervals
+    seed : int, default 123
+        Random seed for reproducible bootstrap sampling
+
+    Returns
+    -------
+    pd.DataFrame
+        Leaderboard sorted by geometric mean relative error, with columns:
+        - gmean_rel_error: Geometric mean relative error
+        - gmean_rel_error_lower: Lower bound of 95% confidence interval
+        - gmean_rel_error_upper: Upper bound of 95% confidence interval
+        - win_rate: Fraction of pairwise comparisons won against other models
+        - win_rate_lower: Lower bound of 95% confidence interval
+        - win_rate_upper: Upper bound of 95% confidence interval
+        - median_inference_time_s: Median inference time across tasks
+    """
     summaries = _load_summaries(summaries)
     summaries = _filter_models(
         summaries, model_column=model_column, included_models=included_models, excluded_models=excluded_models
@@ -204,7 +247,41 @@ def pairwise_comparison(
     n_resamples: int = 1000,
     seed: int = 123,
 ) -> pd.DataFrame:
-    """Compute pairwise pairwise scores for all models."""
+    """Compute pairwise performance comparisons between all model pairs.
+
+    For each pair of models, calculates geometric mean relative error and
+    win rate with bootstrap confidence intervals across all tasks.
+
+    Parameters
+    ----------
+    summaries : SummaryType | list[SummaryType]
+        Evaluation summaries as DataFrame, list of dicts, or file path(s)
+    metric_column : str, default "test_error"
+        Column name containing the metric to evaluate
+    task_columns : str | list[str], default "dataset_path"
+        Column(s) defining unique tasks for grouping
+    model_column : str, default "model_name"
+        Column name containing model identifiers
+    included_models : list[str], optional
+        Models to include (mutually exclusive with excluded_models)
+    excluded_models : list[str], optional
+        Models to exclude (mutually exclusive with included_models)
+    n_resamples : int, default 1000
+        Number of bootstrap samples for confidence intervals
+    seed : int, default 123
+        Random seed for reproducible bootstrap sampling
+
+    Returns
+    -------
+    pd.DataFrame
+        Pairwise comparison results with MultiIndex (model_1, model_2) and columns:
+        - gmean_rel_error: Geometric mean of model_1/model_2 error ratios
+        - gmean_rel_error_lower: Lower bound of 95% confidence interval
+        - gmean_rel_error_upper: Upper bound of 95% confidence interval
+        - win_rate: Fraction of tasks where model_1 outperforms model_2
+        - win_rate_lower: Lower bound of 95% confidence interval
+        - win_rate_upper: Upper bound of 95% confidence interval
+    """
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
@@ -265,21 +342,29 @@ def bootstrap(
     alpha: float = 0.05,
     seed: int = 123,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return point estimate and the (1-alpha) CI of the statistic on provided data.
+    """Return point estimate and confidence interval bounds for a statistic.
 
     Parameters
     ----------
-    errors:
+    errors : np.ndarray
         Error of each model on each task, shape [n_tasks, n_models]
-    statistic:
-        A function working on numpy arrays [n_samples, n_models, ...] -> [n_models, ...]
+    statistic : Callable[[np.ndarray], np.ndarray]
+        A function working on numpy arrays [n_tasks, n_models, ...] -> [n_models, ...]
+    n_resamples : int, default 1000
+        Number of bootstrap samples for confidence intervals
+    alpha : float, default 0.05
+        Significance level for (1-alpha) confidence intervals
+    seed : int, default 123
+        Random seed for reproducible bootstrap sampling
 
     Returns
     -------
-    point_estimate:
+    point_estimate : np.ndarray
         Point estimate computed on full data, shape [n_models, ...]
-    lower:
-        (1-alpha) CI computed as maximum(upper-point_estimate, point_estimate-lower), shape [n_models, ...]
+    lower : np.ndarray
+        Lower bound of (1-alpha) confidence interval, shape [n_models, ...]
+    upper : np.ndarray
+        Upper bound of (1-alpha) confidence interval, shape [n_models, ...]
     """
     assert errors.ndim == 2, "errors must have shape [n_tasks, n_models]"
     assert 0 < alpha < 1, "alpha must be in (0, 1)"
