@@ -23,6 +23,8 @@ logger = logging.getLogger("fev")
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
+datasets.disable_progress_bar()
+
 
 @dataclasses.dataclass
 class EvaluationWindow:
@@ -557,39 +559,29 @@ class Task:
     @pydantic.model_validator(mode="before")
     @classmethod
     def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+        def _warn_and_rename_kwarg(data: ArgsKwargs, old_name: str, new_name: str) -> ArgsKwargs:
+            assert data.kwargs is not None
+            if old_name in data.kwargs:
+                warnings.warn(
+                    f"Field '{old_name}' is deprecated and will be removed in a future release. "
+                    f"Please use '{new_name}' instead",
+                    category=FutureWarning,
+                    stacklevel=4,
+                )
+                data.kwargs[new_name] = data.kwargs.pop(old_name)
+            return data
+
         if data.kwargs is not None:
             if "lead_time" in data.kwargs:
-                # TODO: `lead_time` will be replaced by `horizon_weight` in a future version
-                warnings.warn(
-                    "Field `lead_time` is deprecated and will be ignored.",
-                    category=FutureWarning,
-                    stacklevel=3,
-                )
+                # 'lead_time' was never used before, quietly ignore
                 data.kwargs.pop("lead_time")
-            if "num_rolling_windows" in data.kwargs:
-                warnings.warn(
-                    "Field 'num_rolling_windows' is deprecated and will be removed in a future release. "
-                    "Please use 'num_windows' instead",
-                    category=FutureWarning,
-                    stacklevel=3,
-                )
-                data.kwargs.setdefault("num_windows", data.kwargs.pop("num_rolling_windows"))
-            if "rolling_step_size" in data.kwargs:
-                warnings.warn(
-                    "Field 'rolling_step_size' is deprecated and will be removed in a future release. "
-                    "Please use 'window_step_size' instead",
-                    category=FutureWarning,
-                    stacklevel=3,
-                )
-                data.kwargs.setdefault("window_step_size", data.kwargs.pop("rolling_step_size"))
-            if "cutoff" in data.kwargs:
-                warnings.warn(
-                    "Field 'cutoff' is deprecated and will be removed in a future release. "
-                    "Please use 'initial_cutoff' instead",
-                    category=FutureWarning,
-                    stacklevel=3,
-                )
-                data.kwargs.setdefault("initial_cutoff", data.kwargs.pop("cutoff"))
+            for old_name, new_name in [
+                ("num_rolling_windows", "num_windows"),
+                ("rolling_step_size", "window_step_size"),
+                ("cutoff", "initial_cutoff"),
+                ("target_column", "target"),
+            ]:
+                data = _warn_and_rename_kwarg(data, old_name, new_name)
         return data
 
     @property
@@ -838,11 +830,13 @@ class Task:
         summary.update(self.to_dict())
         metrics = sorted(set([self.eval_metric] + self.extra_metrics))
         metrics_per_window = {metric: [] for metric in metrics}
-        if not isinstance(predictions_per_window, Iterable):
+        # TODO: Better check ensuring that predictions are provided in correct format
+        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict)):
             raise ValueError(
                 f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
             )
-        for predictions, window in zip(predictions_per_window, self.iter_windows()):
+        # Use strict=True to raise error if num_predictions does not match num_windows
+        for predictions, window in zip(predictions_per_window, self.iter_windows(), strict=True):
             metric_scores = window.compute_metrics(
                 self.clean_and_validate_predictions(predictions),
                 metrics=metrics,
