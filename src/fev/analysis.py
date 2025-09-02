@@ -18,7 +18,7 @@ TASK_DEF_DTYPES = {
     "dataset_path": pd.StringDtype(),
     "dataset_config": pd.StringDtype(),
     "horizon": pd.Int64Dtype(),
-    "cutoff": pd.StringDtype(),
+    "initial_cutoff": pd.StringDtype(),
     "min_context_length": pd.Int64Dtype(),
     "max_context_length": pd.Int64Dtype(),
     "seasonality": pd.Int64Dtype(),
@@ -87,7 +87,8 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
     summaries_df = pd.concat([_summary_to_df(summary) for summary in summaries])
 
     missing_columns = sorted([col for col in RESULTS_DTYPES if col not in summaries_df])
-    warnings.warn(f"Columns {missing_columns} are missing from summaries, filling them with None", stacklevel=3)
+    if len(missing_columns) > 0:
+        warnings.warn(f"Columns {missing_columns} are missing from summaries, filling them with None", stacklevel=3)
     for col in missing_columns:
         summaries_df[col] = None
     summaries_df = summaries_df.astype(RESULTS_DTYPES)
@@ -150,9 +151,10 @@ def leaderboard(
     metric_column: str = "test_error",
     task_columns: str | list[str] = "task_name",
     model_column: str = "model_name",
-    baseline_model: str | None = None,
+    baseline_model: str = "SeasonalNaive",
     min_relative_error: float = 1e-3,
-    max_relative_error: float = 5,
+    max_relative_error: float = 5.0,
+    relative_error_for_failures: float | None = None,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
     n_resamples: int = 1000,
@@ -173,7 +175,7 @@ def leaderboard(
         Column(s) defining unique tasks for grouping
     model_column : str, default "model_name"
         Column name containing model identifiers
-    baseline_model : str, optional
+    baseline_model : str, default "SeasonalNaive"
         Model name to use for relative error computation
     min_relative_error : float, default 1e-3
         Lower bound for clipping relative errors when baseline_model is used
@@ -204,22 +206,31 @@ def leaderboard(
     summaries = _filter_models(
         summaries, model_column=model_column, included_models=included_models, excluded_models=excluded_models
     )
-    num_results_per_model = summaries.groupby(model_column).size()
-    models_with_missing = num_results_per_model.index[num_results_per_model != num_results_per_model.max()]
-    if len(models_with_missing):
-        raise ValueError(f"Some results are missing for following models: {models_with_missing.to_list()}")
+    # num_results_per_model = summaries.groupby(model_column).size()
+    # models_with_missing = num_results_per_model.index[num_results_per_model != num_results_per_model.max()]
+    # if len(models_with_missing):
+    #     raise ValueError(f"Some results are missing for following models: {models_with_missing.to_list()}")
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
-    if errors_df.isna().any().any():
+    # if errors_df.isna().any().any():
+    #     raise ValueError(
+    #         "Results are missing for some models. Run `pivot_table(summaries)` to see which ones are missing."
+    #     )
+    if baseline_model not in errors_df.columns:
         raise ValueError(
-            "Results are missing for some models. Run `pivot_table(summaries)` to see which ones are missing."
+            f"baseline_model '{baseline_model}' is missing. Available models: {errors_df.columns.to_list()}"
         )
+    if num_baseline_failures := errors_df[baseline_model].isna().sum():
+        raise ValueError(
+            f"Results for baseline_model '{baseline_model}' are missing for {num_baseline_failures} tasks."
+        )
+    errors_df = errors_df.divide(errors_df[baseline_model], axis=0)
+    errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
+    if relative_error_for_failures is not None:
+        errors_df = errors_df.fillna(relative_error_for_failures)
     inference_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="inference_time_s")
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
         errors_df.to_numpy(), statistic=_win_rate, n_resamples=n_resamples, seed=seed
     )
-    if baseline_model is not None:
-        errors_df = errors_df.divide(errors_df[baseline_model], axis=0)
-        errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
     gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
         errors_df.to_numpy(), statistic=_gmean_rel_error, n_resamples=n_resamples, seed=seed
     )
@@ -287,6 +298,8 @@ def pairwise_comparison(
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
     if errors_df.isna().any().any():
         raise ValueError("Results are missing for some models")
+    model_order = errors_df.rank(axis=1).mean().sort_values().index
+    errors_df = errors_df[model_order]
     gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
         errors_df.to_numpy(),
         statistic=_pairwise_gmean_rel_error,
