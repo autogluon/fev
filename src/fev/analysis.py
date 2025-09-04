@@ -220,16 +220,16 @@ def leaderboard(
         )
     errors_df = errors_df.divide(errors_df[baseline_model], axis=0)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
-    num_failures_per_model = errors_df.isna().sum()
     if remove_failures:
         errors_df = errors_df.dropna()
         if len(errors_df) == 0:
             raise ValueError("All results are missing for some models.")
     elif relative_error_for_failures is not None:
         errors_df = errors_df.fillna(relative_error_for_failures)
-    else:
+    num_failures_per_model = errors_df.isna().sum()
+    if num_failures_per_model.sum():
         raise ValueError(
-            f"Results are missing for the following models: {num_failures_per_model[num_failures_per_model > 0].to_dict()}"
+            f"Results are missing for the following models:\n{num_failures_per_model[num_failures_per_model > 0]}"
         )
     training_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="training_time_s")
     inference_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="inference_time_s")
@@ -260,6 +260,9 @@ def pairwise_comparison(
     metric_column: str = "test_error",
     task_columns: str | list[str] = "dataset_path",
     model_column: str = "model_name",
+    baseline_model: str = "SeasonalNaive",  # used for imputation if
+    min_relative_error: float | None = 1e-2,
+    max_relative_error: float | None = 100.0,
     remove_failures: bool = False,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
@@ -306,19 +309,29 @@ def pairwise_comparison(
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
-
     if remove_failures:
         errors_df = errors_df.dropna()
         if len(errors_df) == 0:
-            raise ValueError("All results are missing for some tasks.")
+            raise ValueError("All results are missing for some models.")
         print(len(errors_df))
-    if errors_df.isna().any().any():
-        raise ValueError("Results are missing for some models")
+    elif baseline_model is not None:
+        if baseline_model not in errors_df.columns:
+            raise ValueError(
+                f"baseline_model '{baseline_model}' is missing. Available models: {errors_df.columns.to_list()}"
+            )
+        for col in errors_df.columns:
+            if col != baseline_model:
+                errors_df[col] = errors_df[col].fillna(errors_df[baseline_model])
+    num_failures_per_model = errors_df.isna().sum()
+    if num_failures_per_model.sum():
+        raise ValueError(
+            f"Results are missing for the following models:\n{num_failures_per_model[num_failures_per_model > 0]}"
+        )
     model_order = errors_df.rank(axis=1).mean().sort_values().index
     errors_df = errors_df[model_order]
     skill_score, skill_score_lower, skill_score_upper = bootstrap(
         errors_df.to_numpy(),
-        statistic=_pairwise_skill_score,
+        statistic=lambda x: _pairwise_skill_score(x, min_relative_error, max_relative_error),
         n_resamples=n_resamples,
         seed=seed,
     )
@@ -359,9 +372,14 @@ def _pairwise_win_rate(errors: np.ndarray) -> np.ndarray:
     return (A < B).mean(0) + 0.5 * (A == B).mean(0)  # [n_models, n_models, ...]
 
 
-def _pairwise_skill_score(errors: np.ndarray) -> np.ndarray:
+def _pairwise_skill_score(
+    errors: np.ndarray, min_relative_error: float | None = None, max_relative_error: float | None = None
+) -> np.ndarray:
     A, B = errors[:, :, None], errors[:, None, :]
-    return 1 - scipy.stats.gmean(A / B, axis=0)  # [n_models, n_models, ...]
+    ratios = A / B
+    if min_relative_error is not None or max_relative_error is not None:
+        ratios = np.clip(ratios, min_relative_error, max_relative_error)
+    return 1 - scipy.stats.gmean(ratios, axis=0)  # [n_models, n_models, ...]
 
 
 def bootstrap(
