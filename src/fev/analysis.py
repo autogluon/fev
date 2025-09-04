@@ -165,6 +165,10 @@ def leaderboard(
 
     Computes skill score (1 - geometric mean relative error) and win rate with bootstrap confidence
     intervals across all tasks. Models are ranked by skill score.
+    
+    Missing results are handled in 2 ways:
+    1. Drop tasks where at least 1 model failed (remove_failures=True)
+    2. Impute missing scores with a fixed value (relative_error_for_failures)
 
     Parameters
     ----------
@@ -184,6 +188,8 @@ def leaderboard(
         Upper bound for clipping relative errors when baseline_model is used
     remove_failures : bool, default False
         If True, remove tasks where any model failed. Takes precedence over relative_error_for_failures
+    relative_error_for_failures : float, optional
+        Fixed value to impute for missing results. Only used if remove_failures=False
     included_models : list[str], optional
         Models to include (mutually exclusive with excluded_models)
     excluded_models : list[str], optional
@@ -273,6 +279,10 @@ def pairwise_comparison(
 
     For each pair of models, calculates skill score (1 - geometric mean relative error) and
     win rate with bootstrap confidence intervals across all tasks.
+    
+    Missing results are handled in 2 ways:
+    1. Drop tasks where at least 1 model failed (remove_failures=True)
+    2. Impute missing scores with the baseline model score (remove_failures=False)
 
     Parameters
     ----------
@@ -284,8 +294,14 @@ def pairwise_comparison(
         Column(s) defining unique tasks for grouping
     model_column : str, default "model_name"
         Column name containing model identifiers
+    baseline_model : str, default "SeasonalNaive"
+        Model name used for imputing missing results when remove_failures=False
+    min_relative_error : float, optional, default 1e-2
+        Lower bound for clipping error ratios in pairwise comparisons
+    max_relative_error : float, optional, default 100.0
+        Upper bound for clipping error ratios in pairwise comparisons
     remove_failures : bool, default False
-        If True, remove tasks where any model failed; if False, raise error if failures exist
+        If True, remove tasks where any model failed; if False, impute with baseline_model scores
     included_models : list[str], optional
         Models to include (mutually exclusive with excluded_models)
     excluded_models : list[str], optional
