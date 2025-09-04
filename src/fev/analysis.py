@@ -152,8 +152,9 @@ def leaderboard(
     task_columns: str | list[str] = "task_name",
     model_column: str = "model_name",
     baseline_model: str = "SeasonalNaive",
-    min_relative_error: float = 1e-3,
-    max_relative_error: float = 5.0,
+    min_relative_error: float | None = 1e-2,
+    max_relative_error: float | None = 100.0,
+    remove_failures: bool = False,
     relative_error_for_failures: float | None = None,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
@@ -162,8 +163,8 @@ def leaderboard(
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
 
-    Computes geometric mean relative error and win rate with bootstrap confidence
-    intervals across all tasks. Models are ranked by geometric mean relative error.
+    Computes skill score (1 - geometric mean relative error) and win rate with bootstrap confidence
+    intervals across all tasks. Models are ranked by skill score.
 
     Parameters
     ----------
@@ -181,6 +182,8 @@ def leaderboard(
         Lower bound for clipping relative errors when baseline_model is used
     max_relative_error : float, default 5
         Upper bound for clipping relative errors when baseline_model is used
+    remove_failures : bool, default False
+        If True, remove tasks where any model failed. Takes precedence over relative_error_for_failures
     included_models : list[str], optional
         Models to include (mutually exclusive with excluded_models)
     excluded_models : list[str], optional
@@ -193,10 +196,10 @@ def leaderboard(
     Returns
     -------
     pd.DataFrame
-        Leaderboard sorted by geometric mean relative error, with columns:
-        - gmean_rel_error: Geometric mean relative error
-        - gmean_rel_error_lower: Lower bound of 95% confidence interval
-        - gmean_rel_error_upper: Upper bound of 95% confidence interval
+        Leaderboard sorted by skill score, with columns:
+        - skill_score: Skill score (1 - geometric mean relative error)
+        - skill_score_lower: Lower bound of 95% confidence interval
+        - skill_score_upper: Upper bound of 95% confidence interval
         - win_rate: Fraction of pairwise comparisons won against other models
         - win_rate_lower: Lower bound of 95% confidence interval
         - win_rate_upper: Upper bound of 95% confidence interval
@@ -206,15 +209,7 @@ def leaderboard(
     summaries = _filter_models(
         summaries, model_column=model_column, included_models=included_models, excluded_models=excluded_models
     )
-    # num_results_per_model = summaries.groupby(model_column).size()
-    # models_with_missing = num_results_per_model.index[num_results_per_model != num_results_per_model.max()]
-    # if len(models_with_missing):
-    #     raise ValueError(f"Some results are missing for following models: {models_with_missing.to_list()}")
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
-    # if errors_df.isna().any().any():
-    #     raise ValueError(
-    #         "Results are missing for some models. Run `pivot_table(summaries)` to see which ones are missing."
-    #     )
     if baseline_model not in errors_df.columns:
         raise ValueError(
             f"baseline_model '{baseline_model}' is missing. Available models: {errors_df.columns.to_list()}"
@@ -225,27 +220,39 @@ def leaderboard(
         )
     errors_df = errors_df.divide(errors_df[baseline_model], axis=0)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
-    if relative_error_for_failures is not None:
+    num_failures_per_model = errors_df.isna().sum()
+    if remove_failures:
+        errors_df = errors_df.dropna()
+        if len(errors_df) == 0:
+            raise ValueError("All results are missing for some models.")
+    elif relative_error_for_failures is not None:
         errors_df = errors_df.fillna(relative_error_for_failures)
+    else:
+        raise ValueError(
+            f"Results are missing for the following models: {num_failures_per_model[num_failures_per_model > 0].to_dict()}"
+        )
+    training_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="training_time_s")
     inference_time_df = summaries.pivot_table(index=task_columns, columns=model_column, values="inference_time_s")
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
         errors_df.to_numpy(), statistic=_win_rate, n_resamples=n_resamples, seed=seed
     )
-    gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
-        errors_df.to_numpy(), statistic=_gmean_rel_error, n_resamples=n_resamples, seed=seed
+    skill_score, skill_score_lower, skill_score_upper = bootstrap(
+        errors_df.to_numpy(), statistic=_skill_score, n_resamples=n_resamples, seed=seed
     )
     return pd.DataFrame(
         {
-            "gmean_rel_error": gmean_rel_error,
-            "gmean_rel_error_lower": gmean_rel_error_lower,
-            "gmean_rel_error_upper": gmean_rel_error_upper,
+            "skill_score": skill_score,
+            "skill_score_lower": skill_score_lower,
+            "skill_score_upper": skill_score_upper,
             "win_rate": win_rate,
             "win_rate_lower": win_rate_lower,
             "win_rate_upper": win_rate_upper,
+            "median_training_time_s": training_time_df.median(),
             "median_inference_time_s": inference_time_df.median(),
+            "num_failures": num_failures_per_model,
         },
         index=errors_df.columns,
-    ).sort_values(by="gmean_rel_error")
+    ).sort_values(by="skill_score", ascending=False)
 
 
 def pairwise_comparison(
@@ -253,6 +260,7 @@ def pairwise_comparison(
     metric_column: str = "test_error",
     task_columns: str | list[str] = "dataset_path",
     model_column: str = "model_name",
+    remove_failures: bool = False,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
     n_resamples: int = 1000,
@@ -260,7 +268,7 @@ def pairwise_comparison(
 ) -> pd.DataFrame:
     """Compute pairwise performance comparisons between all model pairs.
 
-    For each pair of models, calculates geometric mean relative error and
+    For each pair of models, calculates skill score (1 - geometric mean relative error) and
     win rate with bootstrap confidence intervals across all tasks.
 
     Parameters
@@ -273,6 +281,8 @@ def pairwise_comparison(
         Column(s) defining unique tasks for grouping
     model_column : str, default "model_name"
         Column name containing model identifiers
+    remove_failures : bool, default False
+        If True, remove tasks where any model failed; if False, raise error if failures exist
     included_models : list[str], optional
         Models to include (mutually exclusive with excluded_models)
     excluded_models : list[str], optional
@@ -286,9 +296,9 @@ def pairwise_comparison(
     -------
     pd.DataFrame
         Pairwise comparison results with MultiIndex (model_1, model_2) and columns:
-        - gmean_rel_error: Geometric mean of model_1/model_2 error ratios
-        - gmean_rel_error_lower: Lower bound of 95% confidence interval
-        - gmean_rel_error_upper: Upper bound of 95% confidence interval
+        - skill_score: 1 - geometric mean of model_1/model_2 error ratios
+        - skill_score_lower: Lower bound of 95% confidence interval
+        - skill_score_upper: Upper bound of 95% confidence interval
         - win_rate: Fraction of tasks where model_1 outperforms model_2
         - win_rate_lower: Lower bound of 95% confidence interval
         - win_rate_upper: Upper bound of 95% confidence interval
@@ -296,13 +306,19 @@ def pairwise_comparison(
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = summaries.pivot_table(index=task_columns, columns=model_column, values=metric_column)
+
+    if remove_failures:
+        errors_df = errors_df.dropna()
+        if len(errors_df) == 0:
+            raise ValueError("All results are missing for some tasks.")
+        print(len(errors_df))
     if errors_df.isna().any().any():
         raise ValueError("Results are missing for some models")
     model_order = errors_df.rank(axis=1).mean().sort_values().index
     errors_df = errors_df[model_order]
-    gmean_rel_error, gmean_rel_error_lower, gmean_rel_error_upper = bootstrap(
+    skill_score, skill_score_lower, skill_score_upper = bootstrap(
         errors_df.to_numpy(),
-        statistic=_pairwise_gmean_rel_error,
+        statistic=_pairwise_skill_score,
         n_resamples=n_resamples,
         seed=seed,
     )
@@ -314,9 +330,9 @@ def pairwise_comparison(
     )
     return pd.DataFrame(
         {
-            "gmean_rel_error": gmean_rel_error.flatten(),
-            "gmean_rel_error_lower": gmean_rel_error_lower.flatten(),
-            "gmean_rel_error_upper": gmean_rel_error_upper.flatten(),
+            "skill_score": skill_score.flatten(),
+            "skill_score_lower": skill_score_lower.flatten(),
+            "skill_score_upper": skill_score_upper.flatten(),
             "win_rate": win_rate.flatten(),
             "win_rate_lower": win_rate_lower.flatten(),
             "win_rate_upper": win_rate_upper.flatten(),
@@ -334,8 +350,8 @@ def _win_rate(errors: np.ndarray) -> np.ndarray:
     return np.nanmean(wins, axis=1)  # [n_models, ...]
 
 
-def _gmean_rel_error(errors: np.ndarray) -> np.ndarray:
-    return scipy.stats.gmean(errors, axis=0)  # [n_models, ...]
+def _skill_score(errors: np.ndarray) -> np.ndarray:
+    return 1 - scipy.stats.gmean(errors, axis=0)  # [n_models, ...]
 
 
 def _pairwise_win_rate(errors: np.ndarray) -> np.ndarray:
@@ -343,9 +359,9 @@ def _pairwise_win_rate(errors: np.ndarray) -> np.ndarray:
     return (A < B).mean(0) + 0.5 * (A == B).mean(0)  # [n_models, n_models, ...]
 
 
-def _pairwise_gmean_rel_error(errors: np.ndarray) -> np.ndarray:
+def _pairwise_skill_score(errors: np.ndarray) -> np.ndarray:
     A, B = errors[:, :, None], errors[:, None, :]
-    return scipy.stats.gmean(A / B, axis=0)  # [n_models, n_models, ...]
+    return 1 - scipy.stats.gmean(A / B, axis=0)  # [n_models, n_models, ...]
 
 
 def bootstrap(
