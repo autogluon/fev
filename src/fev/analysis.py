@@ -151,6 +151,7 @@ def pivot_table(
     ------
     ValueError
         If duplicate model/task combinations exist or baseline_model is missing
+    """
     summaries = _load_summaries(summaries).astype({metric_column: "float64"})
 
     if isinstance(task_columns, str):
