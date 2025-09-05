@@ -128,7 +128,21 @@ def pivot_table(
 
     Returns a DataFrame where entry df.iloc[i, j] contains the score of model j on task i.
 
-    Raises an error if there are duplicate model/task combinations in the data.
+    Parameters
+    ----------
+    summaries : SummaryType | list[SummaryType]
+        Evaluation summaries as DataFrame, list of dicts, or file path(s)
+    metric_column : str, default "test_error"
+        Column name containing the metric to evaluate
+    task_columns : str | list[str], default TASK_DEF_COLUMNS
+        Columns to use as index in the pivot table
+    baseline_model : str | None, default None
+        If provided, normalize all scores by dividing by baseline model scores
+
+    Returns
+    -------
+    pd.DataFrame
+        Pivot table with tasks as index and models as columns
     """
     summaries = _load_summaries(summaries).astype({metric_column: "float64"})
 
