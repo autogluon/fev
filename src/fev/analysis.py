@@ -68,9 +68,9 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
             elif file_path.endswith(".csv"):
                 df = pd.read_csv(file_path)
             else:
-                raise ValueError("Path to summaries must ends with '.json' or '.csv'")
+                raise ValueError("Path to summaries must end with '.json' or '.csv'")
         except Exception:
-            raise ValueError(f"Unable to load summaries from file '{file_path}.")
+            raise ValueError(f"Unable to load summaries from file '{file_path}'.")
     else:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
@@ -223,7 +223,7 @@ def leaderboard(
         - win_rate: Fraction of pairwise comparisons won against other models
         - win_rate_lower: Lower bound of 95% confidence interval
         - win_rate_upper: Upper bound of 95% confidence interval
-        - median_training_time_s: Median inference time across tasks
+        - median_training_time_s: Median training time across tasks
         - median_inference_time_s: Median inference time across tasks
     """
     summaries = _load_summaries(summaries)
@@ -257,7 +257,7 @@ def leaderboard(
 
     training_time_df = pivot_table(summaries, metric_column="training_time_s")
     inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
-    # Select only tasks that that are also in errors_df (in case some tasks were dropped with `remove_failures``)
+    # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
     median_training_time_s = training_time_df.loc[errors_df.index].median()
     median_inference_time_s = inference_time_df.loc[errors_df.index].median()
     return pd.DataFrame(
@@ -330,9 +330,6 @@ def pairwise_comparison(
         - win_rate_lower: Lower bound of 95% confidence interval
         - win_rate_upper: Upper bound of 95% confidence interval
     """
-    if missing_strategy == "impute" and baseline_model is None:
-        raise ValueError("baseline_model is required when missing_strategy='impute'")
-
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column)
