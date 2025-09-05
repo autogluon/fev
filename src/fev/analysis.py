@@ -124,26 +124,33 @@ def pivot_table(
     task_columns: str | list[str] = TASK_DEF_COLUMNS.copy(),
     baseline_model: str | None = None,
 ) -> pd.DataFrame:
-    """Convert summaries into a pivot table with index equal to `task_columns` and columns equal to model names.
+    """Convert evaluation summaries into a pivot table for analysis.
 
-    Returns a DataFrame where entry df.iloc[i, j] contains the score of model j on task i.
+    Creates a matrix where rows represent tasks and columns represent models, with each
+    cell containing the specified metric value. Optionally normalizes all scores relative
+    to a baseline model.
 
     Parameters
-    ----------
+    ----------                                                                                                                                                     [0/15500]
     summaries : SummaryType | list[SummaryType]
         Evaluation summaries as DataFrame, list of dicts, or file path(s)
     metric_column : str, default "test_error"
-        Column name containing the metric to evaluate
+        Column name containing the metric to pivot
     task_columns : str | list[str], default TASK_DEF_COLUMNS
-        Columns to use as index in the pivot table
-    baseline_model : str | None, default None
-        If provided, normalize all scores by dividing by baseline model scores
+        Column(s) defining unique tasks. Used as the pivot table index
+    baseline_model : str, optional
+        If provided, divide all scores by this model's scores to get relative performance
 
     Returns
     -------
     pd.DataFrame
-        Pivot table with tasks as index and models as columns
-    """
+        Pivot table with task combinations as index and model names as columns.
+        Values are raw scores or relative scores (if baseline_model specified)
+
+    Raises
+    ------
+    ValueError
+        If duplicate model/task combinations exist or baseline_model is missing
     summaries = _load_summaries(summaries).astype({metric_column: "float64"})
 
     if isinstance(task_columns, str):
