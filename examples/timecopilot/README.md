@@ -23,7 +23,7 @@ This ensemble leverages [**TimeCopilot's MedianEnsemble**](https://timecopilot.d
 
 ```bash
 # Install dependencies
-uv sync
+uv pip sync requirements.txt
 ```
 
 ## Evaluation Methods
