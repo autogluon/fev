@@ -288,7 +288,7 @@ h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-h2==4.2.0
+h2==4.3.0
     # via grpclib
 hf-xet==1.1.5 ; platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
