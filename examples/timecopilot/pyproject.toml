@@ -1,0 +1,17 @@
+[project]
+dependencies = [
+  "fev>=0.5.0",
+  "modal>=1.0.5",
+  "pyarrow<=20.0.0",
+  "s3fs>=2023.12.1",
+  "timecopilot>=0.0.17",
+  "typer>=0.16.0",
+]
+description = "TimeCopilot fev experiments"
+name = "timecopilot-fev"
+readme = "README.md"
+requires-python = ">=3.11"
+version = "0.1.0"
+
+[tool.uv]
+override-dependencies = ["datasets[s3]>=2.15,<4.0"]
