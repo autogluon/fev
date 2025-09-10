@@ -6,7 +6,7 @@ TimeCopilot is an open‑source AI agent for time series forecasting that provid
 
 ## Model Description
 
-This ensemble leverages [**TimeCopilot's MedianEnsemble**](https://timecopilot.dev/api/models/ensembles/#timecopilot.models.ensembles.median.MedianEnsemble) feature, which combines three state-of-the-art foundation models:
+This ensemble leverages [**TimeCopilot's MedianEnsemble**](https://timecopilot.dev/api/models/ensembles/#timecopilot.models.ensembles.median.MedianEnsemble) feature, which combines two state-of-the-art foundation models:
 
 - [**TiRex** (NX-AI)](https://timecopilot.dev/api/models/foundation/models/#timecopilot.models.foundation.tirex.TiRex)
 - [**Chronos** (AWS AI Labs)](https://timecopilot.dev/api/models/foundation/models/#timecopilot.models.foundation.chronos.Chronos)
