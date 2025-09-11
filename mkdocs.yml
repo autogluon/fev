@@ -1,0 +1,37 @@
+site_name: fev
+site_description: A lightweight library for benchmarking time series forecasting models
+site_url: https://autogluon.github.io/fev/
+repo_url: https://github.com/autogluon/fev
+repo_name: autogluon/fev
+
+theme:
+  name: material
+  palette:
+    primary: blue
+
+plugins:
+  - search
+  - mkdocs-jupyter
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+
+nav:
+  - Home: index.md
+  - Tutorials:
+    - Quickstart: tutorials/01-quickstart.ipynb
+    - Dataset Format: tutorials/02-dataset-format.ipynb
+    - Tasks & Benchmarks: tutorials/03-tasks-and-benchmarks.ipynb
+    - Models: tutorials/04-models.ipynb
+  - API Reference:
+    - Task: api/task.md
+    - EvaluationWindow: api/evaluation-window.md
+    - Benchmark: api/benchmark.md
+    - Analysis methods: api/analysis.md
+    - Utility methods: api/utilities.md
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
