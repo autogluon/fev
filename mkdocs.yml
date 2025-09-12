@@ -17,6 +17,10 @@ plugins:
         python:
           options:
             docstring_style: numpy
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 3
+
 
 nav:
   - Home: index.md
@@ -31,6 +35,7 @@ nav:
     - Benchmark: api/benchmark.md
     - Analysis methods: api/analysis.md
     - Utility methods: api/utilities.md
+    - Metrics: api/metrics.md
 
 markdown_extensions:
   - pymdownx.highlight
