@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#fev-documentation" class="md-skip">
+        <a href="#fev-forecast-evaluation-library" class="md-skip">
           Skip to content
         </a>
       
@@ -243,6 +243,19 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="." class="md-nav__link md-nav__link--active">
         
   
@@ -254,6 +267,52 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quickstart
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tutorials
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -599,6 +658,41 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quickstart
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tutorials
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -616,9 +710,44 @@
   
 
 
-<h1 id="fev-documentation">fev Documentation</h1>
-<p>Welcome to the fev documentation.</p>
-<p>See the <a href="https://github.com/autogluon/fev">README</a> for project overview and installation instructions.</p>
+<h1 id="fev-forecast-evaluation-library">fev: Forecast evaluation library</h1>
+<p><code>fev</code> is a lightweight library that makes it easy to benchmark time series forecasting models.</p>
+<ul>
+<li><strong>Extensible</strong>: Easy to define your own forecasting tasks and benchmarks.</li>
+<li><strong>Reproducible</strong>: Ensures that the results obtained by different users are comparable.</li>
+<li><strong>Easy to use</strong>: Compatible with most popular forecasting libraries.</li>
+<li><strong>Minimal dependencies</strong>: Just a thin wrapper on top of 🤗<a href="https://huggingface.co/docs/datasets/en/index"><code>datasets</code></a>.</li>
+</ul>
+<h2 id="installation">Installation</h2>
+<div class="highlight"><pre><span></span><code>pip install fev
+</code></pre></div>
+<h2 id="quickstart">Quickstart</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">fev</span>
+
+<span class="c1"># Create a forecasting task</span>
+<span class="n">task</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span>
+   <span class="n">dataset_path</span><span class="o">=</span><span class="s2">&quot;autogluon/chronos_datasets&quot;</span><span class="p">,</span>
+   <span class="n">dataset_config</span><span class="o">=</span><span class="s2">&quot;m4_hourly&quot;</span><span class="p">,</span>
+   <span class="n">horizon</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Evaluate your model</span>
+<span class="n">predictions_per_window</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">window</span> <span class="ow">in</span> <span class="n">task</span><span class="o">.</span><span class="n">iter_windows</span><span class="p">():</span>
+   <span class="n">past_data</span><span class="p">,</span> <span class="n">future_data</span> <span class="o">=</span> <span class="n">window</span><span class="o">.</span><span class="n">get_input_data</span><span class="p">()</span>
+   <span class="c1"># Make predictions</span>
+   <span class="n">predictions_per_window</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">past_data</span><span class="p">,</span> <span class="n">future_data</span><span class="p">))</span>
+
+<span class="c1"># Get reproducible evaluation summary with all task details &amp; metrics</span>
+<span class="n">summary</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">evaluation_summary</span><span class="p">(</span><span class="n">predictions_per_window</span><span class="p">,</span> <span class="s2">&quot;my_model&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="tutorials">Tutorials</h2>
+<ul>
+<li>🚀 <strong><a href="tutorials/01-quickstart/">Quickstart</a></strong> - Get started with your first forecasting task</li>
+<li>📊 <strong><a href="tutorials/02-dataset-format/">Dataset Format</a></strong> - Learn how to use your own datasets</li>
+<li>⚙️ <strong><a href="tutorials/03-tasks-and-benchmarks/">Tasks &amp; Benchmarks</a></strong> - Advanced task configuration</li>
+<li>🤖 <strong><a href="tutorials/04-models/">Models</a></strong> - Integrate your forecasting models</li>
+</ul>
 
 
 
