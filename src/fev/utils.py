@@ -290,10 +290,22 @@ def combine_univariate_predictions_to_multivariate(
 ) -> datasets.DatasetDict:
     """Combine univariate predictions back into multivariate format.
 
-    Assumes predictions are ordered by cycling through target columns. For example: if target_columns = ["X", "Y"],
-    predictions should be ordered as [item1_X, item1_Y, item2_X, item2_Y, ...].
+    Assumes predictions are ordered by cycling through target columns. For example: if `target_columns = ["X", "Y"]`,
+    predictions should be ordered as `[item1_X, item1_Y, item2_X, item2_Y, ...]`.
 
-    Returns a DatasetDict with one key per target column.
+    Parameters
+    ----------
+    predictions
+        Univariate predictions for a single evaluation window.
+
+        For the list of accepted types, see [`Task.clean_and_validate_predictions`][fev.Task.clean_and_validate_predictions].
+    target_columns
+        List of target columns in the original `Task` / `EvaluationWindow`.
+
+    Returns
+    -------
+    datasets.DatasetDict
+        Predictions for the evaluation window converted to multivariate format.
     """
     if isinstance(predictions, (dict, datasets.DatasetDict)):
         assert len(predictions) == 1, "Univariate predictions must contain a single key/value"
