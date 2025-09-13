@@ -33,6 +33,11 @@ datasets.disable_progress_bar()
 class EvaluationWindow:
     """
     A single evaluation window on which the forecast accuracy is measured.
+
+    Corresponds to a single train/test split of the time series data at the provided `cutoff`.
+
+    You should never manually create `EvaluationWindow` objects. Instead, use [`Task.iter_windows()`][fev.Task.iter_windows]
+    or [`Task.get_window()`][fev.Task.get_window] to obtain the evaluation windows corresponding to the task.
     """
 
     full_dataset: datasets.Dataset = dataclasses.field(repr=False)
@@ -54,7 +59,7 @@ class EvaluationWindow:
     def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
-        To convert the input data to a different format, use `fev.convert_input_data(window, adapter="...").
+        To convert the input data to a different format, use [`fev.convert_input_data`][fev.convert_input_data].
 
         Parameters
         ----------
@@ -67,20 +72,23 @@ class EvaluationWindow:
             Historical observations up to the cutoff point.
             Contains: id, timestamps, target values, static covariates, and all dynamic covariates.
 
-            Columns: `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
+            Columns corresponding to `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
             `past_dynamic_columns`, `known_dynamic_columns`.
         future_data : datasets.Dataset
             Known future information for the forecast horizon.
-            Contains: id, future timestamps, static covariates, and known future covariates only.
 
-            Columns: `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
+            Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
         if self._dataset_dict is None:
             self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
     def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
-        """Get ground truth future test data. This data should never be provided to the model!
+        """Get ground truth future test data.
+
+        **This data should never be provided to the model!**
+
+        This is a convenience method that exists for debugging and additional evaluation.
 
         Parameters
         ----------
@@ -98,6 +106,12 @@ class EvaluationWindow:
         seasonality: int,
         quantile_levels: list[float],
     ) -> dict[str, float]:
+        """Compute accuracy metrics on the predictions made for this window.
+
+        To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
+
+        This is a convenience method that exists for debugging and additional evaluation.
+        """
         test_data = self.get_ground_truth().with_format("numpy")
         past_data = self.get_input_data()[0].with_format("numpy")
 
@@ -206,13 +220,18 @@ class EvaluationWindow:
 class Task:
     """A univariate or multivariate time series forecasting task.
 
+    A `Task` stores all information uniquely identifying the task, such as path to the dataset, forecast horizon,
+    evaluation metric and names of the target & covariate columns.
+
     This object handles dataset loading, train/test splitting, and prediction evaluation for time series forecasting tasks.
 
-    The typical workflow involves iterating through the rolling evaluation windows with [`iter_windows()`][fev.Task.iter_windows]
-    and evaluating the predictions accuracy with [`evaluation_summary()`][fev.Task.evaluation_summary].
+    A single `Task` consists of one or more [`EvaluationWindow`][fev.task.EvaluationWindow] objects that can be
+    accessed using [`iter_windows()`][fev.Task.iter_windows] or [`get_window()`][fev.Task.get_window] methods.
+    After making predictions for each evaluation window, you can evaluate their accuracy using [`evaluation_summary()`][fev.Task.evaluation_summary].
 
+    Typical workflow:
     ```python
-    task = fev.Task(dataset_path="...", horizon=24)
+    task = fev.Task(dataset_path="...", num_windows=3, horizon=24)
 
     predictions_per_window = []
     for window in task.iter_windows():
@@ -318,15 +337,6 @@ class Task:
     Dataset consisting of multiple parquet files (local or S3)
 
     >>> Task(dataset_path="s3://my-bucket/m4_hourly/*.parquet", ...)
-
-    Create a `Task` consisting of multiple rolling evaluation windows
-
-    >>> task = Task(..., num_windows=3)
-    >>> predictions_per_window = []
-    >>> for window in task.iter_windows():
-    >>>     past_data, future_data = window.get_input_data()
-    >>>     predictions_per_window.append(model.predict(past_data, future_data))
-    >>> task.evaluation_summary(predictions_per_window, model_name="my_model")
     """
 
     dataset_path: str
@@ -438,7 +448,10 @@ class Task:
 
     @property
     def cutoffs(self) -> list[int] | list[str]:
-        """List of cutoffs for each evaluation window."""
+        """Cutoffs corresponding to each `EvaluationWindow` in the task.
+
+        Computed based on `num_windows`, `initial_cutoff` and `window_step_size` attributes of the task.
+        """
         if isinstance(self.initial_cutoff, int):
             assert isinstance(self.window_step_size, int)
             return [self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)]
@@ -472,17 +485,18 @@ class Task:
     ) -> datasets.Dataset:
         """Load the full raw dataset with preprocessing applied.
 
-        This method loads and preprocesses the dataset according to the task configuration,
-        including filtering columns, generating univariate targets, and validating the data.
+        This method validates the data, loads and preprocesses the dataset according to the task configuration,
+        including generating univariate targets if `generate_univariate_targets_from` is provided.
 
-        For model evaluation, use iter_windows() instead to get properly split train/test data.
+        **Note:** This method is only provided for information and debugging purposes. For model evaluation, use
+        [`iter_windows()`][fev.Task.iter_windows] instead to get properly split train/test data.
 
         Parameters
         ----------
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -511,9 +525,9 @@ class Task:
         Parameters
         ----------
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -547,9 +561,9 @@ class Task:
         window_idx : int
             Index of the evaluation window in [0, 1, ..., num_windows - 1].
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -609,10 +623,10 @@ class Task:
     def freq(self) -> str:
         """Pandas string corresponding to the frequency of the time series in the dataset.
 
-        This attribute is available after the dataset is loaded with `load_full_dataset`, `iter_windows` or `get_window`.
-
         See [pandas documentation](https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#cutoff-aliases)
         for the list of possible values.
+
+        This attribute is available after the dataset is loaded with `load_full_dataset`, `iter_windows` or `get_window`.
         """
         if self._freq is None:
             raise ValueError("Please load dataset first with `task.load_full_dataset()`")
@@ -907,7 +921,10 @@ class Task:
 
     @property
     def target_columns(self) -> list[str]:
-        """A list including names of all target columns for this task."""
+        """A list including names of all target columns for this task.
+
+        Unlike `task.target` that can be a string or a list, `task.target_columns` is always a list of strings.
+        """
         if isinstance(self.target, list):
             return self.target
         else:

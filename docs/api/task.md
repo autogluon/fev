@@ -2,24 +2,16 @@
 
 ::: fev.Task
     options:
-        show_bases: false
-        show_source: false
-        members: []
-        show_root_full_path: true
-
-## Methods
-
-::: fev.Task.get_window
-::: fev.Task.iter_windows
-::: fev.Task.evaluation_summary
-::: fev.Task.clean_and_validate_predictions
-
-
-## Attributes
-
-::: fev.Task.predictions_schema
-::: fev.Task.freq
-::: fev.Task.cutoffs
-::: fev.Task.target_columns
-::: fev.Task.is_multivariate
-::: fev.Task.dynamic_columns
+        members:
+        - "get_window"
+        - "iter_windows"
+        - "evaluation_summary"
+        - "clean_and_validate_predictions"
+        - "load_full_dataset"
+        - "to_dict"
+        - "predictions_schema"
+        - "freq"
+        - "cutoffs"
+        - "target_columns"
+        - "is_multivariate"
+        - "dynamic_columns"

@@ -19,7 +19,9 @@ plugins:
             docstring_style: numpy
             show_root_heading: true
             show_root_full_path: false
-            heading_level: 3
+            show_signature_annotations: true
+            show_category_heading: true
+            group_by_category: true
 
 
 nav:
