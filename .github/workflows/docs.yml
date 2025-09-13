@@ -1,0 +1,29 @@
+name: Deploy MkDocs
+
+on:
+  push:
+    tags: [ 'v*' ]  # triggers on version tags like v0.6.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    - run: pip install mkdocs-material mkdocs-jupyter mike
+    - run: |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+    - run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        mike deploy --push --update-aliases $VERSION latest

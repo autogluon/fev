@@ -395,16 +395,17 @@ def convert_input_data(
     adapter : {"pandas", "datasets", "gluonts", "nixtla", "darts", "autogluon"}
         Format to which the dataset must be converted.
     as_univariate
-        If True, the separate instances will be created from each target column before passing the data to the adapter.
+        If `True`, the separate instances will be created from each target column before passing the data to the adapter.
         Covariate columns will not be affected, only targets will be modified.
 
-        Setting as_univariate=True makes it easy to evaluate a univariate model on a multivariate task.
+        Setting `as_univariate=True` makes it easy to evaluate a univariate model on a multivariate task.
 
-        Equivalent to setting `generate_univariate_targets_from = "__ALL__"` in `Task` constructor.
+        Use [`fev.combine_univariate_predictions_to_multivariate`][fev.combine_univariate_predictions_to_multivariate] to combine univariate predictions back to the
+        multivariate format.
     univariate_target_column
-        Target column name used when as_univariate=True. Only used by the "datasets" adapter.
+        Target column name used when `as_univariate=True`. Only used by the `"datasets"` adapter.
     **kwargs
-        Keyword arguments passed to :meth:`fev.EvaluationWindow.get_input_data`.
+        Keyword arguments passed to [`EvaluationWindow.get_input_data()`][fev.EvaluationWindow.get_input_data].
     """
     past, future = window.get_input_data(**kwargs)
 

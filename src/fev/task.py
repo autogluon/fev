@@ -33,6 +33,11 @@ datasets.disable_progress_bar()
 class EvaluationWindow:
     """
     A single evaluation window on which the forecast accuracy is measured.
+
+    Corresponds to a single train/test split of the time series data at the provided `cutoff`.
+
+    You should never manually create `EvaluationWindow` objects. Instead, use [`Task.iter_windows()`][fev.Task.iter_windows]
+    or [`Task.get_window()`][fev.Task.get_window] to obtain the evaluation windows corresponding to the task.
     """
 
     full_dataset: datasets.Dataset = dataclasses.field(repr=False)
@@ -54,7 +59,7 @@ class EvaluationWindow:
     def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
-        To convert the input data to a different format, use `fev.convert_input_data(window, adapter="...").
+        To convert the input data to a different format, use [`fev.convert_input_data`][fev.convert_input_data].
 
         Parameters
         ----------
@@ -67,20 +72,23 @@ class EvaluationWindow:
             Historical observations up to the cutoff point.
             Contains: id, timestamps, target values, static covariates, and all dynamic covariates.
 
-            Columns: `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
+            Columns corresponding to `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
             `past_dynamic_columns`, `known_dynamic_columns`.
         future_data : datasets.Dataset
             Known future information for the forecast horizon.
-            Contains: id, future timestamps, static covariates, and known future covariates only.
 
-            Columns: `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
+            Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
         if self._dataset_dict is None:
             self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
     def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
-        """Get ground truth future test data. This data should never be provided to the model!
+        """Get ground truth future test data.
+
+        **This data should never be provided to the model!**
+
+        This is a convenience method that exists for debugging and additional evaluation.
 
         Parameters
         ----------
@@ -98,6 +106,12 @@ class EvaluationWindow:
         seasonality: int,
         quantile_levels: list[float],
     ) -> dict[str, float]:
+        """Compute accuracy metrics on the predictions made for this window.
+
+        To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
+
+        This is a convenience method that exists for debugging and additional evaluation.
+        """
         test_data = self.get_ground_truth().with_format("numpy")
         past_data = self.get_input_data()[0].with_format("numpy")
 
@@ -204,16 +218,29 @@ class EvaluationWindow:
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
 class Task:
-    """
-    A univariate or multivariate time series forecasting task.
+    """A univariate or multivariate time series forecasting task.
 
-    This object is responsible for
+    A `Task` stores all information uniquely identifying the task, such as path to the dataset, forecast horizon,
+    evaluation metric and names of the target & covariate columns.
 
-    - loading the data
-    - generating train/test splits
-    - evaluating the predictions accuracy
+    This object handles dataset loading, train/test splitting, and prediction evaluation for time series forecasting tasks.
 
-    A single `Task` object may correspond to multiple rolling windows used for evaluation.
+    A single `Task` consists of one or more [`EvaluationWindow`][fev.task.EvaluationWindow] objects that can be
+    accessed using [`iter_windows()`][fev.Task.iter_windows] or [`get_window()`][fev.Task.get_window] methods.
+    After making predictions for each evaluation window, you can evaluate their accuracy using [`evaluation_summary()`][fev.Task.evaluation_summary].
+
+    Typical workflow:
+    ```python
+    task = fev.Task(dataset_path="...", num_windows=3, horizon=24)
+
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, future_data = window.get_input_data()
+        predictions = model.predict(past_data, future_data)
+        predictions_per_window.append(predictions)
+
+    summary = task.evaluation_summary(predictions_per_window, model_name="my_model")
+    ```
 
     Parameters
     ----------
@@ -232,20 +259,21 @@ class Task:
         Starting position for the first evaluation window that separates past from future data.
 
         Can be specified as:
-        - **Integer**: Index position using pandas-like indexing. `y[:initial_cutoff]` becomes the past/training data,
+
+        - *Integer*: Index position using Python indexing. `y[:initial_cutoff]` becomes the past/training data,
             and `y[initial_cutoff:initial_cutoff+horizon]` becomes the first forecast horizon to predict.
             Negative values are interpreted as steps from the end of the series.
-        - **Timestamp string**: Date/datetime (e.g., `"2024-02-01"`). Data up to and including this timestamp becomes
+        - *Timestamp string*: Date or datetime (e.g., `"2024-02-01"`). Data up to and including this timestamp becomes
             past data, and the next `horizon` observations become the first forecast horizon.
 
-        If None, defaults to `-horizon - (num_windows - 1) * window_step_size`.
+        If `None`, defaults to `-horizon - (num_windows - 1) * window_step_size`.
 
         **Note**: Time series that are too short for any evaluation window (i.e., have fewer than `min_context_length`
         observations before a cutoff or fewer than `horizon` observations after a cutoff) will be filtered out during
         data loading.
-    window_step_size : int | str | None
+    window_step_size : int | str | None, default horizon
         Step size between consecutive evaluation windows. Must be an integer if `initial_cutoff` is an integer.
-        Can be an integer or pandas offset string (e.g., 'D', '15min') if `initial_cutoff` is a timestamp.
+        Can be an integer or pandas offset string (e.g., `'D'`, `'15min'`) if `initial_cutoff` is a timestamp.
         Defaults to `horizon`.
     min_context_length : int, default 1
         Time series with fewer than `min_context_length` observations before a cutoff will be ignored during evaluation.
@@ -254,21 +282,22 @@ class Task:
     seasonality : int, default 1
         Seasonal period of the dataset (e.g., 24 for hourly data, 12 for monthly data). This parameter is used when
         computing metrics like Mean Absolute Scaled Error (MASE).
-    eval_metric : str or dict[str, Any], default 'MASE'
+    eval_metric : str | dict[str, Any], default 'MASE'
         Evaluation metric used for ultimate evaluation on the test set. Can be specified as either a single string
         with the metric's name or a dictionary containing a "name" key and extra hyperparameters for the metric.
-        For example, MASE can also be specified as `{"name": "MASE", "epsilon": 0.0001}` to prevent near-zero
+        For example, MASE can also be specified as `{"name": "MASE", "epsilon": 0.0001}` to prevent zero
         denominators when scaling errors.
-    extra_metrics : list[str] or list[dict[str, Any]], default []
+    extra_metrics : list[str] | list[dict[str, Any]], default []
         Additional metrics to be included in the results. Can be specified as a list of strings with the metric's
         name or a list of dictionaries. See documentation for `eval_metric` for more details.
     quantile_levels : list[float], default []
-        Quantiles that must be predicted. List of floats between 0 and 1 (for example, [0.1, 0.5, 0.9]).
+        Quantiles that must be predicted. List of floats between 0 and 1 (for example, `[0.1, 0.5, 0.9]`).
     id_column : str, default 'id'
         Name of the column with the unique identifier of each time series.
+        This column will be casted to `string` dtype and the dataset will be sorted according to it.
     timestamp_column : str, default 'timestamp'
         Name of the column with the timestamps of the observations.
-    target : str or list[str], default 'target'
+    target : str | list[str], default 'target'
         Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
         If a list of strings is provided, a multivariate forecasting task is created.
     generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
@@ -283,13 +312,13 @@ class Task:
     past_dynamic_columns : list[str], default []
         Names of covariate columns that are known only in the past. These will be available in the past data, but not
         in the future data. An error will be raised if these columns are missing from the dataset.
-    known_dynamic_columns: list[str], default []
+    known_dynamic_columns : list[str], default []
         Names of covariate columns that are known in both past and future. These will be available in past data
         and future data. An error will be raised if these columns are missing from the dataset.
-    static_columns: list[str], default []
+    static_columns : list[str], default []
         Names of columns containing static covariates that don't change over time. An error will be raised if these
         columns are missing from the dataset.
-    task_name : str, optional
+    task_name : str | None, default None
         Human-readable name for the task. Defaults to `dataset_config` for datasets stored on HF hub, and to the
         name of 2 parent directories for local or S3-based datasets.
 
@@ -308,15 +337,6 @@ class Task:
     Dataset consisting of multiple parquet files (local or S3)
 
     >>> Task(dataset_path="s3://my-bucket/m4_hourly/*.parquet", ...)
-
-    Create a `Task` consisting of multiple rolling evaluation windows
-
-    >>> task = Task(..., num_windows=3)
-    >>> predictions_per_window = []
-    >>> for window in task.iter_windows():
-    >>>     past_data, future_data = window.get_input_data()
-    >>>     predictions_per_window.append(model.predict(past_data, future_data))
-    >>> task.evaluation_summary(predictions_per_window, model_name="my_model")
     """
 
     dataset_path: str
@@ -407,7 +427,7 @@ class Task:
 
         if isinstance(self.target, list):
             if len(self.target) < 1:
-                raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
+                raise ValueError("For multivariate tasks `target` must contain at least one entry")
             # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
             self.target = sorted(self.target)
 
@@ -418,7 +438,7 @@ class Task:
 
         if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
-                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
+                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target` is a list)"
             )
 
         # Attributes computed after the dataset is loaded
@@ -428,7 +448,10 @@ class Task:
 
     @property
     def cutoffs(self) -> list[int] | list[str]:
-        """List of cutoffs for each evaluation window."""
+        """Cutoffs corresponding to each `EvaluationWindow` in the task.
+
+        Computed based on `num_windows`, `initial_cutoff` and `window_step_size` attributes of the task.
+        """
         if isinstance(self.initial_cutoff, int):
             assert isinstance(self.window_step_size, int)
             return [self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)]
@@ -462,17 +485,18 @@ class Task:
     ) -> datasets.Dataset:
         """Load the full raw dataset with preprocessing applied.
 
-        This method loads and preprocesses the dataset according to the task configuration,
-        including filtering columns, generating univariate targets, and validating the data.
+        This method validates the data, loads and preprocesses the dataset according to the task configuration,
+        including generating univariate targets if `generate_univariate_targets_from` is provided.
 
-        For model evaluation, use iter_windows() instead to get properly split train/test data.
+        **Note:** This method is only provided for information and debugging purposes. For model evaluation, use
+        [`iter_windows()`][fev.Task.iter_windows] instead to get properly split train/test data.
 
         Parameters
         ----------
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -501,9 +525,9 @@ class Task:
         Parameters
         ----------
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -537,9 +561,9 @@ class Task:
         window_idx : int
             Index of the evaluation window in [0, 1, ..., num_windows - 1].
         storage_options : dict, optional
-            Passed to datasets.load_dataset() for accessing remote datasets (e.g., S3 credentials).
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
         trust_remote_code : bool, optional
-            Passed to datasets.load_dataset() for trusting remote code from Hugging Face Hub.
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -601,6 +625,8 @@ class Task:
 
         See [pandas documentation](https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#cutoff-aliases)
         for the list of possible values.
+
+        This attribute is available after the dataset is loaded with `load_full_dataset`, `iter_windows` or `get_window`.
         """
         if self._freq is None:
             raise ValueError("Please load dataset first with `task.load_full_dataset()`")
@@ -608,6 +634,7 @@ class Task:
 
     @property
     def dynamic_columns(self) -> list[str]:
+        """List of dynamic covariates available in the task. Does not include the target columns."""
         return self.known_dynamic_columns + self.past_dynamic_columns
 
     def _load_dataset(
@@ -743,11 +770,28 @@ class Task:
         return datasets.Features(predictions_schema)
 
     def clean_and_validate_predictions(
-        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
+        self, predictions: datasets.DatasetDict | dict[str, list[dict]] | datasets.Dataset | list[dict]
     ) -> datasets.DatasetDict:
-        """Convert predictions to the format needed for computing the metrics.
+        """Convert predictions for a single window into the format needed for computing the metrics.
 
-        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset.
+        The following formats are supported for both multivariate and univariate tasks:
+
+        - `DatasetDict`: Must contain a single key for each target in `task.target_columns`. Each value in
+            the dict must be a `datasets.Dataset` with schema compatible with `task.predictions_schema`. This is the
+            recommended format for providing predictions.
+        - `dict[str, list[dict]]`: A dictionary with one key for each target in `task.target_columns`. Each value in
+            the dict must be a list of dictionaries, each dict following the schema in `task.predictions_schema`.
+
+        Additionally for univariate tasks, the following formats are supported:
+
+        - `datasets.Dataset`: A single `datasets.Dataset` with schema compatible with `task.predictions_schema`.
+        - `list[dict]`: A list of dictionaries, where each dict follows the schema in `task.predictions_schema`.
+
+        Returns
+        -------
+        predictions :
+            A `DatasetDict` where each key is the name of the target column and the corresponding value is a
+            `datasets.Dataset` with the predictions.
         """
 
         def _to_dataset(preds: datasets.Dataset | list[dict]) -> datasets.Dataset:
@@ -806,12 +850,9 @@ class Task:
         predictions_per_window : Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]]
             Predictions generated by the model for each evaluation window in the task.
 
-            For univariate tasks (if `task.target_column` is a string), predictions for each window must be formatted
-            as a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.
+            The length of `predictions_per_window` must be equal to `task.num_windows`.
 
-            For multivariate tasks (if `task.target_column` is a list of strings), predictions for each window must be
-            formatted as a `DatasetDict` or `dict[str, list[dict]]`, where each key corresponds to a name of the target
-            column, and each value is a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.
+            The predictions for each window must be formatted as described in [clean_and_validate_predictions][fev.Task.clean_and_validate_predictions].
         model_name : str
             Name of the model that generated the predictions.
         training_time_s : float | None
@@ -875,11 +916,15 @@ class Task:
 
     @property
     def is_multivariate(self) -> bool:
+        """Returns `True` if `task.target` is a `list`, `False` otherwise."""
         return isinstance(self.target, list)
 
     @property
     def target_columns(self) -> list[str]:
-        """A list including names of all target columns for this task."""
+        """A list including names of all target columns for this task.
+
+        Unlike `task.target` that can be a string or a list, `task.target_columns` is always a list of strings.
+        """
         if isinstance(self.target, list):
             return self.target
         else:

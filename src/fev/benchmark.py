@@ -7,7 +7,7 @@ from .task import Task
 
 
 class Benchmark:
-    """Benchmark consisting of multiple tasks.
+    """A time series forecasting benchmark consisting of multiple [`Task`][fev.Task] objects.
 
     Attributes
     ----------
@@ -19,13 +19,13 @@ class Benchmark:
         for t in tasks:
             if not isinstance(t, Task):
                 raise ValueError(f"`tasks` must be a list of `Task` objects (got {type(t)})")
-        self.tasks = tasks
+        self.tasks: list[Task] = tasks  # declare type explicitly to correctly show up in the docs
 
     @classmethod
     def from_yaml(cls, file_path: str | Path) -> "Benchmark":
         """Load benchmark definition from a YAML file.
 
-        The YAML file should contain the key 'tasks' with a list of values with task definitions.
+        The YAML file should contain the key `'tasks'` with a list of dictionaries with task definitions.
 
             tasks:
             - dataset_path: autogluon/chronos_datasets

@@ -131,7 +131,7 @@ def pivot_table(
     to a baseline model.
 
     Parameters
-    ----------                                                                                                                                                     [0/15500]
+    ----------
     summaries : SummaryType | list[SummaryType]
         Evaluation summaries as DataFrame, list of dicts, or file path(s)
     metric_column : str, default "test_error"
@@ -145,12 +145,13 @@ def pivot_table(
     -------
     pd.DataFrame
         Pivot table with task combinations as index and model names as columns.
-        Values are raw scores or relative scores (if baseline_model specified)
+        Values are raw scores or relative scores (if `baseline_model` specified)
 
     Raises
     ------
     ValueError
-        If duplicate model/task combinations exist or baseline_model is missing
+        If duplicate model/task combinations exist, or results for `baseline_model` are missing when `baseline_model`
+        is provided.
     """
     summaries = _load_summaries(summaries).astype({metric_column: "float64"})
 
@@ -219,17 +220,18 @@ def leaderboard(
         Model name to use for relative error computation
     missing_strategy : Literal["error", "drop", "impute"], default "error"
         How to handle missing results:
-        - "error": Raise error if any results are missing
-        - "drop": Remove tasks where any model failed
-        - "impute": Fill missing results with baseline_model scores
+
+        - `"error"`: Raise error if any results are missing
+        - `"drop"`: Remove tasks where any model failed
+        - `"impute"`: Fill missing results with `baseline_model` scores
     min_relative_error : float, default 1e-2
-        Lower bound for clipping relative errors w.r.t. the baseline_model
+        Lower bound for clipping relative errors w.r.t. the `baseline_model`
     max_relative_error : float, default 100
-        Upper bound for clipping relative errors w.r.t. the baseline_model
+        Upper bound for clipping relative errors w.r.t. the `baseline_model`
     included_models : list[str], optional
-        Models to include (mutually exclusive with excluded_models)
+        Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
-        Models to exclude (mutually exclusive with included_models)
+        Models to exclude (mutually exclusive with `included_models`)
     n_resamples : int, default 1000
         Number of bootstrap samples for confidence intervals
     seed : int, default 123
@@ -238,15 +240,17 @@ def leaderboard(
     Returns
     -------
     pd.DataFrame
-        Leaderboard sorted by skill score, with columns:
-        - skill_score: Skill score (1 - geometric mean relative error)
-        - skill_score_lower: Lower bound of 95% confidence interval
-        - skill_score_upper: Upper bound of 95% confidence interval
-        - win_rate: Fraction of pairwise comparisons won against other models
-        - win_rate_lower: Lower bound of 95% confidence interval
-        - win_rate_upper: Upper bound of 95% confidence interval
-        - median_training_time_s: Median training time across tasks
-        - median_inference_time_s: Median inference time across tasks
+        Leaderboard sorted by `skill_score`, with columns:
+
+        - `skill_score`: Skill score (1 - geometric mean relative error)
+        - `skill_score_lower`: Lower bound of 95% confidence interval
+        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `win_rate`: Fraction of pairwise comparisons won against other models
+        - `win_rate_lower`: Lower bound of 95% confidence interval
+        - `win_rate_upper`: Upper bound of 95% confidence interval
+        - `median_training_time_s`: Median training time across tasks
+        - `median_inference_time_s`: Median inference time across tasks
+        - `num_failures`: Number of tasks where the model failed
     """
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
@@ -323,9 +327,10 @@ def pairwise_comparison(
         Column name containing the metric to evaluate
     missing_strategy : Literal["error", "drop", "impute"], default "error"
         How to handle missing results:
-        - "error": Raise error if any results are missing
-        - "drop": Remove tasks where any model failed
-        - "impute": Fill missing results with baseline_model scores (requires baseline_model)
+
+        - `"error"`: Raise error if any results are missing
+        - `"drop"`: Remove tasks where any model failed
+        - `"impute"`: Fill missing results with `baseline_model` scores
     baseline_model : str, optional
         Required only when missing_strategy="impute"
     min_relative_error : float, optional, default 1e-2
@@ -333,9 +338,9 @@ def pairwise_comparison(
     max_relative_error : float, optional, default 100.0
         Upper bound for clipping error ratios in pairwise comparisons
     included_models : list[str], optional
-        Models to include (mutually exclusive with excluded_models)
+        Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
-        Models to exclude (mutually exclusive with included_models)
+        Models to exclude (mutually exclusive with `included_models`)
     n_resamples : int, default 1000
         Number of bootstrap samples for confidence intervals
     seed : int, default 123
@@ -344,13 +349,14 @@ def pairwise_comparison(
     Returns
     -------
     pd.DataFrame
-        Pairwise comparison results with MultiIndex (model_1, model_2) and columns:
-        - skill_score: 1 - geometric mean of model_1/model_2 error ratios
-        - skill_score_lower: Lower bound of 95% confidence interval
-        - skill_score_upper: Upper bound of 95% confidence interval
-        - win_rate: Fraction of tasks where model_1 outperforms model_2
-        - win_rate_lower: Lower bound of 95% confidence interval
-        - win_rate_upper: Upper bound of 95% confidence interval
+        Pairwise comparison results with `pd.MultiIndex` `(model_1, model_2)` and columns:
+
+        - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios
+        - `skill_score_lower`: Lower bound of 95% confidence interval
+        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `win_rate`: Fraction of tasks where `model_1` outperforms `model_2`
+        - `win_rate_lower`: Lower bound of 95% confidence interval
+        - `win_rate_upper`: Upper bound of 95% confidence interval
     """
     summaries = _load_summaries(summaries)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
