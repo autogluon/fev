@@ -1,3 +1,4 @@
 mkdocs-material
 mkdocs-jupyter
 mkdocstrings[python]
+mike

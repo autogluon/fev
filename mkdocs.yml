@@ -9,6 +9,10 @@ theme:
   palette:
     primary: blue
 
+extra:
+  version:
+    provider: mike
+
 plugins:
   - search
   - mkdocs-jupyter
