@@ -17,29 +17,34 @@ def predict_with_model(
     batch_size: int = 512,
     device_map: str = "cuda",
     compile: bool = False,
-) -> tuple[datasets.Dataset, float, dict]:
+) -> tuple[list[datasets.DatasetDict], float, dict]:
     model: ForecastModel = load_model(model_name, device=device_map)
     if compile:
         model = torch.compile(model)
-    past_data, _ = task.get_input_data(trust_remote_code=True)
-    target = past_data.with_format("torch").cast_column(
-        task.target_column, datasets.Sequence(datasets.Value("float32"))
-    )[task.target_column]
-    loaded_targets = [t for t in target]
 
-    quantile_levels = task.quantile_levels if task.quantile_levels is not None else []
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
+        past_data = past_data.with_format("torch").cast_column("target", datasets.Sequence(datasets.Value("float32")))
+        loaded_targets = [t for t in past_data["target"]]
 
-    start_time = time.monotonic()
-    quantiles, means = model.forecast(
-        loaded_targets, quantile_levels=quantile_levels, prediction_length=task.horizon, batch_size=batch_size
-    )
-    inference_time = time.monotonic() - start_time
+        start_time = time.monotonic()
+        quantiles, means = model.forecast(
+            loaded_targets, quantile_levels=task.quantile_levels, prediction_length=task.horizon, batch_size=batch_size
+        )
+        inference_time += time.monotonic() - start_time
 
-    predictions_dict = {"predictions": means}
-    for idx, level in enumerate(quantile_levels):
-        predictions_dict[str(level)] = quantiles[:, :, idx]
+        predictions_dict = {"predictions": means}
+        for idx, level in enumerate(task.quantile_levels):
+            predictions_dict[str(level)] = quantiles[:, :, idx]
 
-    predictions = datasets.Dataset.from_dict(predictions_dict)
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_dict(predictions_dict), target_columns=task.target_columns
+            )
+        )
+
     extra_info = {
         "model_config": {
             "model_name": "tirex",
@@ -49,7 +54,7 @@ def predict_with_model(
             "cuda_kernel": not skip_cuda(),
         }
     }
-    return predictions, inference_time, extra_info
+    return predictions_per_window, inference_time, extra_info
 
 
 if __name__ == "__main__":

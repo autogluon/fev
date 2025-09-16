@@ -4,7 +4,7 @@ import logging
 import pprint
 import warnings
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 import datasets
 import numpy as np
@@ -14,8 +14,10 @@ from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
-from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
-from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
+from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
+from .metrics import Metric, get_metric
+
+# from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
 ALL_AVAILABLE_COLUMNS: Literal["__ALL__"] = "__ALL__"
 
@@ -23,105 +25,222 @@ logger = logging.getLogger("fev")
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
 
+# Disable progress bar at `import fev` to spawning too many progress bars
+datasets.disable_progress_bar()
 
-@pydantic.dataclasses.dataclass(config={"extra": "forbid"})
-class _TaskBase:
-    """Base class defining the attributes of a time series forecasting task."""
 
-    dataset_path: str
-    dataset_config: str | None = None
-    # Forecast horizon parameters
-    horizon: int = 1
-    cutoff: int | str | None = None
-    min_context_length: int = 1
-    max_context_length: int | None = None
-    # Evaluation parameters
-    seasonality: int = 1
-    eval_metric: str = "MASE"
-    extra_metrics: list[str] = dataclasses.field(default_factory=list)
-    quantile_levels: list[float] | None = None
-    # Feature information
-    id_column: str = "id"
-    timestamp_column: str = "timestamp"
-    target_column: str | list[str] = "target"
-    generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
-    past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
-    excluded_columns: list[str] | Literal["__ALL__"] = dataclasses.field(default_factory=list)
-    task_name: str | None = None
+@dataclasses.dataclass
+class EvaluationWindow:
+    """
+    A single evaluation window on which the forecast accuracy is measured.
+
+    Corresponds to a single train/test split of the time series data at the provided `cutoff`.
+
+    You should never manually create `EvaluationWindow` objects. Instead, use [`Task.iter_windows()`][fev.Task.iter_windows]
+    or [`Task.get_window()`][fev.Task.get_window] to obtain the evaluation windows corresponding to the task.
+    """
+
+    full_dataset: datasets.Dataset = dataclasses.field(repr=False)
+    cutoff: int | str
+    horizon: int
+    min_context_length: int | None
+    max_context_length: int | None
+    # Dataset info
+    id_column: str
+    timestamp_column: str
+    target_columns: list[str]
+    known_dynamic_columns: list[str]
+    past_dynamic_columns: list[str]
+    static_columns: list[str]
 
     def __post_init__(self):
-        if self.task_name is None:
-            if self.dataset_config is not None:
-                # HF Hub dataset -> name of dataset_config
-                self.task_name = self.dataset_config
-            else:
-                # File dataset -> names of up to 2 parent directories
-                # e.g. /home/foo/bar/data.parquet -> foo/bar
-                self.task_name = "/".join(Path(self.dataset_path).parts[-3:-1])
+        self._dataset_dict: datasets.DatasetDict | None = None
 
-    def to_dict(self) -> dict:
-        """Convert task definition to a dictionary."""
-        return dataclasses.asdict(self)
+    def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
+        """Get data available to the model at prediction time for this evaluation window.
 
-    @pydantic.model_validator(mode="before")
-    @classmethod
-    def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
-        if data.kwargs is not None:
-            # Field 'multiple_target_column' was renamed to 'generate_univariate_targets_from' in v0.5.
-            if "multiple_target_columns" in data.kwargs:
-                if "generate_univariate_targets_from" in data.kwargs:
-                    raise ValueError(
-                        "Do not specify both 'generate_univariate_targets_from' and deprecated 'multiple_target_columns'"
-                    )
-                else:
-                    warnings.warn(
-                        "Field 'multiple_target_columns' is deprecated and will be removed in v1.0. "
-                        "Please use 'generate_univariate_targets_from' instead",
-                        category=FutureWarning,
-                        stacklevel=3,
-                    )
-                    data.kwargs["generate_univariate_targets_from"] = data.kwargs.pop("multiple_target_columns")
-            # Field 'min_ts_length' was deprecated in favor of 'min_context_length' in v0.5.
-            # Previously, series with fewer than `min_ts_length` observations were filtered.
-            # Currently, series with fewer than `min_context_length` observations before `cutoff` are filtered.
-            if "min_ts_length" in data.kwargs:
-                if "min_context_length" in data.kwargs:
-                    raise ValueError("Do not specify both 'min_context_length' and deprecated 'min_ts_length'")
-                else:
-                    warnings.warn(
-                        "Field 'min_ts_length' is deprecated and will be removed in v1.0. "
-                        "Please use 'min_context_length' instead",
-                        category=FutureWarning,
-                        stacklevel=3,
-                    )
-                    data.kwargs["min_context_length"] = max(
-                        data.kwargs.pop("min_ts_length") - data.kwargs.get("horizon", 1), 1
-                    )
-            if "lead_time" in data.kwargs:
-                # TODO: `lead_time` will be replaced by `horizon_weight` in a future version
-                warnings.warn(
-                    "Field `lead_time` is deprecated and will be ignored.",
-                    category=FutureWarning,
-                    stacklevel=3,
+        To convert the input data to a different format, use [`fev.convert_input_data`][fev.convert_input_data].
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+
+        Returns
+        -------
+        past_data : datasets.Dataset
+            Historical observations up to the cutoff point.
+            Contains: id, timestamps, target values, static covariates, and all dynamic covariates.
+
+            Columns corresponding to `id_column`, `timestamp_column`, `target_columns`, `static_columns`,
+            `past_dynamic_columns`, `known_dynamic_columns`.
+        future_data : datasets.Dataset
+            Known future information for the forecast horizon.
+
+            Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
+        """
+        if self._dataset_dict is None:
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+        return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
+
+    def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
+        """Get ground truth future test data.
+
+        **This data should never be provided to the model!**
+
+        This is a convenience method that exists for debugging and additional evaluation.
+
+        Parameters
+        ----------
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use when splitting the dataset.
+        """
+        if self._dataset_dict is None:
+            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+        return self._dataset_dict[TEST]
+
+    def compute_metrics(
+        self,
+        predictions: datasets.DatasetDict,
+        metrics: list[Metric],
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> dict[str, float]:
+        """Compute accuracy metrics on the predictions made for this window.
+
+        To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
+
+        This is a convenience method that exists for debugging and additional evaluation.
+        """
+        test_data = self.get_ground_truth().with_format("numpy")
+        past_data = self.get_input_data()[0].with_format("numpy")
+
+        for target_column, predictions_for_column in predictions.items():
+            if len(predictions_for_column) != len(test_data):
+                raise ValueError(
+                    f"Length of predictions for column {target_column} ({len(predictions)}) must "
+                    f"match the length of test data ({len(test_data)})"
                 )
-                data.kwargs.pop("lead_time")
-        return data
+
+        test_scores: dict[str, float] = {}
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            for metric in metrics:
+                scores = []
+                for col in self.target_columns:
+                    scores.append(
+                        metric.compute(
+                            test_data=test_data,
+                            predictions=predictions[col],
+                            past_data=past_data,
+                            seasonality=seasonality,
+                            quantile_levels=quantile_levels,
+                            target_column=col,
+                        )
+                    )
+                test_scores[metric.name] = float(np.mean(scores))
+        return test_scores
+
+    def _filter_short_series(
+        self,
+        dataset: datasets.Dataset,
+        num_proc: int,
+    ) -> datasets.Dataset:
+        """Remove records from the dataset that are too short for the given task configuration.
+
+        Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
+        fewer than `horizon` observations after `cutoff`.
+        """
+        num_items_before = len(dataset)
+        filtered_dataset = dataset.filter(
+            _has_enough_past_and_future_observations,
+            fn_kwargs=dict(
+                timestamp_column=self.timestamp_column,
+                horizon=self.horizon,
+                cutoff=self.cutoff,
+                min_context_length=self.min_context_length,
+            ),
+            num_proc=min(num_proc, len(dataset)),
+            desc="Filtering short time series",
+        )
+        num_items_after = len(filtered_dataset)
+        if num_items_after < num_items_before:
+            logger.info(
+                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
+                f"because they had fewer than min_context_length ({self.min_context_length}) "
+                f"observations before cutoff ({self.cutoff}) "
+                f"or fewer than horizon ({self.horizon}) "
+                f"observations after cutoff."
+            )
+        if len(filtered_dataset) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+        return filtered_dataset
+
+    def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
+        )
+        dataset = self._filter_short_series(dataset, num_proc=num_proc)
+        columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+        past_data = dataset.map(
+            _select_past,
+            fn_kwargs=dict(
+                columns_to_slice=columns_to_slice,
+                timestamp_column=self.timestamp_column,
+                cutoff=self.cutoff,
+                max_context_length=self.max_context_length,
+            ),
+            num_proc=min(num_proc, len(dataset)),
+            desc="Selecting past data",
+        )
+
+        future_data = dataset.map(
+            _select_future,
+            fn_kwargs=dict(
+                columns_to_slice=columns_to_slice,
+                timestamp_column=self.timestamp_column,
+                cutoff=self.cutoff,
+                horizon=self.horizon,
+            ),
+            num_proc=min(num_proc, len(dataset)),
+            desc="Selecting future data",
+        )
+        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
+        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
+        return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
 
-@pydantic.dataclasses.dataclass
-class Task(_TaskBase):
-    """
-    A univariate or multivariate time series forecasting task.
+@pydantic.dataclasses.dataclass(config={"extra": "forbid"})
+class Task:
+    """A univariate or multivariate time series forecasting task.
 
-    This object is responsible for
+    A `Task` stores all information uniquely identifying the task, such as path to the dataset, forecast horizon,
+    evaluation metric and names of the target & covariate columns.
 
-    - loading the data
-    - generating a train/test split
-    - evaluating the predictions accuracy
+    This object handles dataset loading, train/test splitting, and prediction evaluation for time series forecasting tasks.
 
-    A single `Task` object corresponds to a single train-test split of the data (i.e., a single cutoff).
-    This means that, for example, to perform evaluation on `N` rolling windows, it is necessary to create `N` separate
-    `Task` objects (one for each window).
+    A single `Task` consists of one or more [`EvaluationWindow`][fev.task.EvaluationWindow] objects that can be
+    accessed using [`iter_windows()`][fev.Task.iter_windows] or [`get_window()`][fev.Task.get_window] methods.
+    After making predictions for each evaluation window, you can evaluate their accuracy using [`evaluation_summary()`][fev.Task.evaluation_summary].
+
+    Typical workflow:
+    ```python
+    task = fev.Task(dataset_path="...", num_windows=3, horizon=24)
+
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, future_data = window.get_input_data()
+        predictions = model.predict(past_data, future_data)
+        predictions_per_window.append(predictions)
+
+    summary = task.evaluation_summary(predictions_per_window, model_name="my_model")
+    ```
 
     Parameters
     ----------
@@ -134,59 +253,72 @@ class Task(_TaskBase):
         S3 path.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
-    cutoff : int | str | None, default -1 * horizon
-        Position in the series where that divides the observed data and the forecast horizon. Defaults to `-horizon`.
-        Cutoff logic is similar to pandas indexing:
+    num_windows : int, default 1
+        Number of rolling evaluation windows included in the task.
+    initial_cutoff : int | str | None, default None
+        Starting position for the first evaluation window that separates past from future data.
 
-        - If `cutoff` is an integer, then `y[:cutoff]` is the observed data and `y[cutoff]` is the first value in the forecast horizon. Positive or negative integer values are allowed.
-        - If `cutoff` is a datetime-like string, then `y[cutoff]` is the last observation in the observed data.
+        Can be specified as:
 
-        If some time series are too short for the chosen cutoff (i.e., there are no observations before the cutoff or
-        there are fewer than `horizon` observations after the cutoff), an exception will be raised when loading the
-        data.
+        - *Integer*: Index position using Python indexing. `y[:initial_cutoff]` becomes the past/training data,
+            and `y[initial_cutoff:initial_cutoff+horizon]` becomes the first forecast horizon to predict.
+            Negative values are interpreted as steps from the end of the series.
+        - *Timestamp string*: Date or datetime (e.g., `"2024-02-01"`). Data up to and including this timestamp becomes
+            past data, and the next `horizon` observations become the first forecast horizon.
+
+        If `None`, defaults to `-horizon - (num_windows - 1) * window_step_size`.
+
+        **Note**: Time series that are too short for any evaluation window (i.e., have fewer than `min_context_length`
+        observations before a cutoff or fewer than `horizon` observations after a cutoff) will be filtered out during
+        data loading.
+    window_step_size : int | str | None, default horizon
+        Step size between consecutive evaluation windows. Must be an integer if `initial_cutoff` is an integer.
+        Can be an integer or pandas offset string (e.g., `'D'`, `'15min'`) if `initial_cutoff` is a timestamp.
+        Defaults to `horizon`.
     min_context_length : int, default 1
-        Time series with fewer than `min_context_length` observations before the `cutoff` will be removed from the dataset.
+        Time series with fewer than `min_context_length` observations before a cutoff will be ignored during evaluation.
     max_context_length : int | None, default None
         If provided, the past time series will be shortened to at most this many observations.
     seasonality : int, default 1
         Seasonal period of the dataset (e.g., 24 for hourly data, 12 for monthly data). This parameter is used when
-        computing metrics like Mean Absolute Scaled Error.
-    eval_metric : str, default 'MASE'
-        Evaluation metric used for ultimate evaluation on the test set.
-    extra_metrics : list[str], default None
-        Additional metrics to be included in the results.
-    quantile_levels : list[float] | None, default None
-        Quantiles that must be predicted. List of floats between 0 and 1 (for example, [0.1, 0.5, 0.9]).
+        computing metrics like Mean Absolute Scaled Error (MASE).
+    eval_metric : str | dict[str, Any], default 'MASE'
+        Evaluation metric used for ultimate evaluation on the test set. Can be specified as either a single string
+        with the metric's name or a dictionary containing a "name" key and extra hyperparameters for the metric.
+        For example, MASE can also be specified as `{"name": "MASE", "epsilon": 0.0001}` to prevent zero
+        denominators when scaling errors.
+    extra_metrics : list[str] | list[dict[str, Any]], default []
+        Additional metrics to be included in the results. Can be specified as a list of strings with the metric's
+        name or a list of dictionaries. See documentation for `eval_metric` for more details.
+    quantile_levels : list[float], default []
+        Quantiles that must be predicted. List of floats between 0 and 1 (for example, `[0.1, 0.5, 0.9]`).
     id_column : str, default 'id'
         Name of the column with the unique identifier of each time series.
+        This column will be casted to `string` dtype and the dataset will be sorted according to it.
     timestamp_column : str, default 'timestamp'
         Name of the column with the timestamps of the observations.
-    target_column : str or list[str], default 'target'
+    target : str | list[str], default 'target'
         Name of the column that must be predicted. If a string is provided, a univariate forecasting task is created.
         If a list of strings is provided, a multivariate forecasting task is created.
     generate_univariate_targets_from : list[str] | Literal["__ALL__"] | None, default None
         If provided, a separate univariate time series will be created from each of the
-        `generate_univariate_targets_from` columns.
-
-        This argument can only set for univariate tasks where `target_column` is a string. If `target_column` is set to
-        a list (in a multivariate task) and `generate_univariate_targets_from` is provided, an error will be raised.
+        `generate_univariate_targets_from` columns. Only valid for univariate tasks.
 
         If set to `"__ALL__"`, then a separate univariate instance will be created from each column of type `Sequence`.
 
         For example, if `generate_univariate_targets_from = ["X", "Y"]` then the raw multivariate time series
         `{"id": "A", "timestamp": [...], "X": [...], "Y": [...]}` will be split into two univariate time series
         `{"id": "A_X", "timestamp": [...], "target": [...]}` and `{"id": "A_Y", "timestamp": [...], "target": [...]}`.
-    past_dynamic_columns : list[str], default None
-        Names of columns that are known only in the past. These will be available in the past data, but not in the
-        future or test data.
-    excluded_columns : list[str] | Literal["__ALL__"], default []
-        Names of columns that are removed from the dataset during preprocessing.
-
-        If set to "__ALL__", all columns except those specified in `id_column`, `timestamps_column`, `target_column`,
-        `past_dynamic_columns`, and `generate_univariate_targets_from` will be excluded from the dataset.
-
-        If both `excluded_columns="__ALL__"` and `generate_univariate_targets_from="__ALL__"`, an error will be raised.
-    task_name : str, optional
+    past_dynamic_columns : list[str], default []
+        Names of covariate columns that are known only in the past. These will be available in the past data, but not
+        in the future data. An error will be raised if these columns are missing from the dataset.
+    known_dynamic_columns : list[str], default []
+        Names of covariate columns that are known in both past and future. These will be available in past data
+        and future data. An error will be raised if these columns are missing from the dataset.
+    static_columns : list[str], default []
+        Names of columns containing static covariates that don't change over time. An error will be raised if these
+        columns are missing from the dataset.
+    task_name : str | None, default None
         Human-readable name for the task. Defaults to `dataset_config` for datasets stored on HF hub, and to the
         name of 2 parent directories for local or S3-based datasets.
 
@@ -207,117 +339,280 @@ class Task(_TaskBase):
     >>> Task(dataset_path="s3://my-bucket/m4_hourly/*.parquet", ...)
     """
 
+    dataset_path: str
+    dataset_config: str | None = None
+    # Forecast horizon parameters
+    horizon: int = 1
+    num_windows: int = 1
+    initial_cutoff: int | str | None = None
+    window_step_size: int | str | None = None
+    min_context_length: int = 1
+    max_context_length: int | None = None
+    # Evaluation parameters
+    seasonality: int = 1
+    eval_metric: str | dict[str, Any] = "MASE"
+    extra_metrics: list[str | dict[str, Any]] = dataclasses.field(default_factory=list)
+    quantile_levels: list[float] = dataclasses.field(default_factory=list)
+    # Feature information
+    id_column: str = "id"
+    timestamp_column: str = "timestamp"
+    target: str | list[str] = "target"
+    generate_univariate_targets_from: list[str] | Literal["__ALL__"] | None = None
+    known_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
+    past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
+    static_columns: list[str] = dataclasses.field(default_factory=list)
+    task_name: str | None = None
+
     def __post_init__(self):
-        super().__post_init__()
-        if self.generate_univariate_targets_from is not None and self.is_multivariate:
+        if self.task_name is None:
+            if self.dataset_config is not None:
+                # HF Hub dataset -> name of dataset_config
+                self.task_name = self.dataset_config
+            else:
+                # File dataset -> names of up to 2 parent directories
+                # e.g. /home/foo/bar/data.parquet -> foo/bar
+                self.task_name = "/".join(Path(self.dataset_path).parts[-3:-1])
+
+        assert self.num_windows >= 1, "`num_windows` must satisfy >= 1"
+        if self.window_step_size is None:
+            self.window_step_size = self.horizon
+        if isinstance(self.window_step_size, int):
+            assert self.window_step_size >= 1, "`window_step_size` must satisfy >= 1"
+        else:
+            offset = pd.tseries.frequencies.to_offset(self.window_step_size)
+            assert offset.n >= 1, "If `window_step_size` is a string, it must correspond to a positive timedelta"
+            self.window_step_size = offset.freqstr
+
+        if self.initial_cutoff is None:
+            assert isinstance(self.window_step_size, int), (
+                "If `initial_cutoff` is None, `window_step_size` must be an int"
+            )
+            self.initial_cutoff = -self.horizon - (self.num_windows - 1) * self.window_step_size
+
+        if isinstance(self.initial_cutoff, int):
+            if not isinstance(self.window_step_size, int):
+                raise ValueError("`window_step_size` must be an int if `initial_cutoff` is an int")
+            assert self.window_step_size >= 1
+            max_allowed_cutoff = -self.horizon - (self.num_windows - 1) * self.window_step_size
+            if self.initial_cutoff < 0 and self.initial_cutoff > max_allowed_cutoff:
+                raise ValueError(
+                    "Negative `initial_cutoff` must be <= `-horizon - (num_windows - 1) * window_step_size`"
+                )
+        else:
+            self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
+
+        assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
+        self.quantile_levels = sorted(self.quantile_levels)
+
+        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+
+        metric_names = [m.name for m in metrics]
+        duplicate_metric_names = {x for x in metric_names if metric_names.count(x) > 1}
+        if duplicate_metric_names:
             raise ValueError(
-                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target_column` is a list)"
+                f"Duplicate metric names found: {duplicate_metric_names}. Please configure "
+                "only one instance for each metric."
             )
 
-        if self.cutoff is None:
-            self.cutoff = -self.horizon
-        elif isinstance(self.cutoff, str):
-            self.cutoff = pd.Timestamp(self.cutoff).isoformat()
-        else:
-            self.cutoff = int(self.cutoff)
-            if self.cutoff < 0 and self.cutoff > -self.horizon:
-                raise ValueError("Negative `cutoff` must be less than or equal to `-horizon`")
+        if len(self.quantile_levels) == 0:
+            for m in metrics:
+                if m.needs_quantiles:
+                    raise ValueError(f"Please provide quantile_levels when using a quantile metric '{m.name}'")
 
-        self.eval_metric = self.eval_metric.upper()
-        self.extra_metrics = [m.upper() for m in self.extra_metrics]
-        for metric in [self.eval_metric] + self.extra_metrics:
-            if metric not in AVAILABLE_METRICS:
-                raise ValueError(
-                    f"Evaluation metric '{metric}' is not available. Available metrics: {sorted(AVAILABLE_METRICS)}"
-                )
-            if metric in QUANTILE_METRICS and self.quantile_levels is None:
-                raise ValueError(f"Please set quantile_levels when using a quantile metric '{metric}'")
-
-        if self.quantile_levels is not None:
-            assert all(0 < q < 1 for q in self.quantile_levels), "All quantile_levels must satisfy 0 < q < 1"
-            self.quantile_levels = sorted(self.quantile_levels)
         if self.min_context_length < 1:
             raise ValueError("`min_context_length` must satisfy >= 1")
         if self.max_context_length is not None:
             if self.max_context_length < 1:
                 raise ValueError("If provided, `max_context_length` must satisfy >= 1")
 
-        if isinstance(self.target_column, list):
-            if len(self.target_column) < 1:
-                raise ValueError("For multivariate tasks `target_column` must contain at least one entry")
+        if isinstance(self.target, list):
+            if len(self.target) < 1:
+                raise ValueError("For multivariate tasks `target` must contain at least one entry")
             # Ensure that column names are sorted alphabetically so that univariate adapters return sorted data
-            self.target_column = sorted(self.target_column)
+            self.target = sorted(self.target)
 
-        if (
-            self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS
-            and self.excluded_columns == ALL_AVAILABLE_COLUMNS
-        ):
+        # Ensure that column names are sorted alphabetically for deterministic task comparison
+        self.known_dynamic_columns = sorted(self.known_dynamic_columns)
+        self.past_dynamic_columns = sorted(self.past_dynamic_columns)
+        self.static_columns = sorted(self.static_columns)
+
+        if self.generate_univariate_targets_from is not None and self.is_multivariate:
             raise ValueError(
-                "Cannot set 'generate_univariate_targets_from' and 'excluded_columns' to '__ALL__' simultaneously"
+                "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target` is a list)"
             )
 
-        self._dataset_dict: datasets.DatasetDict | None = None
         # Attributes computed after the dataset is loaded
+        self._full_dataset: datasets.Dataset | None = None
         self._freq: str | None = None
         self._dataset_fingerprint: str | None = None
-        self._dynamic_columns: list[str] | None = None
-        self._static_columns: list[str] | None = None
 
-    def get_input_data(
+    @property
+    def cutoffs(self) -> list[int] | list[str]:
+        """Cutoffs corresponding to each `EvaluationWindow` in the task.
+
+        Computed based on `num_windows`, `initial_cutoff` and `window_step_size` attributes of the task.
+        """
+        if isinstance(self.initial_cutoff, int):
+            assert isinstance(self.window_step_size, int)
+            return [self.initial_cutoff + window_idx * self.window_step_size for window_idx in range(self.num_windows)]
+        else:
+            assert isinstance(self.initial_cutoff, str)
+            if isinstance(self.window_step_size, str):
+                offset = pd.tseries.frequencies.to_offset(self.window_step_size)
+            else:
+                assert isinstance(self.window_step_size, int)
+                offset = pd.tseries.frequencies.to_offset(self.freq) * self.window_step_size
+
+            cutoffs = []
+            for window_idx in range(self.num_windows):
+                cutoff = pd.Timestamp(self.initial_cutoff)
+                # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
+                # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
+                if window_idx != 0:
+                    cutoff += window_idx * offset
+                cutoffs.append(cutoff.isoformat())
+            return cutoffs
+
+    def to_dict(self) -> dict:
+        """Convert task definition to a dictionary."""
+        return dataclasses.asdict(self)
+
+    def load_full_dataset(
         self,
-        num_proc: int = DEFAULT_NUM_PROC,
         storage_options: dict | None = None,
         trust_remote_code: bool | None = None,
-    ) -> tuple[datasets.Dataset, datasets.Dataset]:
-        """Get data that is available as input to the model. This includes all past data and known future data.
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> datasets.Dataset:
+        """Load the full raw dataset with preprocessing applied.
+
+        This method validates the data, loads and preprocesses the dataset according to the task configuration,
+        including generating univariate targets if `generate_univariate_targets_from` is provided.
+
+        **Note:** This method is only provided for information and debugging purposes. For model evaluation, use
+        [`iter_windows()`][fev.Task.iter_windows] instead to get properly split train/test data.
 
         Parameters
         ----------
-        num_proc : int
-            Number of CPU cores used to parallelize dataset operations.
-        storage_options : dict | None, default None
-            Storage options passed to the `datasets.load_dataset` method.
-
-            For example, to load data from a private S3 bucket only accessible via the AWS profile `my-aws-profile`
-            defined in `~/.aws/config`, set `storage_options={"profile": "my-aws-profile"}`.
-        trust_remote_code : bool | None, default None
-            Whether to trust custom builders.
+        storage_options : dict, optional
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing.
 
         Returns
         -------
-        past_data : datasets.Dataset
-            Past data available to the model. This includes static features and past values of target & the dynamic
-            features.
-
-            Contains columns corresponding to `task.id_column`, `task.timestamp_column`, `task.target_column`,
-            `task.static_columns` and `task.dynamic_columns`.
-        future_data : datasets.Dataset
-            Known future data for making the predictions. This includes future values of the dynamic features.
-
-            Contains columns corresponding to `task.id_column`, `task.timestamp_column`, `task.static_columns` and
-            `task.dynamic_columns` (except those in `task.past_dynamic_columns`).
+        datasets.Dataset
+            The preprocessed dataset with all time series.
         """
-        if self._dataset_dict is None:
-            self._prepare_dataset_dict(
-                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
+        if self._full_dataset is None:
+            self._full_dataset = self._load_dataset(
+                storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
             )
-        return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
+        return self._full_dataset
 
-    def get_test_data(
+    def iter_windows(
         self,
-        num_proc: int = DEFAULT_NUM_PROC,
         storage_options: dict | None = None,
         trust_remote_code: bool | None = None,
-    ) -> datasets.Dataset:
-        """Get the future data that must be predicted.
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> Iterable[EvaluationWindow]:
+        """Iterate over the rolling evaluation windows in the task.
 
-        This data is only used for evaluating forecast accuracy and should not be passed to the model.
+        Each window contains train/test splits at different cutoff points for time series
+        cross-validation. Use this method for model evaluation and benchmarking.
+
+        Parameters
+        ----------
+        storage_options : dict, optional
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing.
+
+        Yields
+        ------
+        EvaluationWindow
+            A single evaluation window at a specific cutoff containing the data needed to make and evaluate forecasts.
+
+        Examples
+        --------
+        >>> for window in task.iter_windows():
+        ...     past_data, future_data = window.get_input_data()
+        ...     # Make predictions using past_data and future_data
         """
-        if self._dataset_dict is None:
-            self._prepare_dataset_dict(
-                num_proc=num_proc, storage_options=storage_options, trust_remote_code=trust_remote_code
+        for window_idx in range(self.num_windows):
+            yield self.get_window(
+                window_idx, storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
             )
-        return self._dataset_dict[TEST]
+
+    def get_window(
+        self,
+        window_idx: int,
+        storage_options: dict | None = None,
+        trust_remote_code: bool | None = None,
+        num_proc: int = DEFAULT_NUM_PROC,
+    ) -> EvaluationWindow:
+        """Get a single evaluation window by index.
+
+        Parameters
+        ----------
+        window_idx : int
+            Index of the evaluation window in [0, 1, ..., num_windows - 1].
+        storage_options : dict, optional
+            Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
+        trust_remote_code : bool, optional
+            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
+        num_proc : int, default DEFAULT_NUM_PROC
+            Number of processes to use for dataset preprocessing.
+
+        Returns
+        -------
+        EvaluationWindow
+            A single evaluation window at a specific cutoff containing the data needed to make and evaluate forecasts.
+        """
+        full_dataset = self.load_full_dataset(
+            storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
+        )
+        if window_idx >= self.num_windows:
+            raise ValueError(f"Window index {window_idx} is out of range (num_windows={self.num_windows})")
+        return EvaluationWindow(
+            full_dataset=full_dataset,
+            cutoff=self.cutoffs[window_idx],
+            horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
+            id_column=self.id_column,
+            timestamp_column=self.timestamp_column,
+            target_columns=self.target_columns,
+            known_dynamic_columns=self.known_dynamic_columns,
+            past_dynamic_columns=self.past_dynamic_columns,
+            static_columns=self.static_columns,
+        )
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def handle_deprecated_fields(cls, data: ArgsKwargs) -> ArgsKwargs:
+        def _warn_and_rename_kwarg(data: ArgsKwargs, old_name: str, new_name: str) -> ArgsKwargs:
+            assert data.kwargs is not None
+            if old_name in data.kwargs:
+                warnings.warn(
+                    f"Field '{old_name}' is deprecated and will be removed in a future release. "
+                    f"Please use '{new_name}' instead",
+                    category=FutureWarning,
+                    stacklevel=4,
+                )
+                data.kwargs[new_name] = data.kwargs.pop(old_name)
+            return data
+
+        if data.kwargs is not None:
+            if "lead_time" in data.kwargs:
+                # 'lead_time' was never used before, quietly ignore
+                data.kwargs.pop("lead_time")
+            for old_name, new_name in DEPRECATED_TASK_FIELDS.items():
+                data = _warn_and_rename_kwarg(data, old_name, new_name)
+        return data
 
     @property
     def freq(self) -> str:
@@ -325,28 +620,17 @@ class Task(_TaskBase):
 
         See [pandas documentation](https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#cutoff-aliases)
         for the list of possible values.
+
+        This attribute is available after the dataset is loaded with `load_full_dataset`, `iter_windows` or `get_window`.
         """
         if self._freq is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
+            raise ValueError("Please load dataset first with `task.load_full_dataset()`")
         return self._freq
 
     @property
     def dynamic_columns(self) -> list[str]:
-        if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
-        return self._dynamic_columns
-
-    @property
-    def known_dynamic_columns(self) -> list[str]:
-        if self._dynamic_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
-        return sorted(set(self.dynamic_columns) - set(self.past_dynamic_columns))
-
-    @property
-    def static_columns(self) -> list[str]:
-        if self._static_columns is None:
-            raise ValueError("Please load dataset first with `task.get_input_data()`")
-        return self._static_columns
+        """List of dynamic covariates available in the task. Does not include the target columns."""
+        return self.known_dynamic_columns + self.past_dynamic_columns
 
     def _load_dataset(
         self,
@@ -354,7 +638,7 @@ class Task(_TaskBase):
         trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
-        """Load the raw dataset from the provided path."""
+        """Load the raw dataset and apply initial preprocessing based on the Task definition."""
         if self.dataset_config is not None:
             # Load dataset from HF Hub
             path = self.dataset_path
@@ -396,9 +680,9 @@ class Task(_TaskBase):
         assert isinstance(ds, datasets.Dataset)
         ds.set_format("numpy")
 
-        required_columns = self.past_dynamic_columns.copy()
+        required_columns = self.known_dynamic_columns + self.past_dynamic_columns + self.static_columns
         if self.generate_univariate_targets_from is None:
-            required_columns += self.target_columns_list
+            required_columns += self.target_columns
         elif self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
             pass
         else:
@@ -412,98 +696,7 @@ class Task(_TaskBase):
             num_proc=num_proc,
         )
 
-        if self.excluded_columns == ALL_AVAILABLE_COLUMNS:
-            excluded_columns = [
-                col for col in ds.column_names if col not in required_columns + [self.id_column, self.timestamp_column]
-            ]
-        else:
-            excluded_columns = self.excluded_columns
-        if len(excluded_columns) > 0:
-            ds = ds.remove_columns(excluded_columns)
-        return ds
-
-    def _filter_short_series(
-        self,
-        dataset: datasets.Dataset,
-        num_proc: int,
-    ) -> datasets.Dataset:
-        """Remove records from the dataset that are too short for the given task configuration.
-
-        Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
-        fewer than `horizon` observations after `cutoff`.
-        """
-        num_items_before = len(dataset)
-        filtered_dataset = dataset.filter(
-            _has_enough_past_and_future_observations,
-            fn_kwargs=dict(
-                timestamp_column=self.timestamp_column,
-                horizon=self.horizon,
-                cutoff=self.cutoff,
-                min_context_length=self.min_context_length,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Filtering short time series",
-        )
-        num_items_after = len(filtered_dataset)
-        if num_items_after < num_items_before:
-            logger.info(
-                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
-                f"because they had fewer than min_context_length ({self.min_context_length}) "
-                f"observations before cutoff ({self.cutoff}) "
-                f"or fewer than horizon ({self.horizon}) "
-                f"observations after cutoff."
-            )
-        if len(filtered_dataset) == 0:
-            raise ValueError(
-                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
-            )
-        return filtered_dataset
-
-    def _past_future_test_split(
-        self,
-        dataset: datasets.Dataset,
-        columns_to_slice: list[str],
-        num_proc: int,
-    ) -> datasets.DatasetDict:
-        past_data = dataset.map(
-            _select_past,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                max_context_length=self.max_context_length,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting past data",
-        )
-
-        future_data = dataset.map(
-            _select_future,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                horizon=self.horizon,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting future data",
-        )
-        future_known = future_data.remove_columns(self.target_columns_list + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns_list)
-        return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
-
-    def _prepare_dataset_dict(
-        self,
-        num_proc: int,
-        storage_options: dict | None = None,
-        trust_remote_code: bool | None = None,
-    ) -> None:
-        """Load dataset and split it into past, future and test parts."""
-        ds = self._load_dataset(
-            storage_options=storage_options,
-            trust_remote_code=trust_remote_code,
-            num_proc=num_proc,
-        )
+        # Create separate instances from columns listed in `generate_univariate_targets_from`
         if self.generate_univariate_targets_from is not None:
             if self.generate_univariate_targets_from == ALL_AVAILABLE_COLUMNS:
                 generate_univariate_targets_from = [
@@ -513,11 +706,11 @@ class Task(_TaskBase):
                 ]
             else:
                 generate_univariate_targets_from = self.generate_univariate_targets_from
-            assert isinstance(self.target_column, str)
+            assert isinstance(self.target, str)
             ds = utils.generate_univariate_targets_from_multivariate(
                 ds,
                 id_column=self.id_column,
-                new_target_column=self.target_column,
+                new_target_column=self.target,
                 generate_univariate_targets_from=generate_univariate_targets_from,
                 num_proc=num_proc,
             )
@@ -529,25 +722,25 @@ class Task(_TaskBase):
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
-        self._dataset_fingerprint = utils.generate_fingerprint(ds)
 
-        self._dynamic_columns, self._static_columns = utils.infer_column_types(
-            ds,
-            id_column=self.id_column,
-            timestamp_column=self.timestamp_column,
+        available_dynamic_columns, available_static_columns = utils.infer_column_types(
+            ds, id_column=self.id_column, timestamp_column=self.timestamp_column
         )
-        self._dynamic_columns = [col for col in self._dynamic_columns if col not in self.target_columns_list]
-        columns_to_slice = self.dynamic_columns + self.target_columns_list + [self.timestamp_column]
-        num_proc = min(num_proc, len(ds))
-        ds = self._filter_short_series(ds, num_proc=num_proc)
-        self._dataset_dict = self._past_future_test_split(ds, columns_to_slice=columns_to_slice, num_proc=num_proc)
+        missing_dynamic = set(self.dynamic_columns) - set(available_dynamic_columns)
+        if len(missing_dynamic) > 0:
+            raise ValueError(f"Dynamic columns not found in dataset: {sorted(missing_dynamic)}")
+        missing_static = set(self.static_columns) - set(available_static_columns)
+        if len(missing_static) > 0:
+            raise ValueError(f"Static columns not found in dataset: {sorted(missing_static)}")
+        self._dataset_fingerprint = utils.generate_fingerprint(ds)
+        return ds
 
     @property
     def dataset_info(self) -> dict:
         return {
             "id_column": self.id_column,
             "timestamp_column": self.timestamp_column,
-            "target_column": self.target_column,
+            "target": self.target,
             "static_columns": self.static_columns,
             "dynamic_columns": self.dynamic_columns,
             "known_dynamic_columns": self.known_dynamic_columns,
@@ -560,60 +753,40 @@ class Task(_TaskBase):
 
         Forecast must always include the key `"predictions"` corresponding to the point forecast.
 
-        Moreover, if `quantile_levels` were specified when creating the `Task`, then predictions must contain a key for
-        each of the predicted quantiles (e.g., if `quantile_levels = [0.1, 0.9]`, then keys `"0.1"` and `"0.9"` must be
-        included in the forecast).
+        The predictions must also include a key for each of the `quantile_levels`.
+        For example, if `quantile_levels = [0.1, 0.9]`, then keys `"0.1"` and `"0.9"` must be included in the forecast.
         """
         predictions_length = self.horizon
         predictions_schema = {
             PREDICTIONS: datasets.Sequence(datasets.Value("float64"), length=predictions_length),
         }
-        if self.quantile_levels is not None:
-            for q in sorted(self.quantile_levels):
-                predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
+        for q in sorted(self.quantile_levels):
+            predictions_schema[str(q)] = datasets.Sequence(datasets.Value("float64"), length=predictions_length)
         return datasets.Features(predictions_schema)
 
-    def compute_metrics(
-        self,
-        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
-    ) -> dict[str, float]:
-        test_data = self.get_test_data().with_format("numpy")
-        past_data = self._dataset_dict[TRAIN].with_format("numpy")
-        predictions = self.clean_and_validate_predictions(predictions)
-
-        for target_column, predictions_for_column in predictions.items():
-            if len(predictions_for_column) != len(test_data):
-                raise ValueError(
-                    f"Length of predictions for column {target_column} ({len(predictions)}) must "
-                    f"match the length of test data ({len(test_data)})"
-                )
-
-        test_scores = {}
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning)
-            for eval_metric in sorted(set([self.eval_metric] + self.extra_metrics)):
-                metric = AVAILABLE_METRICS[eval_metric]()
-                scores = []
-                for col in self.target_columns_list:
-                    scores.append(
-                        metric.compute(
-                            test_data=test_data,
-                            predictions=predictions[col],
-                            past_data=past_data,
-                            seasonality=self.seasonality,
-                            quantile_levels=self.quantile_levels,
-                            target_column=col,
-                        )
-                    )
-                test_scores[eval_metric] = float(np.mean(scores))
-        return test_scores
-
     def clean_and_validate_predictions(
-        self, predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
+        self, predictions: datasets.DatasetDict | dict[str, list[dict]] | datasets.Dataset | list[dict]
     ) -> datasets.DatasetDict:
-        """Convert predictions to the format needed for computing the metrics.
+        """Convert predictions for a single window into the format needed for computing the metrics.
 
-        Returns a DatasetDict where each key is the name of the target column and the corresponding value is a Dataset.
+        The following formats are supported for both multivariate and univariate tasks:
+
+        - `DatasetDict`: Must contain a single key for each target in `task.target_columns`. Each value in
+            the dict must be a `datasets.Dataset` with schema compatible with `task.predictions_schema`. This is the
+            recommended format for providing predictions.
+        - `dict[str, list[dict]]`: A dictionary with one key for each target in `task.target_columns`. Each value in
+            the dict must be a list of dictionaries, each dict following the schema in `task.predictions_schema`.
+
+        Additionally for univariate tasks, the following formats are supported:
+
+        - `datasets.Dataset`: A single `datasets.Dataset` with schema compatible with `task.predictions_schema`.
+        - `list[dict]`: A list of dictionaries, where each dict follows the schema in `task.predictions_schema`.
+
+        Returns
+        -------
+        predictions :
+            A `DatasetDict` where each key is the name of the target column and the corresponding value is a
+            `datasets.Dataset` with the predictions.
         """
 
         def _to_dataset(preds: datasets.Dataset | list[dict]) -> datasets.Dataset:
@@ -628,17 +801,18 @@ class Task(_TaskBase):
                 raise ValueError(f"predictions must be of type `datasets.Dataset` (received {type(preds)})")
             return preds
 
-        if not isinstance(predictions, datasets.DatasetDict):
-            if self.is_multivariate:
-                if isinstance(predictions, dict):
-                    predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
-                else:
-                    raise ValueError(
-                        f"predictions for multivariate tasks must be of type `datasets.DatasetDict` or `dict` (received {type(predictions)})"
-                    )
-            else:
-                predictions = datasets.DatasetDict({self.target_column: _to_dataset(predictions)})
-
+        if isinstance(predictions, datasets.DatasetDict):
+            pass
+        elif isinstance(predictions, dict):
+            predictions = datasets.DatasetDict({col: _to_dataset(preds) for col, preds in predictions.items()})
+        elif isinstance(predictions, (list, datasets.Dataset)):
+            predictions = datasets.DatasetDict({self.target_columns[0]: _to_dataset(predictions)})
+        else:
+            raise ValueError(
+                f"Expected predictions to be a `DatasetDict`, `Dataset`, `list` or `dict` (got {type(predictions)})"
+            )
+        if missing_columns := set(self.target_columns) - set(predictions.keys()):
+            raise ValueError(f"Missing predictions for columns {missing_columns} (got {sorted(predictions.keys())})")
         predictions = predictions.cast(self.predictions_schema).with_format("numpy")
         for target_column, predictions_for_column in predictions.items():
             self._assert_all_columns_finite(predictions_for_column)
@@ -657,7 +831,7 @@ class Task(_TaskBase):
 
     def evaluation_summary(
         self,
-        predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
+        predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
         model_name: str,
         training_time_s: float | None = None,
         inference_time_s: float | None = None,
@@ -668,15 +842,12 @@ class Task(_TaskBase):
 
         Parameters
         ----------
-        predictions : datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]
-            Predictions generated by the model.
+        predictions_per_window : Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]]
+            Predictions generated by the model for each evaluation window in the task.
 
-            For univariate tasks (if `task.target_column` is a string), predictions must be formatted as a `Dataset`
-            or `list[dict]` that matches the format described in `task.predictions_schema`.
+            The length of `predictions_per_window` must be equal to `task.num_windows`.
 
-            For multivariate tasks (if `task.target_column` is a list of strings), predictions must be formatted as a
-            `DatasetDict` or `dict[str, list[dict]]`, where each key corresponds to a name of the target column, and
-            each value is a `Dataset` or `list[dict]` that matches the format described in `task.predictions_schema`.
+            The predictions for each window must be formatted as described in [clean_and_validate_predictions][fev.Task.clean_and_validate_predictions].
         model_name : str
             Name of the model that generated the predictions.
         training_time_s : float | None
@@ -695,191 +866,64 @@ class Task(_TaskBase):
             Dictionary that summarizes the model performance on this task. Includes following keys:
 
             - `model_name` - name of the model
-            - `test_error` - value of the `task.eval_metric` achieved by the `predictions` on the test set (lower is better)
+            - `test_error` - value of the `task.eval_metric` averaged over all evaluation windows (lower is better)
             - all `Task` attributes obtained via `task.to_dict()`.
-            - values of `task.extra_metrics` achieved by the `predictions` on the test
+            - values of `task.extra_metrics` averaged all evaluation windows
             - `dataset_fingerprint` - fingerprint of the dataset generated by the HF `datasets` library
             - `trained_on_this_dataset` - whether the model was trained on the dataset used in the task
             - `fev_version` - version of the `fev` package used to obtain the summary
         """
         summary: dict[str, Any] = {"model_name": model_name}
         summary.update(self.to_dict())
-        metric_scores = self.compute_metrics(predictions)
+        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+        eval_metric = metrics[0]
+
+        metrics_per_window = {metric.name: [] for metric in metrics}
+        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
+            raise ValueError(
+                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
+            )
+        # Use strict=True to raise error if num_predictions does not match num_windows
+        for predictions, window in zip(predictions_per_window, self.iter_windows(), strict=True):
+            metric_scores = window.compute_metrics(
+                self.clean_and_validate_predictions(predictions),
+                metrics=metrics,
+                seasonality=self.seasonality,
+                quantile_levels=self.quantile_levels,
+            )
+            for metric, value in metric_scores.items():
+                metrics_per_window[metric].append(value)
+        metrics_averaged = {metric_name: float(np.mean(values)) for metric_name, values in metrics_per_window.items()}
         summary.update(
             {
-                "test_error": float(metric_scores[self.eval_metric]),
+                "test_error": metrics_averaged[eval_metric.name],
                 "training_time_s": training_time_s,
                 "inference_time_s": inference_time_s,
                 "dataset_fingerprint": self._dataset_fingerprint,
                 "trained_on_this_dataset": trained_on_this_dataset,
                 "fev_version": FEV_VERSION,
+                **metrics_averaged,
             }
         )
-        summary.update(metric_scores)
         if extra_info is not None:
             summary.update(extra_info)
         return summary
 
     @property
     def is_multivariate(self) -> bool:
-        return isinstance(self.target_column, list)
+        """Returns `True` if `task.target` is a `list`, `False` otherwise."""
+        return isinstance(self.target, list)
 
     @property
-    def target_columns_list(self) -> list[str]:
-        """A list including names of all target columns for this task."""
-        if isinstance(self.target_column, list):
-            return self.target_column
+    def target_columns(self) -> list[str]:
+        """A list including names of all target columns for this task.
+
+        Unlike `task.target` that can be a string or a list, `task.target_columns` is always a list of strings.
+        """
+        if isinstance(self.target, list):
+            return self.target
         else:
-            return [self.target_column]
-
-
-@pydantic.dataclasses.dataclass
-class TaskGenerator(_TaskBase):
-    """
-    Can generate one or multiple `Task` objects based on the task configuration.
-
-    Supports the same keyword arguments as `Task`, in addition to the following arguments for defining multiple
-    variants of the same task.
-
-    Parameters
-    ----------
-    variants : list[dict] | None
-        List, where each entry corresponds to a variant of the base task. See *Examples* for usage details.
-        If `variants` are provided together with the rolling evaluation arguments (`num_rolling_windows`,
-        `rolling_step_size` or `initial_cutoff`), an exception will be raised.
-    num_rolling_windows : int | None
-        Number of rolling evaluation windows to generate from the base task.
-    initial_cutoff : int | str | None
-        Cutoff for the first rolling window. Can be a negative integer (e.g., `-48`) or a timestamp-like string
-        (e.g., `"2024-02-01"). See also documentation for `cutoff` argument to `Task`.
-        Defaults to `-num_rolling_windows * rolling_step_size`.
-    rolling_step_size : int | str | None
-        Step size between consecutive rolling evaluation windows.
-        If `initial_cutoff` is an integer, `rolling_step_size` must be a positive integer.
-        If `initial_cutoff` is a timestamp-like string, `rolling_step_size` must be pandas-compatible offset string
-        (e.g., `D` for daily, `15min` for quarter-hourly).
-        Defaults to `horizon`.
-
-    Examples
-    --------
-    To define a single task, simply define the respective attributes:
-
-    >>> task_config = TaskGenerator(
-    ...     dataset_path="my_dataset",
-    ...     dataset_config="my_config",
-    ...     horizon=12,
-    ... )
-    >>> print(task_config.generate_tasks())
-    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=12, ...)]
-
-    To create multiple variants of the same task, you can use the `variants` keyword:
-
-    >>> task_config = TaskGenerator(
-    ...     dataset_path="my_dataset",
-    ...     dataset_config="my_config",
-    ...     variants=[
-    ...         {"horizon": 12},
-    ...         {"horizon": 24},
-    ...     ]
-    ... )
-    >>> print(task_config.generate_tasks())
-    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=12, ...),
-     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, ...)]
-
-    Alternatively, you can configure rolling evaluation using the keywords `num_rolling_windows`, `rolling_step_size`
-    and `initial_cutoff`.
-
-    Using integer-based cutoffs:
-
-    >>> task_config = TaskGenerator(
-    ...     dataset_path="my_dataset",
-    ...     dataset_config="my_config",
-    ...     horizon=24,
-    ...     num_rolling_windows=3,
-    ...     initial_cutoff=-96,
-    ...     rolling_step_size=None,  # defaults to `horizon`
-    ... )
-    >>> print(task_config.generate_tasks())
-    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-96, ...),
-     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-72, ...),
-     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff=-48, ...)]
-
-    Using timestamp-based cutoffs:
-
-    >>> task_config = TaskGenerator(
-    ...     dataset_path="my_dataset",
-    ...     dataset_config="my_config",
-    ...     horizon=24,
-    ...     num_rolling_windows=3,
-    ...     initial_cutoff="2024-01-05",
-    ...     rolling_step_size="12h",  # required
-    ... )
-    >>> print(task_config.generate_tasks())
-    [Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-05T00:00:00", ...),
-     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-05T12:00:00", ...),
-     Task(dataset_path='my_dataset', dataset_config="my_config", horizon=24, cutoff="2024-01-06T00:00:00", ...)]
-
-    """
-
-    variants: list[dict[str, Any]] | None = None
-    num_rolling_windows: int | None = None
-    initial_cutoff: int | str | None = None
-    rolling_step_size: int | str | None = None
-
-    def __post_init__(self):
-        super().__post_init__()
-        if self.variants is not None:
-            assert self.num_rolling_windows is None, "`num_rolling_windows` must be `None` if `variants` is provided"
-            assert self.initial_cutoff is None, "`num_rolling_windows` must be `None` if `variants` is provided"
-            assert self.rolling_step_size is None, "`rolling_step_size` must be `None` if `variants` is provided"
-        elif self.num_rolling_windows is not None:
-            assert self.variants is None, "`variants` must be `None` if `num_rolling_windows` is provided"
-            assert self.num_rolling_windows >= 1, "If provided, `num_rolling_windows` must satisfy >= 1"
-            if self.rolling_step_size is None:
-                self.rolling_step_size = self.horizon
-            if self.initial_cutoff is None:
-                self.initial_cutoff = -self.num_rolling_windows * self.horizon
-
-            if isinstance(self.initial_cutoff, int):
-                if not isinstance(self.rolling_step_size, int):
-                    raise ValueError("`rolling_step_size` must be an int if `initial_cutoff` is an int")
-                assert self.initial_cutoff <= -1
-                assert self.rolling_step_size >= 1
-            else:
-                if not isinstance(self.rolling_step_size, str):
-                    raise ValueError("`rolling_step_size` must be a string if `initial_cutoff` is a string")
-                self.initial_cutoff = pd.Timestamp(self.initial_cutoff).isoformat()
-                offset = pd.tseries.frequencies.to_offset(self.rolling_step_size)
-                assert offset.n >= 1, "If `rolling_step_size` is a string, it must correspond to a positive timedelta"
-                self.rolling_step_size = offset.freqstr
-
-    def generate_tasks(self) -> list[Task]:
-        tasks = []
-        excluded_keys = ["variants", "num_rolling_windows", "rolling_step_size", "initial_cutoff"]
-        base_task_data = {k: v for k, v in self.__dict__.items() if k not in excluded_keys}
-
-        if self.variants:
-            for variant in self.variants:
-                task_data = base_task_data.copy()
-                task_data.update(variant)
-                tasks.append(Task(**task_data))
-        elif self.num_rolling_windows:
-            for window_idx in range(self.num_rolling_windows):
-                task_data = base_task_data.copy()
-                if isinstance(self.initial_cutoff, int):
-                    cutoff = self.initial_cutoff + window_idx * self.rolling_step_size
-                else:
-                    cutoff = pd.Timestamp(self.initial_cutoff)
-                    # We don't add the offset for window_idx=0 to avoid applying an "anchored" offset
-                    # (e.g. `Timestamp("2020-01-01") + i * to_offset("ME")` returns "2020-01-31" for i=0 and i=1)
-                    if window_idx != 0:
-                        cutoff += window_idx * pd.tseries.frequencies.to_offset(self.rolling_step_size)
-                    cutoff = cutoff.isoformat()
-                task_data["cutoff"] = cutoff
-                tasks.append(Task(**task_data))
-        else:
-            tasks.append(Task(**base_task_data))
-        return tasks
+            return [self.target]
 
 
 # These methods are stored outside of classes to ensure that HF datasets caching logic recognizes them

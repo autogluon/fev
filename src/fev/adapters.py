@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from . import utils
-from .task import Task
+from .task import EvaluationWindow
 
 if TYPE_CHECKING:
     import autogluon.timeseries
@@ -27,7 +27,7 @@ class DatasetAdapter(ABC):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -45,7 +45,7 @@ class DatasetsAdapter(DatasetAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -65,10 +65,10 @@ class PandasAdapter(DatasetAdapter):
         dataset
             Dataset that must be converted.
         """
-        df = dataset.to_pandas()
+        df: pd.DataFrame = dataset.to_pandas()
         # Equivalent to df.explode() but much faster
-        length_per_item = df[df.columns.drop(id_column)[0]].apply(len).values
-        df_dict = {id_column: np.repeat(df[id_column].values, length_per_item)}
+        length_per_item = df[df.columns.drop(id_column)[0]].apply(len).to_numpy()
+        df_dict = {id_column: np.repeat(df[id_column].to_numpy(), length_per_item)}
         for col in df.columns:
             if col != id_column:
                 df_dict[col] = np.concatenate(df[col])
@@ -80,7 +80,7 @@ class PandasAdapter(DatasetAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -125,7 +125,7 @@ class GluonTSAdapter(PandasAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -138,7 +138,7 @@ class GluonTSAdapter(PandasAdapter):
         past_df, future_df, static_df = super().convert_input_data(
             past=past,
             future=future,
-            target_column=target_column,
+            target_columns=target_columns,
             id_column=id_column,
             timestamp_column=timestamp_column,
             static_columns=static_columns,
@@ -157,17 +157,16 @@ class GluonTSAdapter(PandasAdapter):
         gluonts_freq = pd.tseries.frequencies.get_period_alias(freq)
         # We compute names of feature columns after non-numeric columns have been removed
         feat_dynamic_real = list(future_df.columns.drop([id_column, timestamp_column]))
-        exclude_from_past_features = list(future_df.columns) + (
-            target_column if isinstance(target_column, list) else [target_column]
-        )
+        exclude_from_past_features = list(future_df.columns) + target_columns
         past_feat_dynamic_real = list(past_df.columns.drop(exclude_from_past_features))
+        target = target_columns[0] if len(target_columns) == 1 else target_columns
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
             past_dataset = PandasDataset.from_long_dataframe(
                 past_df,
                 item_id=id_column,
                 timestamp=timestamp_column,
-                target=target_column,
+                target=target,
                 static_features=static_df,
                 freq=gluonts_freq,
                 feat_dynamic_real=feat_dynamic_real,
@@ -177,7 +176,7 @@ class GluonTSAdapter(PandasAdapter):
                 pd.concat([past_df, future_df]),
                 item_id=id_column,
                 timestamp=timestamp_column,
-                target=target_column,
+                target=target,
                 static_features=static_df,
                 freq=gluonts_freq,
                 future_length=len(future[0][timestamp_column]),
@@ -210,17 +209,17 @@ class NixtlaAdapter(PandasAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
-        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
+        assert len(target_columns) == 1, f"{cls.__name__} does not support multivariate tasks."
 
         past_df, future_df, static_df = super().convert_input_data(
             past=past,
             future=future,
-            target_column=target_column,
+            target_columns=target_columns,
             id_column=id_column,
             timestamp_column=timestamp_column,
             static_columns=static_columns,
@@ -229,7 +228,7 @@ class NixtlaAdapter(PandasAdapter):
             columns={
                 id_column: cls.id_column,
                 timestamp_column: cls.timestamp_column,
-                target_column: cls.target_column,
+                target_columns[0]: cls.target_column,
             }
         )
         future_df = future_df.rename(
@@ -267,7 +266,7 @@ class AutoGluonAdapter(PandasAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -276,18 +275,18 @@ class AutoGluonAdapter(PandasAdapter):
             from autogluon.timeseries import TimeSeriesDataFrame
         except ModuleNotFoundError:
             raise ModuleNotFoundError(f"Please install AutoGluon before using {cls.__name__}")
-        assert isinstance(target_column, str), f"{cls.__name__} does not support multivariate tasks."
+        assert len(target_columns) == 1, f"{cls.__name__} does not support multivariate tasks."
 
         past_df, future_df, static_df = super().convert_input_data(
             past=past,
             future=future,
-            target_column=target_column,
+            target_columns=target_columns,
             id_column=id_column,
             timestamp_column=timestamp_column,
             static_columns=static_columns,
         )
         past_data = TimeSeriesDataFrame.from_data_frame(
-            past_df.rename(columns={target_column: cls.target_column}),
+            past_df.rename(columns={target_columns[0]: cls.target_column}),
             id_column=id_column,
             timestamp_column=timestamp_column,
             static_features_df=static_df,
@@ -307,7 +306,7 @@ class DartsAdapter(DatasetAdapter):
         past: datasets.Dataset,
         future: datasets.Dataset,
         *,
-        target_column: str | list[str],
+        target_columns: list[str],
         id_column: str,
         timestamp_column: str,
         static_columns: list[str],
@@ -317,13 +316,10 @@ class DartsAdapter(DatasetAdapter):
         except ModuleNotFoundError:
             raise ModuleNotFoundError(f"Please install darts before using {cls.__name__}")
 
-        if isinstance(target_column, str):
-            target_column = [target_column]
-
         past_covariates_names = []
         future_covariates_names = []
         for col, feat in past.features.items():
-            if col not in [id_column, timestamp_column, *target_column, *static_columns]:
+            if col not in [id_column, timestamp_column, *target_columns, *static_columns]:
                 assert isinstance(feat, datasets.Sequence)
                 # Only include numeric dtypes for past/future covariates
                 if any(t in feat.feature.dtype for t in ["int", "float", "double"]):
@@ -341,9 +337,9 @@ class DartsAdapter(DatasetAdapter):
             target_series.append(
                 TimeSeries(
                     times=pd.DatetimeIndex(past_i[timestamp_column]),
-                    values=np.stack([past_i[col] for col in target_column], axis=1).astype("float32"),
+                    values=np.stack([past_i[col] for col in target_columns], axis=1).astype("float32"),
                     static_covariates=pd.Series({col: past_i[col] for col in static_columns}),
-                    components=target_column,
+                    components=target_columns,
                 ),
             )
             if len(past_covariates_names) > 0:
@@ -383,7 +379,7 @@ DATASET_ADAPTERS: dict[str, Type[DatasetAdapter]] = {
 
 
 def convert_input_data(
-    task: Task,
+    window: EvaluationWindow,
     adapter: Literal["pandas", "datasets", "gluonts", "nixtla", "darts", "autogluon"] = "pandas",
     *,
     as_univariate: bool = False,
@@ -394,45 +390,54 @@ def convert_input_data(
 
     Parameters
     ----------
-    task
-        Task object for which input data must be converted.
+    window
+        Evaluation window for which input data must be converted.
     adapter : {"pandas", "datasets", "gluonts", "nixtla", "darts", "autogluon"}
         Format to which the dataset must be converted.
     as_univariate
-        If True, separate instances will be created from each target column before passing the data to the adapter.
+        If `True`, the separate instances will be created from each target column before passing the data to the adapter.
+        Covariate columns will not be affected, only targets will be modified.
 
-        Equivalent to setting `generate_univariate_targets_from = "__ALL__"` in `Task` constructor.
+        Setting `as_univariate=True` makes it easy to evaluate a univariate model on a multivariate task.
+
+        Use [`fev.combine_univariate_predictions_to_multivariate`][fev.combine_univariate_predictions_to_multivariate] to combine univariate predictions back to the
+        multivariate format.
     univariate_target_column
-        Target column name used when as_univariate=True. Only used by the "datasets" adapter.
+        Target column name used when `as_univariate=True`. Only used by the `"datasets"` adapter.
     **kwargs
-        Keyword arguments passed to :meth:`fev.Task.get_input_data`.
+        Keyword arguments passed to [`EvaluationWindow.get_input_data()`][fev.EvaluationWindow.get_input_data].
     """
-    past, future = task.get_input_data(**kwargs)
+    past, future = window.get_input_data(**kwargs)
 
     if as_univariate:
-        if univariate_target_column in past.column_names and univariate_target_column != task.target_column:
+        # Raise error if column called `univariate_target_column` already exists and it's not the *only* target column
+        if univariate_target_column in past.column_names and window.target_columns != [univariate_target_column]:
             raise ValueError(
                 f"Column '{univariate_target_column}' already exists. Choose a different univariate_target_column."
             )
-        target_column = univariate_target_column
-        if task.is_multivariate:
+        target_columns = [univariate_target_column]
+        if len(window.target_columns) > 1:
+            # For multiple targets, we split each item into multiple instances (one per target column)
             past = utils.generate_univariate_targets_from_multivariate(
                 past,
-                id_column=task.id_column,
-                new_target_column=target_column,
-                generate_univariate_targets_from=task.target_columns_list,
+                id_column=window.id_column,
+                new_target_column=univariate_target_column,
+                generate_univariate_targets_from=window.target_columns,
             )
             # We cannot apply generate_univariate_targets_from_multivariate to future since it does not contain target cols,
             # so we just repeat each entry and insert the IDs from past, repeating entries as [0, 0, ..., 1, 1, ..., N -1, N - 1, ...]
             original_column_order = future.column_names
-            future = future.select([i for i in range(len(future)) for _ in range(len(task.target_columns_list))])
-            future = future.remove_columns(task.id_column).add_column(name=task.id_column, column=past[task.id_column])
+            future = future.select([i for i in range(len(future)) for _ in range(len(window.target_columns))])
+            future = future.remove_columns(window.id_column).add_column(
+                name=window.id_column, column=past[window.id_column]
+            )
             future = future.select_columns(original_column_order)
         else:
-            if target_column not in past.column_names:
-                past = past.rename_column(task.target_column, target_column)
+            # For single target, we just rename the existing target to univariate_target_column
+            if univariate_target_column not in past.column_names:
+                past = past.rename_column(window.target_columns[0], univariate_target_column)
     else:
-        target_column = task.target_column
+        target_columns = window.target_columns
 
     if adapter not in DATASET_ADAPTERS:
         raise KeyError(f"`adapter` must be one of {list(DATASET_ADAPTERS)}")
@@ -441,8 +446,8 @@ def convert_input_data(
     return adapter_cls().convert_input_data(
         past=past,
         future=future,
-        target_column=target_column,
-        id_column=task.id_column,
-        timestamp_column=task.timestamp_column,
-        static_columns=task.static_columns,
+        target_columns=target_columns,
+        id_column=window.id_column,
+        timestamp_column=window.timestamp_column,
+        static_columns=window.static_columns,
     )

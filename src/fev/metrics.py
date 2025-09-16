@@ -1,18 +1,27 @@
-from typing import Type
+from typing import Any, Type
 
 import datasets
 import numpy as np
 
 from fev.constants import DEFAULT_NUM_PROC, PREDICTIONS
 
+MetricConfig = str | dict[str, Any]
+
 
 class Metric:
     """Base class for all metrics."""
 
+    needs_quantiles: bool = False
+
+    @property
+    def name(self) -> str:
+        """Name of the metric."""
+        return self.__class__.__name__
+
     @staticmethod
     def _safemean(arr: np.ndarray) -> float:
         """Compute mean of an array, ignoring NaN, Inf, and -Inf values."""
-        return np.mean(arr[np.isfinite(arr)])
+        return float(np.mean(arr[np.isfinite(arr)]))
 
     def compute(
         self,
@@ -20,11 +29,29 @@ class Metric:
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ) -> float:
         raise NotImplementedError
+
+
+def get_metric(metric: MetricConfig) -> Metric:
+    """Get a metric class by name or configuration."""
+    metric_name = metric if isinstance(metric, str) else metric["name"]
+    try:
+        metric_type = AVAILABLE_METRICS[metric_name.upper()]
+    except KeyError:
+        raise ValueError(
+            f"Evaluation metric '{metric_name}' is not available. Available metrics: {sorted(AVAILABLE_METRICS)}"
+        )
+
+    if isinstance(metric, str):
+        return metric_type()
+    elif isinstance(metric, dict):
+        return metric_type(**{k: v for k, v in metric.items() if k != "name"})
+    else:
+        raise ValueError(f"Invalid metric configuration: {metric}")
 
 
 class MAE(Metric):
@@ -36,8 +63,8 @@ class MAE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -48,32 +75,39 @@ class MAE(Metric):
 class WAPE(Metric):
     """Weighted absolute percentage error."""
 
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
     def compute(
         self,
         *,
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
         y_pred = np.array(predictions[PREDICTIONS])
-        return np.nanmean(np.abs(y_test - y_pred)) / np.nanmean(np.abs(y_test))
+
+        return np.nanmean(np.abs(y_test - y_pred)) / max(self.epsilon, np.nanmean(np.abs(y_test)))
 
 
 class MASE(Metric):
     """Mean absolute scaled error."""
 
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
     def compute(
         self,
         *,
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -82,6 +116,7 @@ class MASE(Metric):
         seasonal_error = _abs_seasonal_error_per_item(
             past_data=past_data, seasonality=seasonality, target_column=target_column
         )
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return self._safemean(np.abs(y_test - y_pred) / seasonal_error[:, None])
 
 
@@ -94,8 +129,8 @@ class RMSE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -106,14 +141,17 @@ class RMSE(Metric):
 class RMSSE(Metric):
     """Root mean squared scaled error."""
 
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
     def compute(
         self,
         *,
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -121,6 +159,7 @@ class RMSSE(Metric):
         seasonal_error = _squared_seasonal_error_per_item(
             past_data, seasonality=seasonality, target_column=target_column
         )
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return np.sqrt(self._safemean((y_test - y_pred) ** 2 / seasonal_error[:, None]))
 
 
@@ -133,8 +172,8 @@ class MSE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -151,8 +190,8 @@ class RMSLE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -169,8 +208,8 @@ class MAPE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -188,8 +227,8 @@ class SMAPE(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         y_test = np.array(test_data[target_column])
@@ -200,14 +239,16 @@ class SMAPE(Metric):
 class MQL(Metric):
     """Mean quantile loss."""
 
+    needs_quantiles: bool = True
+
     def compute(
         self,
         *,
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         if quantile_levels is None or len(quantile_levels) == 0:
@@ -224,14 +265,19 @@ class MQL(Metric):
 class SQL(Metric):
     """Scaled quantile loss."""
 
+    needs_quantiles: bool = True
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
     def compute(
         self,
         *,
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         ql = _quantile_loss(
@@ -244,11 +290,17 @@ class SQL(Metric):
         seasonal_error = _abs_seasonal_error_per_item(
             past_data=past_data, seasonality=seasonality, target_column=target_column
         )
+        seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         return self._safemean(ql_per_time_step / seasonal_error[:, None])
 
 
 class WQL(Metric):
     """Weighted quantile loss."""
+
+    needs_quantiles: bool = True
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
 
     def compute(
         self,
@@ -256,8 +308,8 @@ class WQL(Metric):
         test_data: datasets.Dataset,
         predictions: datasets.Dataset,
         past_data: datasets.Dataset,
-        seasonality: int = 1,
-        quantile_levels: list[float] | None = None,
+        seasonality: int,
+        quantile_levels: list[float],
         target_column: str = "target",
     ):
         ql = _quantile_loss(
@@ -266,7 +318,7 @@ class WQL(Metric):
             quantile_levels=quantile_levels,
             target_column=target_column,
         )
-        return np.nanmean(ql) / np.nanmean(np.abs(np.array(test_data[target_column])))
+        return np.nanmean(ql) / max(self.epsilon, np.nanmean(np.abs(np.array(test_data[target_column]))))
 
 
 def _seasonal_diff(array: np.ndarray, seasonality: int) -> np.ndarray:
@@ -337,10 +389,8 @@ AVAILABLE_METRICS: dict[str, Type[Metric]] = {
     # Percentage errors
     "MAPE": MAPE,
     "SMAPE": SMAPE,
-    # # Quantile loss
+    # Quantile loss
     "MQL": MQL,
     "WQL": WQL,
     "SQL": SQL,
 }
-
-QUANTILE_METRICS = ["MQL", "WQL", "SQL"]

@@ -1,2 +1,2 @@
-uni2ts==1.2.0
-torch==2.6.0
+uni2ts @ git+https://github.com/SalesforceAIResearch/uni2ts@b472ef6dcf770b96a1b04bd98cd11e893058573a
+torch<2.5.0

@@ -1,11 +1,13 @@
 tasks:
 - dataset_path: autogluon/chronos_datasets
-  dataset_config: monash_m1_yearly
+  dataset_config: monash_m1_quarterly
   horizon: 8
+  seasonality: 4
 - dataset_path: autogluon/chronos_datasets
   dataset_config: monash_electricity_weekly
   horizon: 8
+  num_windows: 2
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_yearly
+  horizon: 6
   seasonality: 1
-  variants:
-  - cutoff: "2013-01-01"
-  - cutoff: "2014-01-01"

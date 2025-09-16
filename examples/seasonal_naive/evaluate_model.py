@@ -8,23 +8,30 @@ from gluonts.model.seasonal_naive import SeasonalNaivePredictor
 import fev
 
 
-def predict_with_model(task: fev.Task) -> tuple[datasets.Dataset, float, dict]:
-    _, prediction_dataset = fev.convert_input_data(task, "gluonts", trust_remote_code=True)
-
+def predict_with_model(task: fev.Task) -> tuple[list[datasets.DatasetDict], float, dict]:
     predictor = SeasonalNaivePredictor(prediction_length=task.horizon, season_length=task.seasonality)
 
-    start_time = time.monotonic()
-    forecast = np.stack([f.samples for f in predictor.predict(prediction_dataset)]).squeeze(1)  # [num_items, horizon]
-    inference_time = time.monotonic() - start_time
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        _, prediction_dataset = fev.convert_input_data(window, adapter="gluonts", as_univariate=True)
+        start_time = time.monotonic()
+        forecast = np.stack([f.samples for f in predictor.predict(prediction_dataset)]).squeeze(
+            1
+        )  # [num_items, horizon]
+        inference_time += time.monotonic() - start_time
 
-    predictions_dict = {"predictions": forecast}
-    if task.quantile_levels is not None:
+        predictions_dict = {"predictions": forecast}
         for q in task.quantile_levels:
             predictions_dict[str(q)] = forecast
 
-    predictions = datasets.Dataset.from_dict(predictions_dict)
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_dict(predictions_dict), target_columns=task.target_columns
+            )
+        )
 
-    return predictions, inference_time, {}
+    return predictions_per_window, inference_time, {}
 
 
 if __name__ == "__main__":
