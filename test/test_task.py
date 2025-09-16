@@ -130,7 +130,7 @@ def test_when_using_rolling_evaluation_then_tasks_are_generated_with_correct_off
 def test_when_multivariate_task_is_created_then_data_contains_correct_columns(target):
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
-        dataset_config="ETTh",
+        dataset_config="ETT_1H",
         target=target,
     )
     past_data, future_data = task.get_window(0).get_input_data()
@@ -188,7 +188,7 @@ def naive_forecast_multivariate(task: fev.Task, return_dict: bool) -> list[datas
 def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, return_dict):
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
-        dataset_config="ETTh",
+        dataset_config="ETT_1H",
         target=target,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
@@ -204,7 +204,7 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, r
 def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
-        dataset_config="ETTh",
+        dataset_config="ETT_1H",
         target=["OT", "LULL"],
         horizon=4,
     )
@@ -245,7 +245,7 @@ def test_when_using_univariate_model_on_multivariate_task_via_adapters_then_pred
 
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
-        dataset_config="ETTh",
+        dataset_config="ETT_1H",
         target=target,
         eval_metric="MASE",
         extra_metrics=["WAPE"],
@@ -308,7 +308,7 @@ def test_when_all_series_have_too_few_observations_then_exception_is_raised(
 def test_when_covariate_columns_are_provided_then_only_correct_columns_are_loaded(target, known_cols, past_cols):
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
-        dataset_config="ETTh",
+        dataset_config="ETT_1H",
         target=target,
         past_dynamic_columns=past_cols,
         known_dynamic_columns=known_cols,

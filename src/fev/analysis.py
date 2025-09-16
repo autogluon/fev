@@ -8,6 +8,8 @@ import pandas as pd
 import scipy.stats
 from packaging.version import parse as parse_version
 
+from .constants import DEPRECATED_TASK_FIELDS
+
 __all__ = [
     "leaderboard",
     "pairwise_comparison",
@@ -75,18 +77,25 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
         )
-    return df
+    for old_name, new_name in DEPRECATED_TASK_FIELDS.items():
+        if old_name in df.columns and new_name in df.columns:
+            raise ValueError(
+                f"Both deprecated '{old_name}' and '{new_name}' columns are present in the evaluation summary."
+            )
+    return df.rename(columns=DEPRECATED_TASK_FIELDS)
 
 
 def _sanitize_quantile_levels(quantile_levels: str | list) -> str:
     if isinstance(quantile_levels, str):
         quantile_levels = ast.literal_eval(quantile_levels)
+    if quantile_levels != quantile_levels:  # only true if quantile_levels is NaN
+        return "[]"
     if not isinstance(quantile_levels, list):
         raise ValueError(f"Unexpected dtype for quantile_levels: {type(quantile_levels)}")
     return str([round(q, 4) for q in quantile_levels])
 
 
-def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
+def _load_summaries(summaries: SummaryType | list[SummaryType], check_fev_version: bool = False) -> pd.DataFrame:
     """Load potentially multiple summary objects into a single pandas DataFrame.
 
     Ensures that all expected columns are present and have correct dtypes.
@@ -102,19 +111,20 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
         summaries_df[col] = None
     summaries_df["quantile_levels"] = summaries_df["quantile_levels"].apply(_sanitize_quantile_levels)
     summaries_df = summaries_df.astype(RESULTS_DTYPES)
-    try:
-        min_version = summaries_df["fev_version"].apply(parse_version).min()
-        if min_version < parse_version(LAST_BREAKING_VERSION):
-            warnings.warn(
-                f"Evaluation summaries contain results from fev < {LAST_BREAKING_VERSION}. "
-                "Results may not be comparable due to breaking changes.",
-                stacklevel=3,
+    if check_fev_version:
+        try:
+            min_version = summaries_df["fev_version"].apply(parse_version).min()
+            if min_version < parse_version(LAST_BREAKING_VERSION):
+                warnings.warn(
+                    f"Evaluation summaries contain results from fev < {LAST_BREAKING_VERSION}. "
+                    "Results may not be comparable due to breaking changes.",
+                    stacklevel=3,
+                )
+        except Exception:
+            raise ValueError(
+                "Unable to parse `fev_version` column in the evaluation summaries. "
+                "Make sure all summaries are produced by `fev`"
             )
-    except Exception:
-        raise ValueError(
-            "Unable to parse `fev_version` column in the evaluation summaries. "
-            "Make sure all summaries are produced by `fev`"
-        )
     return summaries_df
 
 
@@ -123,6 +133,7 @@ def pivot_table(
     metric_column: str = "test_error",
     task_columns: str | list[str] = TASK_DEF_COLUMNS.copy(),
     baseline_model: str | None = None,
+    check_fev_version: bool = False,
 ) -> pd.DataFrame:
     """Convert evaluation summaries into a pivot table for analysis.
 
@@ -140,6 +151,8 @@ def pivot_table(
         Column(s) defining unique tasks. Used as the pivot table index
     baseline_model : str, optional
         If provided, divide all scores by this model's scores to get relative performance
+    check_fev_version : bool, default False
+        If True, check that fev_version in the summary is >= LAST_BREAKING_VERSION.
 
     Returns
     -------
@@ -153,7 +166,7 @@ def pivot_table(
         If duplicate model/task combinations exist, or results for `baseline_model` are missing when `baseline_model`
         is provided.
     """
-    summaries = _load_summaries(summaries).astype({metric_column: "float64"})
+    summaries = _load_summaries(summaries, check_fev_version=check_fev_version).astype({metric_column: "float64"})
 
     if isinstance(task_columns, str):
         task_columns = [task_columns]
@@ -197,12 +210,12 @@ def leaderboard(
     summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
     missing_strategy: Literal["error", "drop", "impute"] = "error",
-    baseline_model: str = "SeasonalNaive",
+    baseline_model: str = "seasonal_naive",
     min_relative_error: float | None = 1e-2,
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
-    n_resamples: int = 1000,
+    n_resamples: int | None = None,
     seed: int = 123,
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
@@ -232,8 +245,8 @@ def leaderboard(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
-    n_resamples : int, default 1000
-        Number of bootstrap samples for confidence intervals
+    n_resamples : int | None, default None
+        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
 
@@ -243,16 +256,17 @@ def leaderboard(
         Leaderboard sorted by `skill_score`, with columns:
 
         - `skill_score`: Skill score (1 - geometric mean relative error)
-        - `skill_score_lower`: Lower bound of 95% confidence interval
-        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of pairwise comparisons won against other models
-        - `win_rate_lower`: Lower bound of 95% confidence interval
-        - `win_rate_upper`: Upper bound of 95% confidence interval
+        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `median_training_time_s`: Median training time across tasks
         - `median_inference_time_s`: Median inference time across tasks
+        - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
-    summaries = _load_summaries(summaries)
+    summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column, baseline_model=baseline_model)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
@@ -274,19 +288,19 @@ def leaderboard(
             )
     else:
         raise ValueError(f"Invalid {missing_strategy=}, expected one of ['error', 'drop', 'impute']")
+    bootstrap_resamples = 1 if n_resamples is None else n_resamples
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
-        errors_df.to_numpy(), statistic=_win_rate, n_resamples=n_resamples, seed=seed
+        errors_df.to_numpy(), statistic=_win_rate, n_resamples=bootstrap_resamples, seed=seed
     )
     skill_score, skill_score_lower, skill_score_upper = bootstrap(
-        errors_df.to_numpy(), statistic=_skill_score, n_resamples=n_resamples, seed=seed
+        errors_df.to_numpy(), statistic=_skill_score, n_resamples=bootstrap_resamples, seed=seed
     )
 
     training_time_df = pivot_table(summaries, metric_column="training_time_s")
     inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
-    # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
-    median_training_time_s = training_time_df.loc[errors_df.index].median()
-    median_inference_time_s = inference_time_df.loc[errors_df.index].median()
-    return pd.DataFrame(
+    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+
+    result_df = pd.DataFrame(
         {
             "skill_score": skill_score,
             "skill_score_lower": skill_score_lower,
@@ -294,12 +308,19 @@ def leaderboard(
             "win_rate": win_rate,
             "win_rate_lower": win_rate_lower,
             "win_rate_upper": win_rate_upper,
-            "median_training_time_s": median_training_time_s,
-            "median_inference_time_s": median_inference_time_s,
+            # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
+            "median_training_time_s": training_time_df.loc[errors_df.index].median(),
+            "median_inference_time_s": inference_time_df.loc[errors_df.index].median(),
+            "training_corpus_overlap": training_corpus_overlap_df.loc[errors_df.index].mean(),
             "num_failures": num_failures_per_model,
         },
         index=errors_df.columns,
-    ).sort_values(by="skill_score", ascending=False)
+    )
+    if n_resamples is None:
+        result_df = result_df.drop(
+            columns=["skill_score_lower", "skill_score_upper", "win_rate_lower", "win_rate_upper"]
+        )
+    return result_df.sort_values(by="skill_score", ascending=False)
 
 
 def pairwise_comparison(
@@ -311,7 +332,7 @@ def pairwise_comparison(
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
-    n_resamples: int = 1000,
+    n_resamples: int | None = None,
     seed: int = 123,
 ) -> pd.DataFrame:
     """Compute pairwise performance comparisons between all model pairs.
@@ -341,8 +362,8 @@ def pairwise_comparison(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
-    n_resamples : int, default 1000
-        Number of bootstrap samples for confidence intervals
+    n_resamples : int | None, default None
+        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
 
@@ -352,13 +373,13 @@ def pairwise_comparison(
         Pairwise comparison results with `pd.MultiIndex` `(model_1, model_2)` and columns:
 
         - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios
-        - `skill_score_lower`: Lower bound of 95% confidence interval
-        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of tasks where `model_1` outperforms `model_2`
-        - `win_rate_lower`: Lower bound of 95% confidence interval
-        - `win_rate_upper`: Upper bound of 95% confidence interval
+        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
     """
-    summaries = _load_summaries(summaries)
+    summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column)
     num_failures_per_model = errors_df.isna().sum()
@@ -388,19 +409,22 @@ def pairwise_comparison(
         raise ValueError(f"Invalid {missing_strategy=}, expected one of ['error', 'drop', 'impute']")
     model_order = errors_df.rank(axis=1).mean().sort_values().index
     errors_df = errors_df[model_order]
+
+    bootstrap_resamples = 1 if n_resamples is None else n_resamples
     skill_score, skill_score_lower, skill_score_upper = bootstrap(
         errors_df.to_numpy(),
         statistic=lambda x: _pairwise_skill_score(x, min_relative_error, max_relative_error),
-        n_resamples=n_resamples,
+        n_resamples=bootstrap_resamples,
         seed=seed,
     )
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
         errors_df.to_numpy(),
         statistic=_pairwise_win_rate,
-        n_resamples=n_resamples,
+        n_resamples=bootstrap_resamples,
         seed=seed,
     )
-    return pd.DataFrame(
+
+    result_df = pd.DataFrame(
         {
             "skill_score": skill_score.flatten(),
             "skill_score_lower": skill_score_lower.flatten(),
@@ -411,6 +435,11 @@ def pairwise_comparison(
         },
         index=pd.MultiIndex.from_product([errors_df.columns, errors_df.columns], names=["model_1", "model_2"]),
     )
+    if n_resamples is None:
+        result_df = result_df.drop(
+            columns=["skill_score_lower", "skill_score_upper", "win_rate_lower", "win_rate_upper"]
+        )
+    return result_df
 
 
 def bootstrap(

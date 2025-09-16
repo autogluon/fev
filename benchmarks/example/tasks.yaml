@@ -7,3 +7,7 @@ tasks:
   dataset_config: monash_electricity_weekly
   horizon: 8
   num_windows: 2
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_yearly
+  horizon: 6
+  seasonality: 1
