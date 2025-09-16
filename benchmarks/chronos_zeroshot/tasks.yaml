@@ -67,6 +67,7 @@ tasks:
   - 0.7
   - 0.8
   - 0.9
+  initial_cutoff: -96
   generate_univariate_targets_from: __ALL__
 - dataset_path: autogluon/chronos_datasets_extra
   dataset_config: ETTh
