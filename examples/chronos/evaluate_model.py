@@ -110,4 +110,4 @@ if __name__ == "__main__":
     # Show and save the results
     summary_df = pd.DataFrame(summaries)
     print(summary_df)
-    # summary_df.to_csv(f"{model_name}.csv", index=False)
+    summary_df.to_csv(f"{model_name}.csv", index=False)

@@ -1,4 +1,4 @@
-timesfm[torch]==1.2.8
+timesfm[torch]==1.3.0
 torch==2.5.1
 # GluonTS used for missing value imputation
 gluonts==0.16.0
