@@ -215,7 +215,7 @@ def leaderboard(
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
-    n_resamples: int = 1000,
+    n_resamples: int | None = None,
     seed: int = 123,
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
@@ -245,8 +245,8 @@ def leaderboard(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
-    n_resamples : int, default 1000
-        Number of bootstrap samples for confidence intervals
+    n_resamples : int | None, default None
+        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
 
@@ -256,13 +256,14 @@ def leaderboard(
         Leaderboard sorted by `skill_score`, with columns:
 
         - `skill_score`: Skill score (1 - geometric mean relative error)
-        - `skill_score_lower`: Lower bound of 95% confidence interval
-        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of pairwise comparisons won against other models
-        - `win_rate_lower`: Lower bound of 95% confidence interval
-        - `win_rate_upper`: Upper bound of 95% confidence interval
+        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `median_training_time_s`: Median training time across tasks
         - `median_inference_time_s`: Median inference time across tasks
+        - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
     summaries = _load_summaries(summaries, check_fev_version=True)
@@ -287,19 +288,19 @@ def leaderboard(
             )
     else:
         raise ValueError(f"Invalid {missing_strategy=}, expected one of ['error', 'drop', 'impute']")
+    bootstrap_resamples = 1 if n_resamples is None else n_resamples
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
-        errors_df.to_numpy(), statistic=_win_rate, n_resamples=n_resamples, seed=seed
+        errors_df.to_numpy(), statistic=_win_rate, n_resamples=bootstrap_resamples, seed=seed
     )
     skill_score, skill_score_lower, skill_score_upper = bootstrap(
-        errors_df.to_numpy(), statistic=_skill_score, n_resamples=n_resamples, seed=seed
+        errors_df.to_numpy(), statistic=_skill_score, n_resamples=bootstrap_resamples, seed=seed
     )
 
     training_time_df = pivot_table(summaries, metric_column="training_time_s")
     inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
-    # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
-    median_training_time_s = training_time_df.loc[errors_df.index].median()
-    median_inference_time_s = inference_time_df.loc[errors_df.index].median()
-    return pd.DataFrame(
+    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+
+    result_df = pd.DataFrame(
         {
             "skill_score": skill_score,
             "skill_score_lower": skill_score_lower,
@@ -307,12 +308,19 @@ def leaderboard(
             "win_rate": win_rate,
             "win_rate_lower": win_rate_lower,
             "win_rate_upper": win_rate_upper,
-            "median_training_time_s": median_training_time_s,
-            "median_inference_time_s": median_inference_time_s,
+            # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
+            "median_training_time_s": training_time_df.loc[errors_df.index].median(),
+            "median_inference_time_s": inference_time_df.loc[errors_df.index].median(),
+            "training_corpus_overlap": training_corpus_overlap_df.loc[errors_df.index].mean(),
             "num_failures": num_failures_per_model,
         },
         index=errors_df.columns,
-    ).sort_values(by="skill_score", ascending=False)
+    )
+    if n_resamples is None:
+        result_df = result_df.drop(
+            columns=["skill_score_lower", "skill_score_upper", "win_rate_lower", "win_rate_upper"]
+        )
+    return result_df.sort_values(by="skill_score", ascending=False)
 
 
 def pairwise_comparison(
@@ -324,7 +332,7 @@ def pairwise_comparison(
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
-    n_resamples: int = 1000,
+    n_resamples: int | None = None,
     seed: int = 123,
 ) -> pd.DataFrame:
     """Compute pairwise performance comparisons between all model pairs.
@@ -354,8 +362,8 @@ def pairwise_comparison(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
-    n_resamples : int, default 1000
-        Number of bootstrap samples for confidence intervals
+    n_resamples : int | None, default None
+        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
 
@@ -365,11 +373,11 @@ def pairwise_comparison(
         Pairwise comparison results with `pd.MultiIndex` `(model_1, model_2)` and columns:
 
         - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios
-        - `skill_score_lower`: Lower bound of 95% confidence interval
-        - `skill_score_upper`: Upper bound of 95% confidence interval
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of tasks where `model_1` outperforms `model_2`
-        - `win_rate_lower`: Lower bound of 95% confidence interval
-        - `win_rate_upper`: Upper bound of 95% confidence interval
+        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
     """
     summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
@@ -401,19 +409,22 @@ def pairwise_comparison(
         raise ValueError(f"Invalid {missing_strategy=}, expected one of ['error', 'drop', 'impute']")
     model_order = errors_df.rank(axis=1).mean().sort_values().index
     errors_df = errors_df[model_order]
+
+    bootstrap_resamples = 1 if n_resamples is None else n_resamples
     skill_score, skill_score_lower, skill_score_upper = bootstrap(
         errors_df.to_numpy(),
         statistic=lambda x: _pairwise_skill_score(x, min_relative_error, max_relative_error),
-        n_resamples=n_resamples,
+        n_resamples=bootstrap_resamples,
         seed=seed,
     )
     win_rate, win_rate_lower, win_rate_upper = bootstrap(
         errors_df.to_numpy(),
         statistic=_pairwise_win_rate,
-        n_resamples=n_resamples,
+        n_resamples=bootstrap_resamples,
         seed=seed,
     )
-    return pd.DataFrame(
+
+    result_df = pd.DataFrame(
         {
             "skill_score": skill_score.flatten(),
             "skill_score_lower": skill_score_lower.flatten(),
@@ -424,6 +435,11 @@ def pairwise_comparison(
         },
         index=pd.MultiIndex.from_product([errors_df.columns, errors_df.columns], names=["model_1", "model_2"]),
     )
+    if n_resamples is None:
+        result_df = result_df.drop(
+            columns=["skill_score_lower", "skill_score_upper", "win_rate_lower", "win_rate_upper"]
+        )
+    return result_df
 
 
 def bootstrap(

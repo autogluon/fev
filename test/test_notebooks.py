@@ -4,7 +4,7 @@ import nbformat
 import pytest
 from nbconvert.preprocessors import CellExecutionError, ExecutePreprocessor
 
-notebooks_dir = Path(__file__).parent.parent / "docs"
+notebooks_dir = Path(__file__).parent.parent / "docs" / "tutorials"
 notebook_files = [
     notebooks_dir / nb_file
     for nb_file in [
