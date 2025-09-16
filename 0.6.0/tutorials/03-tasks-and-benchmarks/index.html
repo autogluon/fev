@@ -1378,8 +1378,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -1420,20 +1420,6 @@ import fev
 
 warnings.simplefilter("ignore")
 datasets.disable_progress_bars()</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>/home/shchuro/envs/fev/lib/python3.11/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-  from .autonotebook import tqdm as notebook_tqdm
-</pre>
 </div>
 </div>
 </div>
@@ -2369,7 +2355,7 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
  'inference_time_s': None,
  'dataset_fingerprint': '19e36bb78b718d8d',
  'trained_on_this_dataset': False,
- 'fev_version': '0.6.0rc3',
+ 'fev_version': '0.6.0',
  'MASE': 3.8851860313085385}</pre>
 </div>
 </div>
@@ -2511,7 +2497,7 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">task</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span>
     <span class="n">dataset_path</span><span class="o">=</span><span class="s2">"autogluon/fev_datasets"</span><span class="p">,</span>
-    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"favorita_transactions"</span><span class="p">,</span>
+    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"favorita_transactions_1D"</span><span class="p">,</span>
     <span class="n">horizon</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span>
     <span class="n">target</span><span class="o">=</span><span class="s2">"transactions"</span><span class="p">,</span>
 <span class="p">)</span>
@@ -2521,7 +2507,7 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-18">task = fev.Task(
     dataset_path="autogluon/fev_datasets",
-    dataset_config="favorita_transactions",
+    dataset_config="favorita_transactions_1D",
     horizon=7,
     target="transactions",
 )
@@ -2541,11 +2527,11 @@ print(future_data)</div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>Dataset({
     features: ['id', 'timestamp', 'transactions'],
-    num_rows: 54
+    num_rows: 51
 })
 Dataset({
     features: ['id', 'timestamp'],
-    num_rows: 54
+    num_rows: 51
 })
 </pre>
 </div>
@@ -2603,7 +2589,7 @@ full_ds.features</div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>Dataset({
     features: ['id', 'timestamp', 'transactions', 'oil_price', 'holiday', 'store_nbr', 'city', 'state', 'type', 'cluster'],
-    num_rows: 54
+    num_rows: 51
 })
 </pre>
 </div>
@@ -2612,15 +2598,15 @@ full_ds.features</div>
 <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[19]:</div>
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>{'id': Value(dtype='string', id=None),
- 'timestamp': Sequence(feature=Value(dtype='timestamp[us]', id=None), length=-1, id=None),
- 'transactions': Sequence(feature=Value(dtype='int64', id=None), length=-1, id=None),
- 'oil_price': Sequence(feature=Value(dtype='float64', id=None), length=-1, id=None),
+ 'timestamp': Sequence(feature=Value(dtype='timestamp[ms]', id=None), length=-1, id=None),
+ 'transactions': Sequence(feature=Value(dtype='float32', id=None), length=-1, id=None),
+ 'oil_price': Sequence(feature=Value(dtype='float32', id=None), length=-1, id=None),
  'holiday': Sequence(feature=Value(dtype='string', id=None), length=-1, id=None),
- 'store_nbr': Value(dtype='int64', id=None),
+ 'store_nbr': Value(dtype='float32', id=None),
  'city': Value(dtype='string', id=None),
  'state': Value(dtype='string', id=None),
  'type': Value(dtype='string', id=None),
- 'cluster': Value(dtype='int64', id=None)}</pre>
+ 'cluster': Value(dtype='float32', id=None)}</pre>
 </div>
 </div>
 </div>
@@ -2676,7 +2662,7 @@ full_ds.features</div>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">task</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span>
     <span class="n">dataset_path</span><span class="o">=</span><span class="s2">"autogluon/fev_datasets"</span><span class="p">,</span>
-    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"favorita_transactions"</span><span class="p">,</span>
+    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"favorita_transactions_1D"</span><span class="p">,</span>
     <span class="n">horizon</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span>
     <span class="n">target</span><span class="o">=</span><span class="s2">"transactions"</span><span class="p">,</span>
     <span class="n">known_dynamic_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"holiday"</span><span class="p">],</span>  <span class="c1"># time-dependent, known in the future and in the past</span>
@@ -2689,7 +2675,7 @@ full_ds.features</div>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-20">task = fev.Task(
     dataset_path="autogluon/fev_datasets",
-    dataset_config="favorita_transactions",
+    dataset_config="favorita_transactions_1D",
     horizon=7,
     target="transactions",
     known_dynamic_columns=["holiday"],  # time-dependent, known in the future and in the past
@@ -2712,11 +2698,11 @@ print(future_data)</div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>Dataset({
     features: ['id', 'timestamp', 'transactions', 'holiday', 'oil_price', 'city', 'state'],
-    num_rows: 54
+    num_rows: 51
 })
 Dataset({
     features: ['id', 'timestamp', 'holiday', 'city', 'state'],
-    num_rows: 54
+    num_rows: 51
 })
 </pre>
 </div>
@@ -2758,14 +2744,14 @@ Dataset({
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">task</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span>
     <span class="n">dataset_path</span><span class="o">=</span><span class="s2">"autogluon/fev_datasets"</span><span class="p">,</span>
-    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"ETTh"</span><span class="p">,</span>
+    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"ETT_1H"</span><span class="p">,</span>
     <span class="n">horizon</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
     <span class="n">target</span><span class="o">=</span><span class="p">[</span><span class="s2">"OT"</span><span class="p">,</span> <span class="s2">"LUFL"</span><span class="p">,</span> <span class="s2">"LULL"</span><span class="p">],</span>
 <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-21">task = fev.Task(
     dataset_path="autogluon/fev_datasets",
-    dataset_config="ETTh",
+    dataset_config="ETT_1H",
     horizon=3,
     target=["OT", "LUFL", "LULL"],
 )</div>
@@ -3059,7 +3045,7 @@ Predictions for column 'OT'
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>{'model_name': 'naive',
  'dataset_path': 'autogluon/fev_datasets',
- 'dataset_config': 'ETTh',
+ 'dataset_config': 'ETT_1H',
  'horizon': 3,
  'num_windows': 1,
  'initial_cutoff': -3,
@@ -3077,14 +3063,14 @@ Predictions for column 'OT'
  'known_dynamic_columns': [],
  'past_dynamic_columns': [],
  'static_columns': [],
- 'task_name': 'ETTh',
- 'test_error': 1.1921320632260508,
+ 'task_name': 'ETT_1H',
+ 'test_error': 1.1921320279836811,
  'training_time_s': None,
  'inference_time_s': None,
- 'dataset_fingerprint': '1051fcbf7ab489b5',
+ 'dataset_fingerprint': '305bfc1cf6779b47',
  'trained_on_this_dataset': False,
- 'fev_version': '0.6.0rc3',
- 'MASE': 1.1921320632260508}</pre>
+ 'fev_version': '0.6.0',
+ 'MASE': 1.1921320279836811}</pre>
 </div>
 </div>
 </div>
@@ -3172,16 +3158,16 @@ Predictions for column 'OT'
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">task</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">(</span>
-    <span class="n">dataset_path</span><span class="o">=</span><span class="s2">"autogluon/chronos_datasets_extra"</span><span class="p">,</span>
-    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"ETTh"</span><span class="p">,</span>
+    <span class="n">dataset_path</span><span class="o">=</span><span class="s2">"autogluon/fev_datasets"</span><span class="p">,</span>
+    <span class="n">dataset_config</span><span class="o">=</span><span class="s2">"ETT_1H"</span><span class="p">,</span>
     <span class="n">horizon</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
     <span class="n">generate_univariate_targets_from</span><span class="o">=</span><span class="p">[</span><span class="s2">"OT"</span><span class="p">,</span> <span class="s2">"LUFL"</span><span class="p">,</span> <span class="s2">"LULL"</span><span class="p">],</span>
     <span class="n">target</span><span class="o">=</span><span class="s2">"target"</span><span class="p">,</span>  <span class="c1"># new name for the target columns ['OT', 'LUFL', 'LULL'] after splitting</span>
 <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-28">task = fev.Task(
-    dataset_path="autogluon/chronos_datasets_extra",
-    dataset_config="ETTh",
+    dataset_path="autogluon/fev_datasets",
+    dataset_config="ETT_1H",
     horizon=3,
     generate_univariate_targets_from=["OT", "LUFL", "LULL"],
     target="target",  # new name for the target columns ['OT', 'LUFL', 'LULL'] after splitting
@@ -3383,8 +3369,8 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
 <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[32]:</div>
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>{'model_name': 'naive',
- 'dataset_path': 'autogluon/chronos_datasets_extra',
- 'dataset_config': 'ETTh',
+ 'dataset_path': 'autogluon/fev_datasets',
+ 'dataset_config': 'ETT_1H',
  'horizon': 3,
  'num_windows': 1,
  'initial_cutoff': -3,
@@ -3402,14 +3388,14 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
  'known_dynamic_columns': [],
  'past_dynamic_columns': [],
  'static_columns': [],
- 'task_name': 'ETTh',
- 'test_error': 1.1921320632260506,
+ 'task_name': 'ETT_1H',
+ 'test_error': 1.1921320279836811,
  'training_time_s': None,
  'inference_time_s': None,
- 'dataset_fingerprint': '01c8288f51e0dc88',
+ 'dataset_fingerprint': '81591e84125d0e33',
  'trained_on_this_dataset': False,
- 'fev_version': '0.6.0rc3',
- 'MASE': 1.1921320632260506}</pre>
+ 'fev_version': '0.6.0',
+ 'MASE': 1.1921320279836811}</pre>
 </div>
 </div>
 </div>
@@ -3460,6 +3446,11 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
         <span class="s2">"horizon"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
         <span class="s2">"num_windows"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
     <span class="p">},</span>
+    <span class="p">{</span>
+        <span class="s2">"dataset_path"</span><span class="p">:</span> <span class="s2">"autogluon/chronos_datasets"</span><span class="p">,</span>
+        <span class="s2">"dataset_config"</span><span class="p">:</span> <span class="s2">"monash_m1_yearly"</span><span class="p">,</span>
+        <span class="s2">"horizon"</span><span class="p">:</span> <span class="mi">6</span><span class="p">,</span>
+    <span class="p">},</span>
 <span class="p">]</span>
 <span class="n">benchmark</span> <span class="o">=</span> <span class="n">fev</span><span class="o">.</span><span class="n">Benchmark</span><span class="o">.</span><span class="n">from_list</span><span class="p">(</span><span class="n">tasks_configs</span><span class="p">)</span>
 </pre></div>
@@ -3476,6 +3467,11 @@ task.evaluation_summary(predictions_per_window, model_name="naive")</div>
         "dataset_config": "monash_electricity_weekly",
         "horizon": 8,
         "num_windows": 2,
+    },
+    {
+        "dataset_path": "autogluon/chronos_datasets",
+        "dataset_config": "monash_m1_yearly",
+        "horizon": 6,
     },
 ]
 benchmark = fev.Benchmark.from_list(tasks_configs)</div>
@@ -3541,6 +3537,10 @@ benchmark = fev.Benchmark.from_list(tasks_configs)</div>
   dataset_config: monash_electricity_weekly
   horizon: 8
   num_windows: 2
+- dataset_path: autogluon/chronos_datasets
+  dataset_config: monash_m1_yearly
+  horizon: 6
+  seasonality: 1
 </pre>
 </div>
 </div>
@@ -3608,7 +3608,8 @@ benchmark = fev.Benchmark.from_list(tasks_configs)</div>
 <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[36]:</div>
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>[Task(dataset_path='autogluon/chronos_datasets', dataset_config='monash_m1_quarterly', horizon=8, num_windows=1, initial_cutoff=-8, window_step_size=8, min_context_length=1, max_context_length=None, seasonality=4, eval_metric='MASE', extra_metrics=[], quantile_levels=[], id_column='id', timestamp_column='timestamp', target='target', generate_univariate_targets_from=None, known_dynamic_columns=[], past_dynamic_columns=[], static_columns=[], task_name='monash_m1_quarterly'),
- Task(dataset_path='autogluon/chronos_datasets', dataset_config='monash_electricity_weekly', horizon=8, num_windows=2, initial_cutoff=-16, window_step_size=8, min_context_length=1, max_context_length=None, seasonality=1, eval_metric='MASE', extra_metrics=[], quantile_levels=[], id_column='id', timestamp_column='timestamp', target='target', generate_univariate_targets_from=None, known_dynamic_columns=[], past_dynamic_columns=[], static_columns=[], task_name='monash_electricity_weekly')]</pre>
+ Task(dataset_path='autogluon/chronos_datasets', dataset_config='monash_electricity_weekly', horizon=8, num_windows=2, initial_cutoff=-16, window_step_size=8, min_context_length=1, max_context_length=None, seasonality=1, eval_metric='MASE', extra_metrics=[], quantile_levels=[], id_column='id', timestamp_column='timestamp', target='target', generate_univariate_targets_from=None, known_dynamic_columns=[], past_dynamic_columns=[], static_columns=[], task_name='monash_electricity_weekly'),
+ Task(dataset_path='autogluon/chronos_datasets', dataset_config='monash_m1_yearly', horizon=6, num_windows=1, initial_cutoff=-6, window_step_size=6, min_context_length=1, max_context_length=None, seasonality=1, eval_metric='MASE', extra_metrics=[], quantile_levels=[], id_column='id', timestamp_column='timestamp', target='target', generate_univariate_targets_from=None, known_dynamic_columns=[], past_dynamic_columns=[], static_columns=[], task_name='monash_m1_yearly')]</pre>
 </div>
 </div>
 </div>
@@ -3673,17 +3674,17 @@ benchmark = fev.Benchmark.from_list(tasks_configs)</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">statsforecast.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ARIMA</span><span class="p">,</span> <span class="n">SeasonalNaive</span><span class="p">,</span> <span class="n">Theta</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">statsforecast.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoETS</span><span class="p">,</span> <span class="n">SeasonalNaive</span><span class="p">,</span> <span class="n">Theta</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"naive"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">datasets</span><span class="o">.</span><span class="n">Dataset</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"seasonal_naive"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">datasets</span><span class="o">.</span><span class="n">Dataset</span><span class="p">]:</span>
     <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">target_columns</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">"only univariate forecasting supported"</span>
     <span class="k">if</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">"seasonal_naive"</span><span class="p">:</span>
         <span class="n">model</span> <span class="o">=</span> <span class="n">SeasonalNaive</span><span class="p">(</span><span class="n">season_length</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">seasonality</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">"theta"</span><span class="p">:</span>
         <span class="n">model</span> <span class="o">=</span> <span class="n">Theta</span><span class="p">(</span><span class="n">season_length</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">seasonality</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">"arima"</span><span class="p">:</span>
-        <span class="n">model</span> <span class="o">=</span> <span class="n">ARIMA</span><span class="p">(</span><span class="n">season_length</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">seasonality</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">"ets"</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">AutoETS</span><span class="p">(</span><span class="n">season_length</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">seasonality</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown model_name: </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
@@ -3697,17 +3698,17 @@ benchmark = fev.Benchmark.from_list(tasks_configs)</div>
         <span class="n">predictions_per_window</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">datasets</span><span class="o">.</span><span class="n">Dataset</span><span class="o">.</span><span class="n">from_list</span><span class="p">(</span><span class="n">predictions</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">predictions_per_window</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-38">from statsforecast.models import ARIMA, SeasonalNaive, Theta
+<div class="clipboard-copy-txt" id="cell-38">from statsforecast.models import AutoETS, SeasonalNaive, Theta
 
 
-def predict_with_model(task: fev.Task, model_name: str = "naive") -&gt; list[datasets.Dataset]:
+def predict_with_model(task: fev.Task, model_name: str = "seasonal_naive") -&gt; list[datasets.Dataset]:
     assert len(task.target_columns) == 1, "only univariate forecasting supported"
     if model_name == "seasonal_naive":
         model = SeasonalNaive(season_length=task.seasonality)
     elif model_name == "theta":
         model = Theta(season_length=task.seasonality)
-    elif model_name == "arima":
-        model = ARIMA(season_length=task.seasonality)
+    elif model_name == "ets":
+        model = AutoETS(season_length=task.seasonality)
     else:
         raise ValueError(f"Unknown model_name: {model_name}")
 
@@ -3748,7 +3749,7 @@ def predict_with_model(task: fev.Task, model_name: str = "naive") -&gt; list[dat
 
 <span class="n">summaries</span> <span class="o">=</span> <span class="p">[]</span>
 <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">benchmark</span><span class="o">.</span><span class="n">tasks</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">"Tasks completed"</span><span class="p">):</span>
-    <span class="k">for</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">"seasonal_naive"</span><span class="p">,</span> <span class="s2">"arima"</span><span class="p">,</span> <span class="s2">"theta"</span><span class="p">]:</span>
+    <span class="k">for</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">"seasonal_naive"</span><span class="p">,</span> <span class="s2">"ets"</span><span class="p">,</span> <span class="s2">"theta"</span><span class="p">]:</span>
         <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
         <span class="n">predictions_per_window</span> <span class="o">=</span> <span class="n">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="n">model_name</span><span class="p">)</span>
         <span class="n">infer_time_s</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
@@ -3765,7 +3766,7 @@ def predict_with_model(task: fev.Task, model_name: str = "naive") -&gt; list[dat
 
 summaries = []
 for task in tqdm(benchmark.tasks, desc="Tasks completed"):
-    for model_name in ["seasonal_naive", "arima", "theta"]:
+    for model_name in ["seasonal_naive", "ets", "theta"]:
         start_time = time.time()
         predictions_per_window = predict_with_model(task, model_name=model_name)
         infer_time_s = time.time() - start_time
@@ -3787,9 +3788,8 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>Tasks completed: 100%|██████████| 2/2 [00:13&lt;00:00,  6.57s/it]
-</pre>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Tasks completed:   0%|          | 0/3 [00:00&lt;?, ?it/s]</pre>
 </div>
 </div>
 </div>
@@ -3846,12 +3846,10 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <thead>
 <tr style="text-align: right;">
 <th></th>
-<th>gmean_relative_error</th>
-<th>avg_rank</th>
-<th>avg_inference_time_s</th>
-<th>median_inference_time_s</th>
-<th>avg_training_time_s</th>
+<th>skill_score</th>
+<th>win_rate</th>
 <th>median_training_time_s</th>
+<th>median_inference_time_s</th>
 <th>training_corpus_overlap</th>
 <th>num_failures</th>
 </tr>
@@ -3863,41 +3861,33 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <th></th>
 <th></th>
 <th></th>
-<th></th>
-<th></th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<th>ets</th>
+<td>0.133483</td>
+<td>0.833333</td>
+<td>0.0</td>
+<td>3.567172</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+<tr>
 <th>theta</th>
-<td>0.909811</td>
-<td>2.0</td>
-<td>1.550698</td>
-<td>1.550698</td>
+<td>0.105932</td>
+<td>0.333333</td>
 <td>0.0</td>
-<td>0.0</td>
+<td>0.154293</td>
 <td>0.0</td>
 <td>0</td>
 </tr>
 <tr>
 <th>seasonal_naive</th>
-<td>1.000000</td>
-<td>2.0</td>
-<td>2.376939</td>
-<td>2.376939</td>
+<td>0.000000</td>
+<td>0.333333</td>
 <td>0.0</td>
-<td>0.0</td>
-<td>0.0</td>
-<td>0</td>
-</tr>
-<tr>
-<th>arima</th>
-<td>1.486422</td>
-<td>2.0</td>
-<td>0.964893</td>
-<td>0.964893</td>
-<td>0.0</td>
-<td>0.0</td>
+<td>1.566066</td>
 <td>0.0</td>
 <td>0</td>
 </tr>
@@ -3972,7 +3962,7 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <thead>
 <tr style="text-align: right;">
 <th>model_name</th>
-<th>arima</th>
+<th>ets</th>
 <th>seasonal_naive</th>
 <th>theta</th>
 </tr>
@@ -3986,15 +3976,140 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <tbody>
 <tr>
 <th>monash_electricity_weekly</th>
-<td>2.508152</td>
+<td>2.552429</td>
 <td>2.535526</td>
 <td>2.557008</td>
 </tr>
 <tr>
 <th>monash_m1_quarterly</th>
-<td>4.640312</td>
+<td>1.660810</td>
 <td>2.077537</td>
 <td>1.705247</td>
+</tr>
+<tr>
+<th>monash_m1_yearly</th>
+<td>3.957011</td>
+<td>4.894322</td>
+<td>4.225722</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [42]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-42">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fev</span><span class="o">.</span><span class="n">pairwise_comparison</span><span class="p">(</span><span class="n">summaries</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-42">fev.pairwise_comparison(summaries)</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child jp-OutputArea-executeResult">
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[42]:</div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th></th>
+<th>skill_score</th>
+<th>win_rate</th>
+</tr>
+<tr>
+<th>model_1</th>
+<th>model_2</th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th rowspan="3" valign="top">ets</th>
+<th>ets</th>
+<td>0.000000</td>
+<td>0.500000</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.133483</td>
+<td>0.666667</td>
+</tr>
+<tr>
+<th>theta</th>
+<td>0.030815</td>
+<td>1.000000</td>
+</tr>
+<tr>
+<th rowspan="3" valign="top">seasonal_naive</th>
+<th>ets</th>
+<td>-0.154045</td>
+<td>0.333333</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.000000</td>
+<td>0.500000</td>
+</tr>
+<tr>
+<th>theta</th>
+<td>-0.118484</td>
+<td>0.333333</td>
+</tr>
+<tr>
+<th rowspan="3" valign="top">theta</th>
+<th>ets</th>
+<td>-0.031794</td>
+<td>0.000000</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.105932</td>
+<td>0.666667</td>
+</tr>
+<tr>
+<th>theta</th>
+<td>0.000000</td>
+<td>0.500000</td>
 </tr>
 </tbody>
 </table>
@@ -4027,130 +4142,6 @@ for task in tqdm(benchmark.tasks, desc="Tasks completed"):
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [42]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="CodeMirror cm-s-jupyter">
-<div class="zeroclipboard-container">
-<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-42">
-<div>
-<span class="notice" hidden="">Copied!</span>
-<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
-<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
-<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
-</svg>
-</div>
-</clipboard-copy>
-</div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">summaries</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_arima.csv"</span><span class="p">,</span>
-    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_theta.csv"</span><span class="p">,</span>
-    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/seasonal_naive.csv"</span><span class="p">,</span>
-<span class="p">]</span>
-<span class="n">fev</span><span class="o">.</span><span class="n">leaderboard</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"MASE"</span><span class="p">)</span>
-</pre></div>
-<div class="clipboard-copy-txt" id="cell-42">summaries = [
-    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_arima.csv",
-    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_theta.csv",
-    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/seasonal_naive.csv",
-]
-fev.leaderboard(summaries, metric_column="MASE")</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[42]:</div>
-<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/html" tabindex="0">
-<div>
-<style scoped="">
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-<thead>
-<tr style="text-align: right;">
-<th></th>
-<th>gmean_relative_error</th>
-<th>avg_rank</th>
-<th>avg_inference_time_s</th>
-<th>median_inference_time_s</th>
-<th>avg_training_time_s</th>
-<th>median_training_time_s</th>
-<th>training_corpus_overlap</th>
-<th>num_failures</th>
-</tr>
-<tr>
-<th>model_name</th>
-<th></th>
-<th></th>
-<th></th>
-<th></th>
-<th></th>
-<th></th>
-<th></th>
-<th></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<th>auto_theta</th>
-<td>0.858722</td>
-<td>1.703704</td>
-<td>286.465526</td>
-<td>23.892088</td>
-<td>NaN</td>
-<td>NaN</td>
-<td>0.0</td>
-<td>0</td>
-</tr>
-<tr>
-<th>auto_arima</th>
-<td>0.869449</td>
-<td>1.703704</td>
-<td>1674.733082</td>
-<td>75.883700</td>
-<td>NaN</td>
-<td>NaN</td>
-<td>0.0</td>
-<td>0</td>
-</tr>
-<tr>
-<th>seasonal_naive</th>
-<td>1.000000</td>
-<td>2.592593</td>
-<td>2.415950</td>
-<td>0.096449</td>
-<td>NaN</td>
-<td>NaN</td>
-<td>0.0</td>
-<td>0</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
 <div class="jp-InputPrompt jp-InputArea-prompt">In [43]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
@@ -4164,9 +4155,19 @@ fev.leaderboard(summaries, metric_column="MASE")</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fev</span><span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">task_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"dataset_config"</span><span class="p">],</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"WQL"</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">summaries</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_arima.csv"</span><span class="p">,</span>
+    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/chronos_bolt_base.csv"</span><span class="p">,</span>
+    <span class="s2">"https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/seasonal_naive.csv"</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">fev</span><span class="o">.</span><span class="n">leaderboard</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"MASE"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-43">fev.pivot_table(summaries, task_columns=["dataset_config"], metric_column="WQL")</div>
+<div class="clipboard-copy-txt" id="cell-43">summaries = [
+    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/auto_arima.csv",
+    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/chronos_bolt_base.csv",
+    "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/results/seasonal_naive.csv",
+]
+fev.leaderboard(summaries, metric_column="MASE")</div>
 </div>
 </div>
 </div>
@@ -4195,9 +4196,422 @@ fev.leaderboard(summaries, metric_column="MASE")</div>
 <table border="1" class="dataframe">
 <thead>
 <tr style="text-align: right;">
+<th></th>
+<th>skill_score</th>
+<th>win_rate</th>
+<th>median_training_time_s</th>
+<th>median_inference_time_s</th>
+<th>training_corpus_overlap</th>
+<th>num_failures</th>
+</tr>
+<tr>
+<th>model_name</th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>chronos_bolt_base</th>
+<td>0.204508</td>
+<td>0.722222</td>
+<td>NaN</td>
+<td>0.406413</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+<tr>
+<th>auto_arima</th>
+<td>0.130551</td>
+<td>0.648148</td>
+<td>NaN</td>
+<td>75.883700</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.000000</td>
+<td>0.129630</td>
+<td>NaN</td>
+<td>0.096449</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>We can also compute the 95% confidence intervals for <code>skill_score</code> and <code>win_rate</code> columns via bootstrap by setting the <code>n_resamples</code> parameter.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [44]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-44">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fev</span><span class="o">.</span><span class="n">leaderboard</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"MASE"</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-44">fev.leaderboard(summaries, metric_column="MASE", n_resamples=1000).round(3)</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child jp-OutputArea-executeResult">
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[44]:</div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th>skill_score</th>
+<th>skill_score_lower</th>
+<th>skill_score_upper</th>
+<th>win_rate</th>
+<th>win_rate_lower</th>
+<th>win_rate_upper</th>
+<th>median_training_time_s</th>
+<th>median_inference_time_s</th>
+<th>training_corpus_overlap</th>
+<th>num_failures</th>
+</tr>
+<tr>
+<th>model_name</th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th>chronos_bolt_base</th>
+<td>0.205</td>
+<td>0.147</td>
+<td>0.265</td>
+<td>0.722</td>
+<td>0.611</td>
+<td>0.833</td>
+<td>NaN</td>
+<td>0.406</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+<tr>
+<th>auto_arima</th>
+<td>0.131</td>
+<td>0.053</td>
+<td>0.204</td>
+<td>0.648</td>
+<td>0.500</td>
+<td>0.778</td>
+<td>NaN</td>
+<td>75.884</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.130</td>
+<td>0.056</td>
+<td>0.204</td>
+<td>NaN</td>
+<td>0.096</td>
+<td>0.0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [45]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-45">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fev</span><span class="o">.</span><span class="n">pairwise_comparison</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"MASE"</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-45">fev.pairwise_comparison(summaries, metric_column="MASE", n_resamples=1000).round(3)</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child jp-OutputArea-executeResult">
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[45]:</div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
+<th></th>
+<th></th>
+<th>skill_score</th>
+<th>skill_score_lower</th>
+<th>skill_score_upper</th>
+<th>win_rate</th>
+<th>win_rate_lower</th>
+<th>win_rate_upper</th>
+</tr>
+<tr>
+<th>model_1</th>
+<th>model_2</th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th rowspan="3" valign="top">chronos_bolt_base</th>
+<th>chronos_bolt_base</th>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.500</td>
+<td>0.500</td>
+<td>0.500</td>
+</tr>
+<tr>
+<th>auto_arima</th>
+<td>0.085</td>
+<td>0.000</td>
+<td>0.162</td>
+<td>0.519</td>
+<td>0.333</td>
+<td>0.704</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.205</td>
+<td>0.147</td>
+<td>0.265</td>
+<td>0.926</td>
+<td>0.815</td>
+<td>1.000</td>
+</tr>
+<tr>
+<th rowspan="3" valign="top">auto_arima</th>
+<th>chronos_bolt_base</th>
+<td>-0.093</td>
+<td>-0.194</td>
+<td>-0.000</td>
+<td>0.481</td>
+<td>0.296</td>
+<td>0.667</td>
+</tr>
+<tr>
+<th>auto_arima</th>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.500</td>
+<td>0.500</td>
+<td>0.500</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.131</td>
+<td>0.053</td>
+<td>0.204</td>
+<td>0.815</td>
+<td>0.667</td>
+<td>0.963</td>
+</tr>
+<tr>
+<th rowspan="3" valign="top">seasonal_naive</th>
+<th>chronos_bolt_base</th>
+<td>-0.257</td>
+<td>-0.360</td>
+<td>-0.173</td>
+<td>0.074</td>
+<td>0.000</td>
+<td>0.185</td>
+</tr>
+<tr>
+<th>auto_arima</th>
+<td>-0.150</td>
+<td>-0.256</td>
+<td>-0.056</td>
+<td>0.185</td>
+<td>0.037</td>
+<td>0.333</td>
+</tr>
+<tr>
+<th>seasonal_naive</th>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.000</td>
+<td>0.500</td>
+<td>0.500</td>
+<td>0.500</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>Like before, we can view the scores for individual tasks with the <code>pivot_table</code> method.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [46]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-46">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fev</span><span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">task_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"dataset_config"</span><span class="p">],</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">"WQL"</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-46">fev.pivot_table(summaries, task_columns=["dataset_config"], metric_column="WQL").round(3)</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child jp-OutputArea-executeResult">
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[46]:</div>
+<div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/html" tabindex="0">
+<div>
+<style scoped="">
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+<thead>
+<tr style="text-align: right;">
 <th>model_name</th>
 <th>auto_arima</th>
-<th>auto_theta</th>
+<th>chronos_bolt_base</th>
 <th>seasonal_naive</th>
 </tr>
 <tr>
@@ -4210,165 +4624,165 @@ fev.leaderboard(summaries, metric_column="MASE")</div>
 <tbody>
 <tr>
 <th>ETTh</th>
-<td>0.089012</td>
-<td>0.132979</td>
-<td>0.122090</td>
+<td>0.089</td>
+<td>0.071</td>
+<td>0.122</td>
 </tr>
 <tr>
 <th>ETTm</th>
-<td>0.104990</td>
-<td>0.078587</td>
-<td>0.141348</td>
+<td>0.105</td>
+<td>0.052</td>
+<td>0.141</td>
 </tr>
 <tr>
 <th>dominick</th>
-<td>0.484773</td>
-<td>0.485493</td>
-<td>0.452916</td>
+<td>0.485</td>
+<td>0.345</td>
+<td>0.453</td>
 </tr>
 <tr>
 <th>ercot</th>
-<td>0.041214</td>
-<td>0.041004</td>
-<td>0.036604</td>
+<td>0.041</td>
+<td>0.021</td>
+<td>0.037</td>
 </tr>
 <tr>
 <th>exchange_rate</th>
-<td>0.010667</td>
-<td>0.009714</td>
-<td>0.012984</td>
+<td>0.011</td>
+<td>0.012</td>
+<td>0.013</td>
 </tr>
 <tr>
 <th>m4_quarterly</th>
-<td>0.079384</td>
-<td>0.079077</td>
-<td>0.118648</td>
+<td>0.079</td>
+<td>0.077</td>
+<td>0.119</td>
 </tr>
 <tr>
 <th>m4_yearly</th>
-<td>0.125041</td>
-<td>0.114640</td>
-<td>0.161439</td>
+<td>0.125</td>
+<td>0.121</td>
+<td>0.161</td>
 </tr>
 <tr>
 <th>m5</th>
-<td>0.616520</td>
-<td>0.636228</td>
-<td>1.024088</td>
+<td>0.617</td>
+<td>0.562</td>
+<td>1.024</td>
 </tr>
 <tr>
 <th>monash_australian_electricity</th>
-<td>0.066902</td>
-<td>0.054564</td>
-<td>0.083695</td>
+<td>0.067</td>
+<td>0.036</td>
+<td>0.084</td>
 </tr>
 <tr>
 <th>monash_car_parts</th>
-<td>1.333026</td>
-<td>1.336601</td>
-<td>1.599952</td>
+<td>1.333</td>
+<td>0.995</td>
+<td>1.600</td>
 </tr>
 <tr>
 <th>monash_cif_2016</th>
-<td>0.033184</td>
-<td>0.027333</td>
-<td>0.015083</td>
+<td>0.033</td>
+<td>0.016</td>
+<td>0.015</td>
 </tr>
 <tr>
 <th>monash_covid_deaths</th>
-<td>0.028973</td>
-<td>0.094479</td>
-<td>0.133085</td>
+<td>0.029</td>
+<td>0.047</td>
+<td>0.133</td>
 </tr>
 <tr>
 <th>monash_fred_md</th>
-<td>0.035140</td>
-<td>0.057386</td>
-<td>0.122224</td>
+<td>0.035</td>
+<td>0.042</td>
+<td>0.122</td>
 </tr>
 <tr>
 <th>monash_hospital</th>
-<td>0.058569</td>
-<td>0.055279</td>
-<td>0.072626</td>
+<td>0.059</td>
+<td>0.057</td>
+<td>0.073</td>
 </tr>
 <tr>
 <th>monash_m1_monthly</th>
-<td>0.154444</td>
-<td>0.159026</td>
-<td>0.191463</td>
+<td>0.154</td>
+<td>0.139</td>
+<td>0.191</td>
 </tr>
 <tr>
 <th>monash_m1_quarterly</th>
-<td>0.088292</td>
-<td>0.082034</td>
-<td>0.149502</td>
+<td>0.088</td>
+<td>0.101</td>
+<td>0.150</td>
 </tr>
 <tr>
 <th>monash_m1_yearly</th>
-<td>0.132822</td>
-<td>0.137302</td>
-<td>0.209296</td>
+<td>0.133</td>
+<td>0.151</td>
+<td>0.209</td>
 </tr>
 <tr>
 <th>monash_m3_monthly</th>
-<td>0.098059</td>
-<td>0.094722</td>
-<td>0.148545</td>
+<td>0.098</td>
+<td>0.093</td>
+<td>0.149</td>
 </tr>
 <tr>
 <th>monash_m3_quarterly</th>
-<td>0.076532</td>
-<td>0.070173</td>
-<td>0.101252</td>
+<td>0.077</td>
+<td>0.076</td>
+<td>0.101</td>
 </tr>
 <tr>
 <th>monash_m3_yearly</th>
-<td>0.155759</td>
-<td>0.127728</td>
-<td>0.166533</td>
+<td>0.156</td>
+<td>0.129</td>
+<td>0.167</td>
 </tr>
 <tr>
 <th>monash_nn5_weekly</th>
-<td>0.084427</td>
-<td>0.089608</td>
-<td>0.122691</td>
+<td>0.084</td>
+<td>0.084</td>
+<td>0.123</td>
 </tr>
 <tr>
 <th>monash_tourism_monthly</th>
-<td>0.090934</td>
-<td>0.090997</td>
-<td>0.104182</td>
+<td>0.091</td>
+<td>0.090</td>
+<td>0.104</td>
 </tr>
 <tr>
 <th>monash_tourism_quarterly</th>
-<td>0.099659</td>
-<td>0.061241</td>
-<td>0.119375</td>
+<td>0.100</td>
+<td>0.065</td>
+<td>0.119</td>
 </tr>
 <tr>
 <th>monash_tourism_yearly</th>
-<td>0.128889</td>
-<td>0.176017</td>
-<td>0.209183</td>
+<td>0.129</td>
+<td>0.166</td>
+<td>0.209</td>
 </tr>
 <tr>
 <th>monash_traffic</th>
-<td>0.353603</td>
-<td>0.905307</td>
-<td>0.361853</td>
+<td>0.354</td>
+<td>0.231</td>
+<td>0.362</td>
 </tr>
 <tr>
 <th>monash_weather</th>
-<td>0.214781</td>
-<td>0.216555</td>
-<td>0.216595</td>
+<td>0.215</td>
+<td>0.134</td>
+<td>0.217</td>
 </tr>
 <tr>
 <th>nn5</th>
-<td>0.247710</td>
-<td>0.293651</td>
-<td>0.424621</td>
+<td>0.248</td>
+<td>0.150</td>
+<td>0.425</td>
 </tr>
 </tbody>
 </table>

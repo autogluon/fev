@@ -765,9 +765,9 @@
 <h1 id="analysis-methods">Analysis methods</h1>
 <p><code>fev</code> provides 3 main methods for aggregating the evaluation summaries produced by <a class="autorefs autorefs-internal" title="evaluation_summary(predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]], model_name: str, training_time_s: float | None = None, inference_time_s: float | None = None, trained_on_this_dataset: bool = False, extra_info: dict | None = None) -> dict[str, Any]" href="../task/#fev.Task.evaluation_summary"><code>Task.evaluation_summary()</code></a>:</p>
 <ul>
-<li><a class="autorefs autorefs-internal" title="pivot_table(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', task_columns: str | list[str] = TASK_DEF_COLUMNS.copy(), baseline_model: str | None = None) -> pd.DataFrame" href="#fev.pivot_table"><code>pivot_table()</code></a> - A table of model scores with tasks as index and model names as columns.</li>
-<li><a class="autorefs autorefs-internal" title="leaderboard(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', missing_strategy: Literal['error', 'drop', 'impute'] = 'error', baseline_model: str = 'SeasonalNaive', min_relative_error: float | None = 0.01, max_relative_error: float | None = 100.0, included_models: list[str] | None = None, excluded_models: list[str] | None = None, n_resamples: int = 1000, seed: int = 123)" href="#fev.leaderboard"><code>leaderboard()</code></a> - Aggregate performance for each individual model.</li>
-<li><a class="autorefs autorefs-internal" title="pairwise_comparison(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', missing_strategy: Literal['error', 'drop', 'impute'] = 'error', baseline_model: str | None = None, min_relative_error: float | None = 0.01, max_relative_error: float | None = 100.0, included_models: list[str] | None = None, excluded_models: list[str] | None = None, n_resamples: int = 1000, seed: int = 123) -> pd.DataFrame" href="#fev.pairwise_comparison"><code>pairwise_comparison()</code></a> - Aggregate performance for each pair of models.</li>
+<li><a class="autorefs autorefs-internal" title="pivot_table(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', task_columns: str | list[str] = TASK_DEF_COLUMNS.copy(), baseline_model: str | None = None, check_fev_version: bool = False) -> pd.DataFrame" href="#fev.pivot_table"><code>pivot_table()</code></a> - A table of model scores with tasks as index and model names as columns.</li>
+<li><a class="autorefs autorefs-internal" title="leaderboard(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', missing_strategy: Literal['error', 'drop', 'impute'] = 'error', baseline_model: str = 'seasonal_naive', min_relative_error: float | None = 0.01, max_relative_error: float | None = 100.0, included_models: list[str] | None = None, excluded_models: list[str] | None = None, n_resamples: int | None = None, seed: int = 123)" href="#fev.leaderboard"><code>leaderboard()</code></a> - Aggregate performance for each individual model.</li>
+<li><a class="autorefs autorefs-internal" title="pairwise_comparison(summaries: SummaryType | list[SummaryType], metric_column: str = 'test_error', missing_strategy: Literal['error', 'drop', 'impute'] = 'error', baseline_model: str | None = None, min_relative_error: float | None = 0.01, max_relative_error: float | None = 100.0, included_models: list[str] | None = None, excluded_models: list[str] | None = None, n_resamples: int | None = None, seed: int = 123) -> pd.DataFrame" href="#fev.pairwise_comparison"><code>pairwise_comparison()</code></a> - Aggregate performance for each pair of models.</li>
 </ul>
 <p>On this page <code>SummaryType</code> is an alias for one of the following types:
 </p>
@@ -798,7 +798,7 @@
 
 
 <h4 id="fev.leaderboard" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">leaderboard</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="s1">&#39;drop&#39;</span><span class="p">,</span> <span class="s1">&#39;impute&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;SeasonalNaive&#39;</span><span class="p">,</span> <span class="n">min_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span> <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">leaderboard</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="s1">&#39;drop&#39;</span><span class="p">,</span> <span class="s1">&#39;impute&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;seasonal_naive&#39;</span><span class="p">,</span> <span class="n">min_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span> <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">)</span></code>
 
 </h4>
 
@@ -967,15 +967,15 @@ intervals across all tasks. Models are ranked by skill score.</p>
                 <code>n_resamples</code>
             </td>
             <td>
-                  <code><span title="int">int</span></code>
+                  <code><span title="int">int</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of bootstrap samples for confidence intervals</p>
+                <p>Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed</p>
               </div>
             </td>
             <td>
-                  <code>1000</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -1016,13 +1016,14 @@ intervals across all tasks. Models are ranked by skill score.</p>
                 <p>Leaderboard sorted by <code>skill_score</code>, with columns:</p>
 <ul>
 <li><code>skill_score</code>: Skill score (1 - geometric mean relative error)</li>
-<li><code>skill_score_lower</code>: Lower bound of 95% confidence interval</li>
-<li><code>skill_score_upper</code>: Upper bound of 95% confidence interval</li>
+<li><code>skill_score_lower</code>: Lower bound of 95% confidence interval (only if n_resamples is not None)</li>
+<li><code>skill_score_upper</code>: Upper bound of 95% confidence interval (only if n_resamples is not None)</li>
 <li><code>win_rate</code>: Fraction of pairwise comparisons won against other models</li>
-<li><code>win_rate_lower</code>: Lower bound of 95% confidence interval</li>
-<li><code>win_rate_upper</code>: Upper bound of 95% confidence interval</li>
+<li><code>win_rate_lower</code>: Lower bound of 95% confidence interval (only if n_resamples is not None)</li>
+<li><code>win_rate_upper</code>: Upper bound of 95% confidence interval (only if n_resamples is not None)</li>
 <li><code>median_training_time_s</code>: Median training time across tasks</li>
 <li><code>median_inference_time_s</code>: Median inference time across tasks</li>
+<li><code>training_corpus_overlap</code>: Mean fraction of tasks where model was trained on the dataset</li>
 <li><code>num_failures</code>: Number of tasks where the model failed</li>
 </ul>
               </div>
@@ -1034,20 +1035,7 @@ intervals across all tasks. Models are ranked by skill score.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/fev/analysis.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span>
-<span class="normal">202</span>
-<span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
-<span class="normal">209</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">209</span>
 <span class="normal">210</span>
 <span class="normal">211</span>
 <span class="normal">212</span>
@@ -1140,16 +1128,37 @@ intervals across all tasks. Models are ranked by skill score.</p>
 <span class="normal">299</span>
 <span class="normal">300</span>
 <span class="normal">301</span>
-<span class="normal">302</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">leaderboard</span><span class="p">(</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">leaderboard</span><span class="p">(</span>
     <span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span>
     <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;test_error&quot;</span><span class="p">,</span>
     <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="s2">&quot;drop&quot;</span><span class="p">,</span> <span class="s2">&quot;impute&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span>
-    <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;SeasonalNaive&quot;</span><span class="p">,</span>
+    <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;seasonal_naive&quot;</span><span class="p">,</span>
     <span class="n">min_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">1e-2</span><span class="p">,</span>
     <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span>
     <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span>
+    <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a leaderboard with aggregate performance metrics for all models.</span>
@@ -1179,8 +1188,8 @@ intervals across all tasks. Models are ranked by skill score.</p>
 <span class="sd">        Models to include (mutually exclusive with `excluded_models`)</span>
 <span class="sd">    excluded_models : list[str], optional</span>
 <span class="sd">        Models to exclude (mutually exclusive with `included_models`)</span>
-<span class="sd">    n_resamples : int, default 1000</span>
-<span class="sd">        Number of bootstrap samples for confidence intervals</span>
+<span class="sd">    n_resamples : int | None, default None</span>
+<span class="sd">        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed</span>
 <span class="sd">    seed : int, default 123</span>
 <span class="sd">        Random seed for reproducible bootstrap sampling</span>
 
@@ -1190,16 +1199,17 @@ intervals across all tasks. Models are ranked by skill score.</p>
 <span class="sd">        Leaderboard sorted by `skill_score`, with columns:</span>
 
 <span class="sd">        - `skill_score`: Skill score (1 - geometric mean relative error)</span>
-<span class="sd">        - `skill_score_lower`: Lower bound of 95% confidence interval</span>
-<span class="sd">        - `skill_score_upper`: Upper bound of 95% confidence interval</span>
+<span class="sd">        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)</span>
+<span class="sd">        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)</span>
 <span class="sd">        - `win_rate`: Fraction of pairwise comparisons won against other models</span>
-<span class="sd">        - `win_rate_lower`: Lower bound of 95% confidence interval</span>
-<span class="sd">        - `win_rate_upper`: Upper bound of 95% confidence interval</span>
+<span class="sd">        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)</span>
+<span class="sd">        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)</span>
 <span class="sd">        - `median_training_time_s`: Median training time across tasks</span>
 <span class="sd">        - `median_inference_time_s`: Median inference time across tasks</span>
+<span class="sd">        - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset</span>
 <span class="sd">        - `num_failures`: Number of tasks where the model failed</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">)</span>
+    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">check_fev_version</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">summaries</span> <span class="o">=</span> <span class="n">_filter_models</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">included_models</span><span class="o">=</span><span class="n">included_models</span><span class="p">,</span> <span class="n">excluded_models</span><span class="o">=</span><span class="n">excluded_models</span><span class="p">)</span>
     <span class="n">errors_df</span> <span class="o">=</span> <span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="n">metric_column</span><span class="p">,</span> <span class="n">baseline_model</span><span class="o">=</span><span class="n">baseline_model</span><span class="p">)</span>
     <span class="n">errors_df</span> <span class="o">=</span> <span class="n">errors_df</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">lower</span><span class="o">=</span><span class="n">min_relative_error</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="n">max_relative_error</span><span class="p">)</span>
@@ -1221,19 +1231,19 @@ intervals across all tasks. Models are ranked by skill score.</p>
             <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid </span><span class="si">{</span><span class="n">missing_strategy</span><span class="si">=}</span><span class="s2">, expected one of [&#39;error&#39;, &#39;drop&#39;, &#39;impute&#39;]&quot;</span><span class="p">)</span>
+    <span class="n">bootstrap_resamples</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n_resamples</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">n_resamples</span>
     <span class="n">win_rate</span><span class="p">,</span> <span class="n">win_rate_lower</span><span class="p">,</span> <span class="n">win_rate_upper</span> <span class="o">=</span> <span class="n">bootstrap</span><span class="p">(</span>
-        <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">statistic</span><span class="o">=</span><span class="n">_win_rate</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="n">n_resamples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
+        <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">statistic</span><span class="o">=</span><span class="n">_win_rate</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="n">bootstrap_resamples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
     <span class="p">)</span>
     <span class="n">skill_score</span><span class="p">,</span> <span class="n">skill_score_lower</span><span class="p">,</span> <span class="n">skill_score_upper</span> <span class="o">=</span> <span class="n">bootstrap</span><span class="p">(</span>
-        <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">statistic</span><span class="o">=</span><span class="n">_skill_score</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="n">n_resamples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
+        <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">statistic</span><span class="o">=</span><span class="n">_skill_score</span><span class="p">,</span> <span class="n">n_resamples</span><span class="o">=</span><span class="n">bootstrap_resamples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
     <span class="p">)</span>
 
     <span class="n">training_time_df</span> <span class="o">=</span> <span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">&quot;training_time_s&quot;</span><span class="p">)</span>
     <span class="n">inference_time_df</span> <span class="o">=</span> <span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">&quot;inference_time_s&quot;</span><span class="p">)</span>
-    <span class="c1"># Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy=&quot;drop&quot;)</span>
-    <span class="n">median_training_time_s</span> <span class="o">=</span> <span class="n">training_time_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">errors_df</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
-    <span class="n">median_inference_time_s</span> <span class="o">=</span> <span class="n">inference_time_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">errors_df</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+    <span class="n">training_corpus_overlap_df</span> <span class="o">=</span> <span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="s2">&quot;trained_on_this_dataset&quot;</span><span class="p">)</span>
+
+    <span class="n">result_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
         <span class="p">{</span>
             <span class="s2">&quot;skill_score&quot;</span><span class="p">:</span> <span class="n">skill_score</span><span class="p">,</span>
             <span class="s2">&quot;skill_score_lower&quot;</span><span class="p">:</span> <span class="n">skill_score_lower</span><span class="p">,</span>
@@ -1241,12 +1251,19 @@ intervals across all tasks. Models are ranked by skill score.</p>
             <span class="s2">&quot;win_rate&quot;</span><span class="p">:</span> <span class="n">win_rate</span><span class="p">,</span>
             <span class="s2">&quot;win_rate_lower&quot;</span><span class="p">:</span> <span class="n">win_rate_lower</span><span class="p">,</span>
             <span class="s2">&quot;win_rate_upper&quot;</span><span class="p">:</span> <span class="n">win_rate_upper</span><span class="p">,</span>
-            <span class="s2">&quot;median_training_time_s&quot;</span><span class="p">:</span> <span class="n">median_training_time_s</span><span class="p">,</span>
-            <span class="s2">&quot;median_inference_time_s&quot;</span><span class="p">:</span> <span class="n">median_inference_time_s</span><span class="p">,</span>
+            <span class="c1"># Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy=&quot;drop&quot;)</span>
+            <span class="s2">&quot;median_training_time_s&quot;</span><span class="p">:</span> <span class="n">training_time_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">errors_df</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">(),</span>
+            <span class="s2">&quot;median_inference_time_s&quot;</span><span class="p">:</span> <span class="n">inference_time_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">errors_df</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">(),</span>
+            <span class="s2">&quot;training_corpus_overlap&quot;</span><span class="p">:</span> <span class="n">training_corpus_overlap_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">errors_df</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span>
             <span class="s2">&quot;num_failures&quot;</span><span class="p">:</span> <span class="n">num_failures_per_model</span><span class="p">,</span>
         <span class="p">},</span>
         <span class="n">index</span><span class="o">=</span><span class="n">errors_df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span>
-    <span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;skill_score&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">n_resamples</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result_df</span> <span class="o">=</span> <span class="n">result_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span>
+            <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;skill_score_lower&quot;</span><span class="p">,</span> <span class="s2">&quot;skill_score_upper&quot;</span><span class="p">,</span> <span class="s2">&quot;win_rate_lower&quot;</span><span class="p">,</span> <span class="s2">&quot;win_rate_upper&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">result_df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;skill_score&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -1257,7 +1274,7 @@ intervals across all tasks. Models are ranked by skill score.</p>
 
 
 <h4 id="fev.pairwise_comparison" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">pairwise_comparison</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="s1">&#39;drop&#39;</span><span class="p">,</span> <span class="s1">&#39;impute&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">min_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span> <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span></code>
+            <code class="highlight language-python"><span class="n">pairwise_comparison</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="s1">&#39;drop&#39;</span><span class="p">,</span> <span class="s1">&#39;impute&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">min_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span> <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span></code>
 
 </h4>
 
@@ -1426,15 +1443,15 @@ win rate with bootstrap confidence intervals across all tasks.</p>
                 <code>n_resamples</code>
             </td>
             <td>
-                  <code><span title="int">int</span></code>
+                  <code><span title="int">int</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of bootstrap samples for confidence intervals</p>
+                <p>Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed</p>
               </div>
             </td>
             <td>
-                  <code>1000</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -1475,11 +1492,11 @@ win rate with bootstrap confidence intervals across all tasks.</p>
                 <p>Pairwise comparison results with <code>pd.MultiIndex</code> <code>(model_1, model_2)</code> and columns:</p>
 <ul>
 <li><code>skill_score</code>: 1 - geometric mean of <code>model_1/model_2</code> error ratios</li>
-<li><code>skill_score_lower</code>: Lower bound of 95% confidence interval</li>
-<li><code>skill_score_upper</code>: Upper bound of 95% confidence interval</li>
+<li><code>skill_score_lower</code>: Lower bound of 95% confidence interval (only if n_resamples is not None)</li>
+<li><code>skill_score_upper</code>: Upper bound of 95% confidence interval (only if n_resamples is not None)</li>
 <li><code>win_rate</code>: Fraction of tasks where <code>model_1</code> outperforms <code>model_2</code></li>
-<li><code>win_rate_lower</code>: Lower bound of 95% confidence interval</li>
-<li><code>win_rate_upper</code>: Upper bound of 95% confidence interval</li>
+<li><code>win_rate_lower</code>: Lower bound of 95% confidence interval (only if n_resamples is not None)</li>
+<li><code>win_rate_upper</code>: Upper bound of 95% confidence interval (only if n_resamples is not None)</li>
 </ul>
               </div>
             </td>
@@ -1490,28 +1507,7 @@ win rate with bootstrap confidence intervals across all tasks.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/fev/analysis.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">305</span>
-<span class="normal">306</span>
-<span class="normal">307</span>
-<span class="normal">308</span>
-<span class="normal">309</span>
-<span class="normal">310</span>
-<span class="normal">311</span>
-<span class="normal">312</span>
-<span class="normal">313</span>
-<span class="normal">314</span>
-<span class="normal">315</span>
-<span class="normal">316</span>
-<span class="normal">317</span>
-<span class="normal">318</span>
-<span class="normal">319</span>
-<span class="normal">320</span>
-<span class="normal">321</span>
-<span class="normal">322</span>
-<span class="normal">323</span>
-<span class="normal">324</span>
-<span class="normal">325</span>
-<span class="normal">326</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">326</span>
 <span class="normal">327</span>
 <span class="normal">328</span>
 <span class="normal">329</span>
@@ -1598,7 +1594,36 @@ win rate with bootstrap confidence intervals across all tasks.</p>
 <span class="normal">410</span>
 <span class="normal">411</span>
 <span class="normal">412</span>
-<span class="normal">413</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pairwise_comparison</span><span class="p">(</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pairwise_comparison</span><span class="p">(</span>
     <span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span>
     <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;test_error&quot;</span><span class="p">,</span>
     <span class="n">missing_strategy</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="s2">&quot;drop&quot;</span><span class="p">,</span> <span class="s2">&quot;impute&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span>
@@ -1607,7 +1632,7 @@ win rate with bootstrap confidence intervals across all tasks.</p>
     <span class="n">max_relative_error</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="mf">100.0</span><span class="p">,</span>
     <span class="n">included_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">excluded_models</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span>
+    <span class="n">n_resamples</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">123</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute pairwise performance comparisons between all model pairs.</span>
@@ -1637,8 +1662,8 @@ win rate with bootstrap confidence intervals across all tasks.</p>
 <span class="sd">        Models to include (mutually exclusive with `excluded_models`)</span>
 <span class="sd">    excluded_models : list[str], optional</span>
 <span class="sd">        Models to exclude (mutually exclusive with `included_models`)</span>
-<span class="sd">    n_resamples : int, default 1000</span>
-<span class="sd">        Number of bootstrap samples for confidence intervals</span>
+<span class="sd">    n_resamples : int | None, default None</span>
+<span class="sd">        Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed</span>
 <span class="sd">    seed : int, default 123</span>
 <span class="sd">        Random seed for reproducible bootstrap sampling</span>
 
@@ -1648,13 +1673,13 @@ win rate with bootstrap confidence intervals across all tasks.</p>
 <span class="sd">        Pairwise comparison results with `pd.MultiIndex` `(model_1, model_2)` and columns:</span>
 
 <span class="sd">        - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios</span>
-<span class="sd">        - `skill_score_lower`: Lower bound of 95% confidence interval</span>
-<span class="sd">        - `skill_score_upper`: Upper bound of 95% confidence interval</span>
+<span class="sd">        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)</span>
+<span class="sd">        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)</span>
 <span class="sd">        - `win_rate`: Fraction of tasks where `model_1` outperforms `model_2`</span>
-<span class="sd">        - `win_rate_lower`: Lower bound of 95% confidence interval</span>
-<span class="sd">        - `win_rate_upper`: Upper bound of 95% confidence interval</span>
+<span class="sd">        - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)</span>
+<span class="sd">        - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">)</span>
+    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">check_fev_version</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">summaries</span> <span class="o">=</span> <span class="n">_filter_models</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">included_models</span><span class="o">=</span><span class="n">included_models</span><span class="p">,</span> <span class="n">excluded_models</span><span class="o">=</span><span class="n">excluded_models</span><span class="p">)</span>
     <span class="n">errors_df</span> <span class="o">=</span> <span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">metric_column</span><span class="o">=</span><span class="n">metric_column</span><span class="p">)</span>
     <span class="n">num_failures_per_model</span> <span class="o">=</span> <span class="n">errors_df</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
@@ -1684,19 +1709,22 @@ win rate with bootstrap confidence intervals across all tasks.</p>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid </span><span class="si">{</span><span class="n">missing_strategy</span><span class="si">=}</span><span class="s2">, expected one of [&#39;error&#39;, &#39;drop&#39;, &#39;impute&#39;]&quot;</span><span class="p">)</span>
     <span class="n">model_order</span> <span class="o">=</span> <span class="n">errors_df</span><span class="o">.</span><span class="n">rank</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">sort_values</span><span class="p">()</span><span class="o">.</span><span class="n">index</span>
     <span class="n">errors_df</span> <span class="o">=</span> <span class="n">errors_df</span><span class="p">[</span><span class="n">model_order</span><span class="p">]</span>
+
+    <span class="n">bootstrap_resamples</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n_resamples</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">n_resamples</span>
     <span class="n">skill_score</span><span class="p">,</span> <span class="n">skill_score_lower</span><span class="p">,</span> <span class="n">skill_score_upper</span> <span class="o">=</span> <span class="n">bootstrap</span><span class="p">(</span>
         <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
         <span class="n">statistic</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_pairwise_skill_score</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">min_relative_error</span><span class="p">,</span> <span class="n">max_relative_error</span><span class="p">),</span>
-        <span class="n">n_resamples</span><span class="o">=</span><span class="n">n_resamples</span><span class="p">,</span>
+        <span class="n">n_resamples</span><span class="o">=</span><span class="n">bootstrap_resamples</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">win_rate</span><span class="p">,</span> <span class="n">win_rate_lower</span><span class="p">,</span> <span class="n">win_rate_upper</span> <span class="o">=</span> <span class="n">bootstrap</span><span class="p">(</span>
         <span class="n">errors_df</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
         <span class="n">statistic</span><span class="o">=</span><span class="n">_pairwise_win_rate</span><span class="p">,</span>
-        <span class="n">n_resamples</span><span class="o">=</span><span class="n">n_resamples</span><span class="p">,</span>
+        <span class="n">n_resamples</span><span class="o">=</span><span class="n">bootstrap_resamples</span><span class="p">,</span>
         <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+
+    <span class="n">result_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
         <span class="p">{</span>
             <span class="s2">&quot;skill_score&quot;</span><span class="p">:</span> <span class="n">skill_score</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span>
             <span class="s2">&quot;skill_score_lower&quot;</span><span class="p">:</span> <span class="n">skill_score_lower</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span>
@@ -1707,6 +1735,11 @@ win rate with bootstrap confidence intervals across all tasks.</p>
         <span class="p">},</span>
         <span class="n">index</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="o">.</span><span class="n">from_product</span><span class="p">([</span><span class="n">errors_df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">errors_df</span><span class="o">.</span><span class="n">columns</span><span class="p">],</span> <span class="n">names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;model_1&quot;</span><span class="p">,</span> <span class="s2">&quot;model_2&quot;</span><span class="p">]),</span>
     <span class="p">)</span>
+    <span class="k">if</span> <span class="n">n_resamples</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">result_df</span> <span class="o">=</span> <span class="n">result_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span>
+            <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;skill_score_lower&quot;</span><span class="p">,</span> <span class="s2">&quot;skill_score_upper&quot;</span><span class="p">,</span> <span class="s2">&quot;win_rate_lower&quot;</span><span class="p">,</span> <span class="s2">&quot;win_rate_upper&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">result_df</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -1717,7 +1750,7 @@ win rate with bootstrap confidence intervals across all tasks.</p>
 
 
 <h4 id="fev.pivot_table" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">task_columns</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">TASK_DEF_COLUMNS</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span></code>
+            <code class="highlight language-python"><span class="n">pivot_table</span><span class="p">(</span><span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span> <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;test_error&#39;</span><span class="p">,</span> <span class="n">task_columns</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">TASK_DEF_COLUMNS</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">check_fev_version</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span></code>
 
 </h4>
 
@@ -1813,6 +1846,22 @@ to a baseline model.</p>
                   <code>None</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>check_fev_version</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, check that fev_version in the summary is &gt;= LAST_BREAKING_VERSION.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -1867,17 +1916,7 @@ is provided.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/fev/analysis.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">121</span>
-<span class="normal">122</span>
-<span class="normal">123</span>
-<span class="normal">124</span>
-<span class="normal">125</span>
-<span class="normal">126</span>
-<span class="normal">127</span>
-<span class="normal">128</span>
-<span class="normal">129</span>
-<span class="normal">130</span>
-<span class="normal">131</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">131</span>
 <span class="normal">132</span>
 <span class="normal">133</span>
 <span class="normal">134</span>
@@ -1925,11 +1964,25 @@ is provided.</p>
 <span class="normal">176</span>
 <span class="normal">177</span>
 <span class="normal">178</span>
-<span class="normal">179</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pivot_table</span><span class="p">(</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pivot_table</span><span class="p">(</span>
     <span class="n">summaries</span><span class="p">:</span> <span class="n">SummaryType</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">SummaryType</span><span class="p">],</span>
     <span class="n">metric_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;test_error&quot;</span><span class="p">,</span>
     <span class="n">task_columns</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">TASK_DEF_COLUMNS</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
     <span class="n">baseline_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">check_fev_version</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert evaluation summaries into a pivot table for analysis.</span>
 
@@ -1947,6 +2000,8 @@ is provided.</p>
 <span class="sd">        Column(s) defining unique tasks. Used as the pivot table index</span>
 <span class="sd">    baseline_model : str, optional</span>
 <span class="sd">        If provided, divide all scores by this model&#39;s scores to get relative performance</span>
+<span class="sd">    check_fev_version : bool, default False</span>
+<span class="sd">        If True, check that fev_version in the summary is &gt;= LAST_BREAKING_VERSION.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
@@ -1960,7 +2015,7 @@ is provided.</p>
 <span class="sd">        If duplicate model/task combinations exist, or results for `baseline_model` are missing when `baseline_model`</span>
 <span class="sd">        is provided.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">({</span><span class="n">metric_column</span><span class="p">:</span> <span class="s2">&quot;float64&quot;</span><span class="p">})</span>
+    <span class="n">summaries</span> <span class="o">=</span> <span class="n">_load_summaries</span><span class="p">(</span><span class="n">summaries</span><span class="p">,</span> <span class="n">check_fev_version</span><span class="o">=</span><span class="n">check_fev_version</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">({</span><span class="n">metric_column</span><span class="p">:</span> <span class="s2">&quot;float64&quot;</span><span class="p">})</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">task_columns</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">task_columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">task_columns</span><span class="p">]</span>

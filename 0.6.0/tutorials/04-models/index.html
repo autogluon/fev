@@ -1257,8 +1257,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -1301,20 +1301,6 @@ task = fev.Task(
     known_dynamic_columns=["api_calls", "temp", "rain", "humidity", "clouds", "wind"],
     static_columns=["source_location", "provider_name", "provider_service"],
 )</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>/home/shchuro/envs/fev/lib/python3.11/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-  from .autonotebook import tqdm as notebook_tqdm
-</pre>
 </div>
 </div>
 </div>
@@ -1371,16 +1357,6 @@ print(future_data)</div>
 <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
 </div>
 <div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>Validating dataset format (num_proc=48): 100%|██████████| 156/156 [00:00&lt;00:00, 614.48 examples/s]
-Filtering short time series (num_proc=48): 100%|██████████| 156/156 [00:00&lt;00:00, 752.21 examples/s]
-Selecting past data (num_proc=48): 100%|██████████| 156/156 [00:00&lt;00:00, 383.17 examples/s]
-Selecting future data (num_proc=48): 100%|██████████| 156/156 [00:00&lt;00:00, 628.77 examples/s]
-</pre>
-</div>
-</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
@@ -1768,7 +1744,7 @@ display(static_df.head())</div>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-4">
@@ -1830,7 +1806,7 @@ PandasDataset&lt;size=156, freq=h, num_feat_dynamic_real=6, num_past_feat_dynami
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-5">
@@ -2349,7 +2325,7 @@ display(known_covariates)</div>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-6">
@@ -2713,7 +2689,7 @@ display(static_df.head())</div>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-7">
@@ -2750,7 +2726,7 @@ task.predictions_schema</div>
 </div>
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[7]:</div>
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[8]:</div>
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>{'predictions': Sequence(feature=Value(dtype='float64', id=None), length=30, id=None)}</pre>
 </div>
@@ -2775,7 +2751,7 @@ task.predictions_schema</div>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-8">
@@ -2814,7 +2790,7 @@ task.predictions_schema</div>
 </div>
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[8]:</div>
+<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[9]:</div>
 <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
 <pre>{'predictions': Sequence(feature=Value(dtype='float64', id=None), length=30, id=None),
  '0.1': Sequence(feature=Value(dtype='float64', id=None), length=30, id=None),
@@ -2850,7 +2826,7 @@ task.predictions_schema</div>
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [10]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="CodeMirror cm-s-jupyter">
 <div class="zeroclipboard-container">
 <clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-9">
@@ -2893,20 +2869,7 @@ print(f"{task.freq=}")</div>
 task.dynamic_columns=[]
 task.known_dynamic_columns=[]
 task.past_dynamic_columns=[]
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>Validating dataset format (num_proc=48): 100%|██████████| 156/156 [00:00&lt;00:00, 611.21 examples/s]
-</pre>
-</div>
-</div>
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>task.freq='h'
+task.freq='h'
 </pre>
 </div>
 </div>
@@ -2945,9 +2908,10 @@ task.past_dynamic_columns=[]
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <div class="highlight"><pre><span></span><span class="c1"># Example code from fev/examples/my_amazing_model/evaluate_model.py</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="n">fev</span><span class="o">.</span><span class="n">Task</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">datasets</span><span class="o">.</span><span class="n">DatasetDict</span><span class="p">],</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Wrapper for my_amazing_model"""</span>
     <span class="o">...</span>
+    <span class="k">return</span> <span class="n">predictions_per_window</span><span class="p">,</span> <span class="n">inference_time</span><span class="p">,</span> <span class="n">extra_info</span>
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
     <span class="n">model_name</span> <span class="o">=</span> <span class="s2">"my_amazing_model"</span>
@@ -2957,9 +2921,9 @@ task.past_dynamic_columns=[]
 
     <span class="n">summaries</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">benchmark</span><span class="o">.</span><span class="n">tasks</span><span class="p">:</span>
-        <span class="n">predictions</span><span class="p">,</span> <span class="n">inference_time</span><span class="p">,</span> <span class="n">extra_info</span> <span class="o">=</span> <span class="n">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+        <span class="n">predictions_per_window</span><span class="p">,</span> <span class="n">inference_time</span><span class="p">,</span> <span class="n">extra_info</span> <span class="o">=</span> <span class="n">predict_with_model</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
         <span class="n">evaluation_summary</span> <span class="o">=</span> <span class="n">task</span><span class="o">.</span><span class="n">evaluation_summary</span><span class="p">(</span>
-            <span class="n">predictions</span><span class="p">,</span>
+            <span class="n">predictions_per_window</span><span class="p">,</span>
             <span class="n">model_name</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
             <span class="n">inference_time_s</span><span class="o">=</span><span class="n">inference_time</span><span class="p">,</span>
             <span class="n">extra_info</span><span class="o">=</span><span class="n">extra_info</span><span class="p">,</span>
