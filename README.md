@@ -15,12 +15,15 @@ Existing forecasting benchmarks usually fall into one of two categories:
 
 `fev` aims for the middle ground - it provides the core benchmarking functionality without introducing unnecessary constraints or bloated dependencies. The library supports point & probabilistic forecasting, different types of covariates, as well as all popular forecasting metrics.
 
-## Installation
+## 📝 Updates
+- **2025-09-16**: The new version `0.6.0` contains major new functionality, [updated documentation](https://autogluon.github.io/fev/latest/), as well as some breaking changes to the `Task` API. Please check the [release notes](https://github.com/autogluon/fev/releases) for more details.
+
+## ⚙️ Installation
 ```
 pip install fev
 ```
 
-## Quickstart
+## 🚀 Quickstart
 
 Create a task from a dataset stored on Hugging Face Hub
 ```python
@@ -42,7 +45,7 @@ for window in task.iter_windows():
 
 Make predictions
 ```python
-def naive_forecast(y: list, horizon: int) -> dict[str, list]:
+def naive_forecast(y: list, horizon: int) -> dict[str, list[float]]:
     # Make predictions for a single time series
     return {"predictions": [y[-1] for _ in range(horizon)]}
 
@@ -92,29 +95,31 @@ Multiple evaluation summaries produced by different models on different tasks ca
 # Dataframes, dicts, JSON or CSV files supported
 summaries = "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/example/results/results.csv"
 fev.leaderboard(summaries)
-# | model_name     |   gmean_relative_error |   avg_rank |   avg_inference_time_s |   ... |
-# |:---------------|-----------------------:|-----------:|-----------------------:|------:|
-# | auto_theta     |                  0.874 |      2     |                  5.501 |   ... |
-# | auto_arima     |                  0.887 |      2     |                 21.799 |   ... |
-# | auto_ets       |                  0.951 |      2.667 |                  0.737 |   ... |
-# | seasonal_naive |                  1     |      3.333 |                  0.004 |   ... |
+# | model_name     |   skill_score |   win_rate | ... |
+# |:---------------|--------------:|-----------:| ... |
+# | auto_theta     |         0.126 |      0.667 | ... |
+# | auto_arima     |         0.113 |      0.667 | ... |
+# | auto_ets       |         0.049 |      0.444 | ... |
+# | seasonal_naive |         0     |      0.222 | ... |
 ```
 
-## Tutorials
-- [Quickstart](./docs/01-quickstart.ipynb): Define a task and evaluate a model.
-- [Datasets](./docs/02-dataset-format.ipynb): Use `fev` with your own datasets.
-- [Tasks & benchmarks](./docs/03-tasks-and-benchmarks.ipynb): Advanced features for defining tasks and benchmarks.
-- [Models](./docs/04-models.ipynb): Evaluate your models and submit results to the leaderboard.
+## 📚 Documentation
+- Tutorials
+    - [Quickstart](https://autogluon.github.io/fev/latest/tutorials/01-quickstart/): Define a task and evaluate a model.
+    - [Datasets](https://autogluon.github.io/fev/latest/tutorials/02-dataset-format/): Use `fev` with your own datasets.
+    - [Tasks & benchmarks](https://autogluon.github.io/fev/latest/tutorials/03-tasks-and-benchmarks/): Advanced features for defining tasks and benchmarks.
+    - [Models](https://autogluon.github.io/fev/latest/tutorials/04-models/): Evaluate your models and submit results to the leaderboard.
+- [API reference](https://autogluon.github.io/fev/latest/api/task/)
 
 Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
 
 
-## Leaderboards
+## 🏅 Leaderboards
 We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard.
 
 Currently, the leaderboard includes the results from the Benchmark II introduced in [Chronos: Learning the Language of Time Series](https://arxiv.org/abs/2403.07815). We expect to extend this list in the future.
 
-## Datasets
+## 📈 Datasets
 Repositories with datasets in format compatible with `fev`:
 - [`chronos_datasets`](https://huggingface.co/datasets/autogluon/chronos_datasets)
 - [`fev_datasets`](https://huggingface.co/datasets/autogluon/fev_datasets)
