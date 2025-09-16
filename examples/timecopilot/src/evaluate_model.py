@@ -3,29 +3,20 @@ import time
 import warnings
 
 import datasets
-import fev
 import pandas as pd
 import typer
 from timecopilot.models.ensembles.median import MedianEnsemble
 from timecopilot.models.foundation.chronos import Chronos
 from timecopilot.models.foundation.tirex import TiRex
 
+import fev
+
 app = typer.Typer()
 logging.basicConfig(level=logging.INFO)
 datasets.disable_progress_bars()
 
 
-def predict_with_model(task: fev.Task) -> tuple[datasets.Dataset, float, dict]:
-    past_df, *_ = fev.convert_input_data(task, "nixtla", trust_remote_code=True)
-    # Forward fill NaNs + zero-fill leading NaNs
-    past_df = (
-        past_df.set_index("unique_id")
-        .groupby("unique_id")
-        .ffill()
-        .reset_index()
-        .fillna(0.0)
-    )
-
+def predict_with_model(task: fev.Task) -> tuple[list[datasets.DatasetDict], float, dict]:
     forecaster = MedianEnsemble(
         models=[
             Chronos(
@@ -36,36 +27,39 @@ def predict_with_model(task: fev.Task) -> tuple[datasets.Dataset, float, dict]:
         ],
         alias="TimeCopilot",
     )
-    start_time = time.monotonic()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        forecast_df = forecaster.forecast(
-            df=past_df,
-            h=task.horizon,
-            quantiles=task.quantile_levels,
-            freq=task.freq,
-        )
-    inference_time = time.monotonic() - start_time
+
     renamer = {
         forecaster.alias: "predictions",
     }
-    if task.quantile_levels is not None:
-        renamer.update(
-            {
-                f"{forecaster.alias}-q-{int(100 * q)}": str(q)
-                for q in task.quantile_levels
-            }
-        )
-    forecast_df = forecast_df.rename(columns=renamer)
-    selected_columns = [fev.constants.PREDICTIONS]
-    if task.quantile_levels is not None:
-        selected_columns += [str(q) for q in task.quantile_levels]
-    predictions_list = []
-    for _, forecast in forecast_df.groupby("unique_id"):
-        predictions_list.append(forecast[selected_columns].to_dict("list"))
-    predictions = datasets.Dataset.from_list(predictions_list)
+    renamer.update({f"{forecaster.alias}-q-{int(100 * q)}": str(q) for q in task.quantile_levels})
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        past_df, *_ = fev.convert_input_data(window, "nixtla", as_univariate=True)
+        # Forward fill NaNs + zero-fill leading NaNs
+        past_df = past_df.set_index("unique_id").groupby("unique_id").ffill().reset_index().fillna(0.0)
 
-    return predictions, inference_time, {}
+        start_time = time.monotonic()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            forecast_df = forecaster.forecast(
+                df=past_df,
+                h=task.horizon,
+                quantiles=task.quantile_levels,
+                freq=task.freq,
+            )
+        inference_time += time.monotonic() - start_time
+        forecast_df = forecast_df.rename(columns=renamer)
+        selected_columns = ["predictions"] + [str(q) for q in task.quantile_levels]
+        predictions_list = []
+        for _, forecast in forecast_df.groupby("unique_id"):
+            predictions_list.append(forecast[selected_columns].to_dict("list"))
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_list(predictions_list), target_columns=task.target_columns
+            )
+        )
+    return predictions_per_window, inference_time, {}
 
 
 def evaluate_task(task: fev.Task):
