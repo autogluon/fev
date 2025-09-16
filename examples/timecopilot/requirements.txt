@@ -1245,7 +1245,7 @@ toml==0.10.2
     # via modal
 toolz==0.12.1
     # via gluonts
-torch==2.6.0
+torch==2.8.0
     # via
     #   accelerate
     #   gluonts
