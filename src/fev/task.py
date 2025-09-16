@@ -14,7 +14,7 @@ from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
-from .constants import DEFAULT_NUM_PROC, FUTURE, PREDICTIONS, TEST, TRAIN
+from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import Metric, get_metric
 
 # from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
@@ -610,12 +610,7 @@ class Task:
             if "lead_time" in data.kwargs:
                 # 'lead_time' was never used before, quietly ignore
                 data.kwargs.pop("lead_time")
-            for old_name, new_name in [
-                ("num_rolling_windows", "num_windows"),
-                ("rolling_step_size", "window_step_size"),
-                ("cutoff", "initial_cutoff"),
-                ("target_column", "target"),
-            ]:
+            for old_name, new_name in DEPRECATED_TASK_FIELDS.items():
                 data = _warn_and_rename_kwarg(data, old_name, new_name)
         return data
 

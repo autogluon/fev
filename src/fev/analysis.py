@@ -8,6 +8,8 @@ import pandas as pd
 import scipy.stats
 from packaging.version import parse as parse_version
 
+from .constants import DEPRECATED_TASK_FIELDS
+
 __all__ = [
     "leaderboard",
     "pairwise_comparison",
@@ -75,18 +77,25 @@ def _summary_to_df(summary: SummaryType) -> pd.DataFrame:
         raise ValueError(
             f"Invalid type of summary {type(summary)}. Expected one of pd.DataFrame, list[dict], str or Path."
         )
-    return df
+    for old_name, new_name in DEPRECATED_TASK_FIELDS.items():
+        if old_name in df.columns and new_name in df.columns:
+            raise ValueError(
+                f"Both deprecated '{old_name}' and '{new_name}' columns are present in the evaluation summary."
+            )
+    return df.rename(columns=DEPRECATED_TASK_FIELDS)
 
 
 def _sanitize_quantile_levels(quantile_levels: str | list) -> str:
     if isinstance(quantile_levels, str):
         quantile_levels = ast.literal_eval(quantile_levels)
+    if quantile_levels != quantile_levels:  # only true if quantile_levels is NaN
+        return "[]"
     if not isinstance(quantile_levels, list):
         raise ValueError(f"Unexpected dtype for quantile_levels: {type(quantile_levels)}")
     return str([round(q, 4) for q in quantile_levels])
 
 
-def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
+def _load_summaries(summaries: SummaryType | list[SummaryType], check_fev_version: bool = False) -> pd.DataFrame:
     """Load potentially multiple summary objects into a single pandas DataFrame.
 
     Ensures that all expected columns are present and have correct dtypes.
@@ -102,19 +111,20 @@ def _load_summaries(summaries: SummaryType | list[SummaryType]) -> pd.DataFrame:
         summaries_df[col] = None
     summaries_df["quantile_levels"] = summaries_df["quantile_levels"].apply(_sanitize_quantile_levels)
     summaries_df = summaries_df.astype(RESULTS_DTYPES)
-    try:
-        min_version = summaries_df["fev_version"].apply(parse_version).min()
-        if min_version < parse_version(LAST_BREAKING_VERSION):
-            warnings.warn(
-                f"Evaluation summaries contain results from fev < {LAST_BREAKING_VERSION}. "
-                "Results may not be comparable due to breaking changes.",
-                stacklevel=3,
+    if check_fev_version:
+        try:
+            min_version = summaries_df["fev_version"].apply(parse_version).min()
+            if min_version < parse_version(LAST_BREAKING_VERSION):
+                warnings.warn(
+                    f"Evaluation summaries contain results from fev < {LAST_BREAKING_VERSION}. "
+                    "Results may not be comparable due to breaking changes.",
+                    stacklevel=3,
+                )
+        except Exception:
+            raise ValueError(
+                "Unable to parse `fev_version` column in the evaluation summaries. "
+                "Make sure all summaries are produced by `fev`"
             )
-    except Exception:
-        raise ValueError(
-            "Unable to parse `fev_version` column in the evaluation summaries. "
-            "Make sure all summaries are produced by `fev`"
-        )
     return summaries_df
 
 
@@ -123,6 +133,7 @@ def pivot_table(
     metric_column: str = "test_error",
     task_columns: str | list[str] = TASK_DEF_COLUMNS.copy(),
     baseline_model: str | None = None,
+    check_fev_version: bool = False,
 ) -> pd.DataFrame:
     """Convert evaluation summaries into a pivot table for analysis.
 
@@ -140,6 +151,8 @@ def pivot_table(
         Column(s) defining unique tasks. Used as the pivot table index
     baseline_model : str, optional
         If provided, divide all scores by this model's scores to get relative performance
+    check_fev_version : bool, default False
+        If True, check that fev_version in the summary is >= LAST_BREAKING_VERSION.
 
     Returns
     -------
@@ -153,7 +166,7 @@ def pivot_table(
         If duplicate model/task combinations exist, or results for `baseline_model` are missing when `baseline_model`
         is provided.
     """
-    summaries = _load_summaries(summaries).astype({metric_column: "float64"})
+    summaries = _load_summaries(summaries, check_fev_version=check_fev_version).astype({metric_column: "float64"})
 
     if isinstance(task_columns, str):
         task_columns = [task_columns]
@@ -197,7 +210,7 @@ def leaderboard(
     summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
     missing_strategy: Literal["error", "drop", "impute"] = "error",
-    baseline_model: str = "SeasonalNaive",
+    baseline_model: str = "seasonal_naive",
     min_relative_error: float | None = 1e-2,
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
@@ -252,7 +265,7 @@ def leaderboard(
         - `median_inference_time_s`: Median inference time across tasks
         - `num_failures`: Number of tasks where the model failed
     """
-    summaries = _load_summaries(summaries)
+    summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column, baseline_model=baseline_model)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
@@ -358,7 +371,7 @@ def pairwise_comparison(
         - `win_rate_lower`: Lower bound of 95% confidence interval
         - `win_rate_upper`: Upper bound of 95% confidence interval
     """
-    summaries = _load_summaries(summaries)
+    summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column)
     num_failures_per_model = errors_df.isna().sum()

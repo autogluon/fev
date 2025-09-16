@@ -67,8 +67,7 @@ tasks:
   - 0.7
   - 0.8
   - 0.9
-  cutoff: -96
-  multiple_target_columns: __ALL__
+  generate_univariate_targets_from: __ALL__
 - dataset_path: autogluon/chronos_datasets_extra
   dataset_config: ETTh
   horizon: 24
@@ -86,7 +85,7 @@ tasks:
   - 0.7
   - 0.8
   - 0.9
-  multiple_target_columns: __ALL__
+  generate_univariate_targets_from: __ALL__
 - dataset_path: autogluon/chronos_datasets
   dataset_config: exchange_rate
   horizon: 30
