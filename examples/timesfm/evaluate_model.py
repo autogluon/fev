@@ -46,20 +46,11 @@ def predict_with_model(
     model_name: str = "google/timesfm-2.0-500m-pytorch",
     backend: str = "gpu",
     batch_size: int = 256,
-) -> tuple[datasets.Dataset, float, dict]:
-    past_data, _ = task.get_input_data(trust_remote_code=True)
-    target = past_data.with_format("numpy").cast_column(
-        task.target_column, datasets.Sequence(datasets.Value("float32"))
-    )[task.target_column]
-
-    imputation = LastValueImputation()
-    inputs = [imputation(t) for t in target]
-
+) -> tuple[list[datasets.DatasetDict], float, dict]:
     if model_name not in VERSION_TO_HYPERPARAMETERS:
         raise ValueError(f"model_name must be one of {list(VERSION_TO_HYPERPARAMETERS)} (got {model_name})")
     model_hparams = VERSION_TO_HYPERPARAMETERS[model_name]
 
-    frequency_indicator = get_frequency_indicator(task.freq)
     tfm = TimesFmTorch(
         hparams=timesfm.TimesFmHparams(
             backend=backend,
@@ -72,32 +63,45 @@ def predict_with_model(
 
     quantile_to_index = {}
     # Ensure that 0.5 quantile is predicted
-    task_quantiles = [0.5]
-    if task.quantile_levels is not None:
-        task_quantiles += task.quantile_levels
+    task_quantiles = [0.5] + task.quantile_levels
     for q in task_quantiles:
         # We add 1 below to account for the first prediction which is the mean
         quantile_to_index[q] = int(np.argmin(np.abs(np.array(tfm.quantiles) - q))) + 1
+    imputation = LastValueImputation()
+    task.load_full_dataset()  # ensure that task.freq is available
+    frequency_indicator = get_frequency_indicator(task.freq)
 
-    forecast_batches = []
-    start_time = time.monotonic()
-    for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
-        mean_forecast, full_forecast = tfm.forecast(batch, freq=[frequency_indicator for _ in batch])
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
+        past_data = past_data.with_format("numpy").cast_column("target", datasets.Sequence(datasets.Value("float32")))
+        inputs = [imputation(t) for t in past_data["target"]]
 
-        if task.eval_metric in ["MSE", "RMSE", "RMSSE"]:
-            forecast = {"predictions": mean_forecast}
-        else:
-            forecast = {"predictions": full_forecast[:, :, quantile_to_index[0.5]]}
+        forecast_batches = []
+        start_time = time.monotonic()
+        for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
+            mean_forecast, full_forecast = tfm.forecast(batch, freq=[frequency_indicator for _ in batch])
 
-        if task.quantile_levels is not None:
+            if task.eval_metric in ["MSE", "RMSE", "RMSSE"]:
+                forecast = {"predictions": mean_forecast}
+            else:
+                forecast = {"predictions": full_forecast[:, :, quantile_to_index[0.5]]}
             for q in task.quantile_levels:
                 forecast[str(q)] = full_forecast[:, :, quantile_to_index[q]]
-        forecast_batches.append(forecast)
+            forecast_batches.append(forecast)
+        inference_time += time.monotonic() - start_time
 
-    inference_time = time.monotonic() - start_time
-    predictions = datasets.Dataset.from_dict(
-        {k: np.concatenate([batch[k] for batch in forecast_batches], axis=0) for k in task.predictions_schema.keys()}
-    )
+        predictions = datasets.Dataset.from_dict(
+            {
+                k: np.concatenate([batch[k] for batch in forecast_batches], axis=0)
+                for k in task.predictions_schema.keys()
+            }
+        )
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(predictions, target_columns=task.target_columns)
+        )
+
     extra_info = {
         "model_config": {
             "batch_size": batch_size,
@@ -107,7 +111,7 @@ def predict_with_model(
         }
     }
 
-    return predictions, inference_time, extra_info
+    return predictions_per_window, inference_time, extra_info
 
 
 if __name__ == "__main__":
@@ -132,4 +136,4 @@ if __name__ == "__main__":
     # Show and save the results
     summary_df = pd.DataFrame(summaries)
     print(summary_df)
-    summary_df.to_csv(f"{model_name.replace('/', '_')}.csv", index=False)
+    summary_df.to_csv("timesfm-2.0.csv", index=False)

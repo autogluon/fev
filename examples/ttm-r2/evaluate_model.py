@@ -85,32 +85,34 @@ def predict_with_model(
     model_name: str = "ibm-granite/granite-timeseries-ttm-r2",
     device: str = "cuda",
     batch_size: int = 256,
-) -> tuple[datasets.Dataset, float, dict]:
-    past_data, _ = task.get_input_data(trust_remote_code=True)
-    target = past_data.with_format("numpy").cast_column(
-        task.target_column, datasets.Sequence(datasets.Value("float32"))
-    )[task.target_column]
-
-    imputation = LastValueImputation()
-    inputs = [imputation(t) for t in target]
-
+) -> tuple[list[datasets.DatasetDict], float, dict]:
     pipeline = TinyTimeMixerPipeline.from_pretrained(model_name, device_map=device)
+    imputation = LastValueImputation()
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
+        past_data = past_data.with_format("numpy").cast_column("target", datasets.Sequence(datasets.Value("float32")))
+        inputs = [imputation(t) for t in past_data["target"]]
 
-    forecast_per_batch = []
-    start_time = time.monotonic()
-    for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
-        forecast_per_batch.append(
-            pipeline.predict([torch.tensor(x) for x in batch], prediction_length=task.horizon).cpu().numpy()
-        )
-    inference_time = time.monotonic() - start_time
+        forecast_per_batch = []
+        start_time = time.monotonic()
+        for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
+            forecast_per_batch.append(
+                pipeline.predict([torch.tensor(x) for x in batch], prediction_length=task.horizon).cpu().numpy()
+            )
+        inference_time += time.monotonic() - start_time
 
-    forecast = np.concatenate(forecast_per_batch, axis=0)  # [num_items, horizon]
-    predictions_dict = {"predictions": forecast}
-    # Probabilistic forecasting not supported, so we repeat the point forecast for each quantile
-    if task.quantile_levels is not None:
+        forecast = np.concatenate(forecast_per_batch, axis=0)  # [num_items, horizon]
+        predictions_dict = {"predictions": forecast}
+        # Probabilistic forecasting not supported, so we repeat the point forecast for each quantile
         for q in task.quantile_levels:
             predictions_dict[str(q)] = forecast
-    predictions = datasets.Dataset.from_dict(predictions_dict)
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_dict(predictions_dict), target_columns=task.target_columns
+            )
+        )
 
     extra_info = {
         "model_config": {
@@ -120,7 +122,7 @@ def predict_with_model(
             "device": device,
         }
     }
-    return predictions, inference_time, extra_info
+    return predictions_per_window, inference_time, extra_info
 
 
 if __name__ == "__main__":

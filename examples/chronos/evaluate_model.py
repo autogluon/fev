@@ -26,56 +26,55 @@ def predict_with_model(
     torch_dtype: str = torch.bfloat16,
     num_samples: int = 20,
     seed: int = 123,
-) -> tuple[datasets.Dataset, float, dict]:
+) -> tuple[list[datasets.DatasetDict], float, dict]:
     pipeline = BaseChronosPipeline.from_pretrained(model_name, device_map=device_map, torch_dtype=torch_dtype)
-
-    past_data, future_data = task.get_input_data(trust_remote_code=True)
-    target = past_data.with_format("torch").cast_column(
-        task.target_column, datasets.Sequence(datasets.Value("float32"))
-    )[task.target_column]
-
-    quantile_levels = task.quantile_levels if task.quantile_levels is not None else []
-    quantiles_all = []
-    mean_all = []
-
     torch.manual_seed(seed)
-    start_time = time.monotonic()
-    for batch in tqdm(batchify(target, batch_size=batch_size), total=len(target) // batch_size):
-        kwargs = dict(
-            context=batch,
-            prediction_length=task.horizon,
-            limit_prediction_length=False,
+
+    inference_time = 0.0
+    quantile_levels = task.quantile_levels.copy()
+    if 0.5 not in quantile_levels:
+        quantile_levels.append(0.5)
+
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
+        past_data = past_data.with_format("torch").cast_column("target", datasets.Sequence(datasets.Value("float32")))
+
+        quantiles_all = []
+        mean_all = []
+
+        start_time = time.monotonic()
+        for batch in batchify(past_data["target"], batch_size=batch_size):
+            quantiles, mean = pipeline.predict_quantiles(
+                context=batch,
+                prediction_length=task.horizon,
+                limit_prediction_length=False,
+                quantile_levels=quantile_levels,
+            )
+
+            quantiles_all.append(quantiles.numpy())
+            mean_all.append(mean.numpy())
+        inference_time += time.monotonic() - start_time
+
+        quantiles_np = np.concatenate(quantiles_all, axis=0)  # [num_items, horizon, num_quantiles]
+        mean_np = np.concatenate(mean_all, axis=0)  # [num_items, horizon]
+
+        if task.eval_metric in ["MSE", "RMSE", "RMSSE"]:
+            point_forecast = mean_np  # [num_items, horizon]
+        else:
+            # use median as the point forecast
+            point_forecast = quantiles_np[:, :, quantile_levels.index(0.5)]  # [num_items, horizon]
+        predictions_dict = {"predictions": point_forecast}
+
+        for idx, level in enumerate(task.quantile_levels):
+            predictions_dict[str(level)] = quantiles_np[:, :, idx]
+
+        predictions_per_window.append(
+            fev.utils.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_dict(predictions_dict), target_columns=task.target_columns
+            )
         )
 
-        if pipeline.forecast_type == ForecastType.SAMPLES:
-            kwargs.update(dict(num_samples=num_samples))
-
-        quantiles, mean = pipeline.predict_quantiles(
-            **kwargs,
-            # make sure to always compute the median prediction last
-            quantile_levels=quantile_levels + [0.5],
-        )
-
-        quantiles_all.append(quantiles.numpy())
-        mean_all.append(mean.numpy())
-
-    inference_time = time.monotonic() - start_time
-
-    quantiles_np = np.concatenate(quantiles_all, axis=0)  # [num_items, horizon, num_quantiles]
-    mean_np = np.concatenate(mean_all, axis=0)  # [num_items, horizon]
-
-    if task.eval_metric in ["MSE", "RMSE", "RMSSE"]:
-        point_forecast = mean_np  # [num_items, horizon]
-    else:
-        # take the median from the last computed quantile
-        point_forecast = quantiles_np[:, :, -1]  # [num_items, horizon]
-
-    predictions_dict = {"predictions": point_forecast}
-
-    for idx, level in enumerate(quantile_levels):
-        predictions_dict[str(level)] = quantiles_np[:, :, idx]  # [num_items, horizon]
-
-    predictions = datasets.Dataset.from_dict(predictions_dict)
     extra_info = {
         "model_config": {
             "model_name": model_name,
@@ -86,7 +85,7 @@ def predict_with_model(
             "seed": seed,
         }
     }
-    return predictions, inference_time, extra_info
+    return predictions_per_window, inference_time, extra_info
 
 
 if __name__ == "__main__":

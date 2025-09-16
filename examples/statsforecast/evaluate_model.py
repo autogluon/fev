@@ -1,4 +1,5 @@
 import inspect
+import os
 import time
 import warnings
 from typing import Type
@@ -46,8 +47,8 @@ def predict_with_model(
     model_name: str = "seasonal_naive",
     model_kwargs: dict | None = None,
     n_jobs: int = -1,
-    max_context_length: int | None = 2500,
-) -> tuple[datasets.Dataset, float, dict]:
+    context_length: int | None = 2500,
+) -> tuple[list[datasets.DatasetDict], float, dict]:
     default_model_kwargs = {"season_length": task.seasonality}
     if model_kwargs is not None:
         default_model_kwargs.update(model_kwargs)
@@ -55,49 +56,52 @@ def predict_with_model(
     model_cls = model_name_to_class[model_name]
     model = model_cls(**filter_kwargs(model_cls, default_model_kwargs))
 
-    past_df, *_ = fev.convert_input_data(task, "nixtla", trust_remote_code=True)
-
     sf = StatsForecast(
         models=[model],
-        freq=task.freq,
+        freq="D",  # we use a placeholder freq since we anyway ignore the forecast timestamps
         n_jobs=n_jobs,
         fallback_model=SeasonalNaive(season_length=default_model_kwargs["season_length"]),
         verbose=True,
     )
-    if task.quantile_levels is not None:
-        levels = sorted(set([round(abs(q - 0.5) * 200) for q in task.quantile_levels]))
-    else:
-        levels = None
+    levels = sorted(set([round(abs(q - 0.5) * 200) for q in task.quantile_levels]))
 
-    # Forward fill NaNs + zero-fill leading NaNs
-    past_df = past_df.set_index("unique_id").groupby("unique_id").ffill().reset_index().fillna(0.0)
-    if max_context_length is not None:
-        past_df = past_df.groupby("unique_id").tail(max_context_length).reset_index(drop=True)
+    inference_time = 0.0
+    predictions_per_window = []
+    for window in task.iter_windows(trust_remote_code=True):
+        past_df, *_ = fev.convert_input_data(window, "nixtla", as_univariate=True)
+        # Forward fill NaNs + zero-fill leading NaNs
+        past_df = past_df.set_index("unique_id").groupby("unique_id").ffill().reset_index().fillna(0.0)
+        if context_length is not None:
+            past_df = past_df.groupby("unique_id").tail(context_length).reset_index(drop=True)
 
-    start_time = time.monotonic()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        forecast_df = sf.forecast(df=past_df, h=task.horizon, level=levels)
-    inference_time = time.monotonic() - start_time
+        start_time = time.monotonic()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            os.environ["PYTHONWARNINGS"] = "ignore"
+            forecast_df = sf.forecast(df=past_df, h=task.horizon, level=levels)
+        inference_time += time.monotonic() - start_time
 
-    forecast_df["predictions"] = forecast_df[str(model)]
-    if task.quantile_levels is not None:
+        forecast_df["predictions"] = forecast_df[str(model)]
         for q in task.quantile_levels:
             forecast_df[str(q)] = forecast_df[str(model) + quantile_to_level(q)]
 
-    selected_columns = [fev.constants.PREDICTIONS]
-    if task.quantile_levels is not None:
-        selected_columns += [str(q) for q in task.quantile_levels]
-    predictions_list = []
-    for _, forecast in forecast_df.groupby("unique_id"):
-        predictions_list.append(forecast[selected_columns].to_dict("list"))
-    predictions = datasets.Dataset.from_list(predictions_list)
+        selected_columns = ["predictions"] + [str(q) for q in task.quantile_levels]
+        predictions_list = []
+        for _, forecast in forecast_df.groupby("unique_id"):
+            predictions_list.append(forecast[selected_columns].to_dict("list"))
+        predictions_per_window.append(
+            fev.combine_univariate_predictions_to_multivariate(
+                datasets.Dataset.from_list(predictions_list), target_columns=task.target_columns
+            )
+        )
 
-    return predictions, inference_time, {}
+    extra_info = {"model_config": {"context_length": context_length, **default_model_kwargs}}
+
+    return predictions_per_window, inference_time, extra_info
 
 
 if __name__ == "__main__":
-    model_name = "auto_ets"
+    model_name = "seasonal_naive"
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
     benchmark = fev.Benchmark.from_yaml(
