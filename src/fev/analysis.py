@@ -206,6 +206,21 @@ def _filter_models(
     return summaries_df
 
 
+def _handle_leakage_imputation(
+    errors_df: pd.DataFrame,
+    training_corpus_overlap_df: pd.DataFrame,
+    leakage_imputation_model: str,
+) -> pd.DataFrame:
+    training_corpus_overlap_df = training_corpus_overlap_df.fillna(False).astype(bool)
+    if leakage_imputation_model not in errors_df.columns:
+        raise ValueError(
+            f"leakage_imputation_model '{leakage_imputation_model}' is missing. Available models: {errors_df.columns.to_list()}"
+        )
+    if training_corpus_overlap_df[leakage_imputation_model].any():
+        raise ValueError("training_corpus_overlap cannot be set to True for any tasks for leakage_imputation_model")
+    return errors_df.mask(training_corpus_overlap_df, errors_df[leakage_imputation_model], axis=0)
+
+
 def leaderboard(
     summaries: SummaryType | list[SummaryType],
     metric_column: str = "test_error",
@@ -215,6 +230,7 @@ def leaderboard(
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
+    leakage_imputation_model: str | None = None,
     n_resamples: int | None = None,
     seed: int = 123,
 ):
@@ -245,6 +261,8 @@ def leaderboard(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
+    leakage_imputation_model : str, optional
+        Zero-shot model used to replace results when data leakage is detected. Applied before `missing_strategy`.
     n_resamples : int | None, default None
         Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
@@ -253,14 +271,14 @@ def leaderboard(
     Returns
     -------
     pd.DataFrame
-        Leaderboard sorted by `skill_score`, with columns:
+        Leaderboard sorted by `win_rate`, with columns:
 
-        - `skill_score`: Skill score (1 - geometric mean relative error)
-        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
-        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of pairwise comparisons won against other models
         - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score`: Skill score (1 - geometric mean relative error)
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `median_training_time_s`: Median training time across tasks
         - `median_inference_time_s`: Median inference time across tasks
         - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
@@ -269,6 +287,12 @@ def leaderboard(
     summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column, baseline_model=baseline_model)
+
+    training_time_df = pivot_table(summaries, metric_column="training_time_s")
+    inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
+    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+    if leakage_imputation_model is not None:
+        errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
 
     num_failures_per_model = errors_df.isna().sum()
@@ -296,18 +320,14 @@ def leaderboard(
         errors_df.to_numpy(), statistic=_skill_score, n_resamples=bootstrap_resamples, seed=seed
     )
 
-    training_time_df = pivot_table(summaries, metric_column="training_time_s")
-    inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
-    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
-
     result_df = pd.DataFrame(
         {
-            "skill_score": skill_score,
-            "skill_score_lower": skill_score_lower,
-            "skill_score_upper": skill_score_upper,
             "win_rate": win_rate,
             "win_rate_lower": win_rate_lower,
             "win_rate_upper": win_rate_upper,
+            "skill_score": skill_score,
+            "skill_score_lower": skill_score_lower,
+            "skill_score_upper": skill_score_upper,
             # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
             "median_training_time_s": training_time_df.loc[errors_df.index].median(),
             "median_inference_time_s": inference_time_df.loc[errors_df.index].median(),
@@ -320,7 +340,7 @@ def leaderboard(
         result_df = result_df.drop(
             columns=["skill_score_lower", "skill_score_upper", "win_rate_lower", "win_rate_upper"]
         )
-    return result_df.sort_values(by="skill_score", ascending=False)
+    return result_df.sort_values(by="win_rate", ascending=False)
 
 
 def pairwise_comparison(
@@ -332,6 +352,7 @@ def pairwise_comparison(
     max_relative_error: float | None = 100.0,
     included_models: list[str] | None = None,
     excluded_models: list[str] | None = None,
+    leakage_imputation_model: str | None = None,
     n_resamples: int | None = None,
     seed: int = 123,
 ) -> pd.DataFrame:
@@ -362,6 +383,8 @@ def pairwise_comparison(
         Models to include (mutually exclusive with `excluded_models`)
     excluded_models : list[str], optional
         Models to exclude (mutually exclusive with `included_models`)
+    leakage_imputation_model : str, optional
+        Zero-shot model used to replace results when data leakage is detected. Applied before `missing_strategy`.
     n_resamples : int | None, default None
         Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
@@ -372,17 +395,21 @@ def pairwise_comparison(
     pd.DataFrame
         Pairwise comparison results with `pd.MultiIndex` `(model_1, model_2)` and columns:
 
-        - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios
-        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
-        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate`: Fraction of tasks where `model_1` outperforms `model_2`
         - `win_rate_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
         - `win_rate_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score`: 1 - geometric mean of `model_1/model_2` error ratios
+        - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
+        - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
     """
     summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
     errors_df = pivot_table(summaries, metric_column=metric_column)
     num_failures_per_model = errors_df.isna().sum()
+
+    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+    if leakage_imputation_model is not None:
+        errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
 
     if missing_strategy == "drop":
         errors_df = errors_df.dropna()
@@ -426,12 +453,12 @@ def pairwise_comparison(
 
     result_df = pd.DataFrame(
         {
-            "skill_score": skill_score.flatten(),
-            "skill_score_lower": skill_score_lower.flatten(),
-            "skill_score_upper": skill_score_upper.flatten(),
             "win_rate": win_rate.flatten(),
             "win_rate_lower": win_rate_lower.flatten(),
             "win_rate_upper": win_rate_upper.flatten(),
+            "skill_score": skill_score.flatten(),
+            "skill_score_lower": skill_score_lower.flatten(),
+            "skill_score_upper": skill_score_upper.flatten(),
         },
         index=pd.MultiIndex.from_product([errors_df.columns, errors_df.columns], names=["model_1", "model_2"]),
     )
