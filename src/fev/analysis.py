@@ -214,7 +214,7 @@ def _handle_leakage_imputation(
     training_corpus_overlap_df = training_corpus_overlap_df.fillna(False).astype(bool)
     if leakage_imputation_model not in errors_df.columns:
         raise ValueError(
-            f"Results for leakage_imputation_model '{leakage_imputation_model}' are missing for some tasks."
+            f"leakage_imputation_model '{leakage_imputation_model}' is missing. Available models: {errors_df.columns.to_list()}"
         )
     if training_corpus_overlap_df[leakage_imputation_model].any():
         raise ValueError("training_corpus_overlap cannot be set to True for any tasks for leakage_imputation_model")
