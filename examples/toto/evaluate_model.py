@@ -62,6 +62,110 @@ def left_pad_and_stack_2d(tensors: list["torch.Tensor"]) -> "torch.Tensor":
     return torch.stack(padded)
 
 
+def predict_window(
+    window: fev.EvaluationWindow,
+    toto_forecaster: "TotoForecaster",
+    quantile_levels: list[float],
+    max_context_length: int,
+    max_batch_variate_size: int,
+    num_samples: int,
+    samples_per_batch: int,
+    time_delta_seconds: float,
+    as_univariate: bool,
+    return_mean: bool,
+    device: str,
+) -> tuple[datasets.DatasetDict, float]:
+    if as_univariate:
+        past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
+        target_columns = ["target"]
+    else:
+        past_data, _ = window.get_input_data()
+        target_columns = window.target_columns
+
+    past_data_features = past_data.features
+    past_data_features.update({col: datasets.Sequence(datasets.Value("float32")) for col in target_columns})
+    past_data = past_data.cast(past_data_features)
+
+    num_variates = len(target_columns)
+    inputs = [
+        torch.tensor(np.stack(tuple(row.values()), axis=0), dtype=torch.float32)
+        for row in past_data.select_columns(target_columns)
+    ]
+
+    forecast_batches = []
+    batch_size = max(1, math.floor(max_batch_variate_size / num_variates))
+
+    start_time = time.monotonic()
+    for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
+        stacked_batch = left_pad_and_stack_2d(batch)
+        stacked_batch = stacked_batch[..., -max_context_length:]
+        stacked_batch = stacked_batch.to(device=device)
+        # Impute missing values
+        stacked_batch = ffill(stacked_batch)
+        nan_mask = torch.isnan(stacked_batch)
+        stacked_batch[nan_mask] = 0.0
+
+        current_batch_size, _, context_length = stacked_batch.shape
+        # each item in the batch is assigned a unique ID from [0, ..., current_batch_size - 1]
+        id_mask = torch.arange(current_batch_size, dtype=torch.int, device=device)[:, None, None].repeat(
+            1, num_variates, context_length
+        )
+
+        # FIXME: technically this should be a tensor of unix epochs but it is not used
+        # by the current model (Datadog/Toto-Open-Base-1.0)
+        timestamp_seconds = torch.zeros_like(stacked_batch, dtype=torch.int)
+        time_interval_seconds = torch.full(
+            (current_batch_size, 1), fill_value=time_delta_seconds, device=device, dtype=torch.int
+        )
+
+        masked_timeseries = MaskedTimeseries(
+            series=stacked_batch,
+            padding_mask=~nan_mask,
+            id_mask=id_mask,
+            timestamp_seconds=timestamp_seconds,
+            time_interval_seconds=time_interval_seconds,
+        )
+
+        toto_forecast = toto_forecaster.forecast(
+            masked_timeseries,
+            prediction_length=window.horizon,
+            num_samples=num_samples,
+            samples_per_batch=samples_per_batch,
+        )
+
+        multivariate_forecast = {variate_name: {} for variate_name in target_columns}
+        if return_mean:
+            mean_forecast = toto_forecast.mean.cpu().numpy()
+            for i, variate_name in enumerate(target_columns):
+                multivariate_forecast[variate_name]["predictions"] = mean_forecast[:, i]
+        else:
+            median_forecast = toto_forecast.quantile(0.5).cpu().numpy()
+            for i, variate_name in enumerate(target_columns):
+                multivariate_forecast[variate_name]["predictions"] = median_forecast[:, i]
+
+        for q in quantile_levels:
+            quantile_forecast = toto_forecast.quantile(q).cpu().numpy()
+            for i, variate_name in enumerate(target_columns):
+                multivariate_forecast[variate_name][str(q)] = quantile_forecast[:, i]
+
+        forecast_batches.append(multivariate_forecast)
+
+    window_inference_time = time.monotonic() - start_time
+
+    predictions_dict: dict = {}
+    for variate_name in target_columns:
+        predictions_dict[variate_name] = datasets.Dataset.from_dict(
+            {
+                k: np.concatenate([batch[variate_name][k] for batch in forecast_batches], axis=0)
+                for k in ["predictions"] + [str(q) for q in quantile_levels]
+            }
+        )
+    predictions = datasets.DatasetDict(predictions_dict)
+    predictions.set_format("numpy")
+
+    return predictions, window_inference_time
+
+
 def predict_with_model(
     task: fev.Task,
     model_path: str = "Datadog/Toto-Open-Base-1.0",
@@ -86,95 +190,21 @@ def predict_with_model(
     predictions_per_window = []
 
     for window in task.iter_windows():
-        time_delta_seconds = freq_to_seconds(task.freq)
-        if as_univariate:
-            past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
-            target_columns = ["target"]
-        else:
-            past_data, _ = window.get_input_data()
-            target_columns = window.target_columns
-
-        past_data_features = past_data.features
-        past_data_features.update({col: datasets.Sequence(datasets.Value("float32")) for col in target_columns})
-        past_data = past_data.cast(past_data_features)
-
-        num_variates = len(target_columns)
-        inputs = [
-            torch.tensor(np.stack(tuple(row.values()), axis=0), dtype=torch.float32)
-            for row in past_data.select_columns(target_columns)
-        ]
-
-        forecast_batches = []
-        batch_size = max(1, math.floor(max_batch_variate_size / num_variates))
-
-        start_time = time.monotonic()
-        for batch in tqdm(batchify(inputs, batch_size=batch_size), total=len(inputs) // batch_size):
-            stacked_batch = left_pad_and_stack_2d(batch)
-            stacked_batch = stacked_batch[..., -max_context_length:]
-            stacked_batch = stacked_batch.to(device=device)
-            # Impute missing values
-            stacked_batch = ffill(stacked_batch)
-            nan_mask = torch.isnan(stacked_batch)
-            stacked_batch[nan_mask] = 0.0
-
-            current_batch_size, _, context_length = stacked_batch.shape
-            # each item in the batch is assigned a unique ID from [0, ..., current_batch_size - 1]
-            id_mask = torch.arange(current_batch_size, dtype=torch.int, device=device)[:, None, None].repeat(
-                1, num_variates, context_length
-            )
-
-            # FIXME: technically this should be a tensor of unix epochs but it is not used
-            # by the current model (Datadog/Toto-Open-Base-1.0)
-            timestamp_seconds = torch.zeros_like(stacked_batch, dtype=torch.int)
-            time_interval_seconds = torch.full(
-                (current_batch_size, 1), fill_value=time_delta_seconds, device=device, dtype=torch.int
-            )
-
-            masked_timeseries = MaskedTimeseries(
-                series=stacked_batch,
-                padding_mask=~nan_mask,
-                id_mask=id_mask,
-                timestamp_seconds=timestamp_seconds,
-                time_interval_seconds=time_interval_seconds,
-            )
-
-            toto_forecast = toto_forecaster.forecast(
-                masked_timeseries,
-                prediction_length=window.horizon,
-                num_samples=num_samples,
-                samples_per_batch=samples_per_batch,
-            )
-
-            multivariate_forecast = {variate_name: {} for variate_name in target_columns}
-            if task.eval_metric in ["MSE", "RMSE", "RMSSE"]:
-                mean_forecast = toto_forecast.mean.cpu().numpy()
-                for i, variate_name in enumerate(target_columns):
-                    multivariate_forecast[variate_name]["predictions"] = mean_forecast[:, i]
-            else:
-                median_forecast = toto_forecast.quantile(0.5).cpu().numpy()
-                for i, variate_name in enumerate(target_columns):
-                    multivariate_forecast[variate_name]["predictions"] = median_forecast[:, i]
-
-            for q in task.quantile_levels:
-                quantile_forecast = toto_forecast.quantile(q).cpu().numpy()
-                for i, variate_name in enumerate(target_columns):
-                    multivariate_forecast[variate_name][str(q)] = quantile_forecast[:, i]
-
-            forecast_batches.append(multivariate_forecast)
-
-        inference_time += time.monotonic() - start_time
-
-        predictions_dict: dict = {}
-        for variate_name in target_columns:
-            predictions_dict[variate_name] = datasets.Dataset.from_dict(
-                {
-                    k: np.concatenate([batch[variate_name][k] for batch in forecast_batches], axis=0)
-                    for k in ["predictions"] + [str(q) for q in task.quantile_levels]
-                }
-            )
-        predictions = datasets.DatasetDict(predictions_dict)
-        predictions.set_format("numpy")
+        predictions, window_inference_time = predict_window(
+            window=window,
+            toto_forecaster=toto_forecaster,
+            quantile_levels=task.quantile_levels,
+            max_context_length=max_context_length,
+            max_batch_variate_size=max_batch_variate_size,
+            num_samples=num_samples,
+            samples_per_batch=samples_per_batch,
+            return_mean=task.eval_metric in ["MSE", "RMSE", "RMSSE"],
+            time_delta_seconds=freq_to_seconds(task.freq),
+            as_univariate=as_univariate,
+            device=device,
+        )
         predictions_per_window.append(predictions)
+        inference_time += window_inference_time
 
     extra_info = {
         "model_config": {
@@ -196,9 +226,7 @@ if __name__ == "__main__":
     model_path = "Datadog/Toto-Open-Base-1.0"
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
-    benchmark = fev.Benchmark.from_yaml(
-        "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/fev_bench/tasks.yaml"
-    )
+    benchmark = fev.Benchmark.from_yaml("/fsx/ansarnd/repos/fev/benchmarks/fev_bench/tasks.yaml")
     summaries = []
     for task in benchmark.tasks[:num_tasks]:
         predictions, inference_time, extra_info = predict_with_model(task, model_path=model_path)
