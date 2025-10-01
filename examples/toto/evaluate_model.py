@@ -226,7 +226,9 @@ if __name__ == "__main__":
     model_path = "Datadog/Toto-Open-Base-1.0"
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
-    benchmark = fev.Benchmark.from_yaml("/fsx/ansarnd/repos/fev/benchmarks/fev_bench/tasks.yaml")
+    benchmark = fev.Benchmark.from_yaml(
+        "https://github.com/autogluon/fev/raw/refs/heads/main/benchmarks/fev_bench/tasks.yaml"
+    )
     summaries = []
     for task in benchmark.tasks[:num_tasks]:
         predictions, inference_time, extra_info = predict_with_model(task, model_path=model_path)
