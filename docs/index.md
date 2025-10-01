@@ -39,5 +39,6 @@ summary = task.evaluation_summary(predictions_per_window, "my_model")
 - 🚀 **[Quickstart](tutorials/01-quickstart.ipynb)** - Get started with your first forecasting task
 - 📊 **[Dataset Format](tutorials/02-dataset-format.ipynb)** - Learn how to use your own datasets
 - ⚙️ **[Tasks & Benchmarks](tutorials/03-tasks-and-benchmarks.ipynb)** - Advanced task configuration
-- 🤖 **[Models](tutorials/04-models.ipynb)** - Integrate your forecasting models
+- 🧩 **[Adapters](tutorials/04-adapters.ipynb)** - Convert data to formats used by other forecasting libraries
+- 🤖 **[Models](tutorials/05-add-your-model.ipynb)** - Contribute your model to `fev-leaderboard`
 
