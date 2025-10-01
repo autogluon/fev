@@ -34,7 +34,8 @@ nav:
     - Quickstart: tutorials/01-quickstart.ipynb
     - Dataset Format: tutorials/02-dataset-format.ipynb
     - Tasks & Benchmarks: tutorials/03-tasks-and-benchmarks.ipynb
-    - Models: tutorials/04-models.ipynb
+    - Adapters: tutorials/04-adapters.ipynb
+    - Models: tutorials/05-add-your-model.ipynb
   - API Reference:
     - Task: api/task.md
     - EvaluationWindow: api/evaluation-window.md
