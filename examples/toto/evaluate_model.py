@@ -82,13 +82,11 @@ def predict_with_model(
         toto.compile()
     toto_forecaster = TotoForecaster(toto.model)
 
-    task.load_full_dataset()
-    time_delta_seconds = freq_to_seconds(task.freq)
-
     inference_time = 0.0
     predictions_per_window = []
 
-    for window in task.iter_windows(trust_remote_code=True):
+    for window in task.iter_windows():
+        time_delta_seconds = freq_to_seconds(task.freq)
         if as_univariate:
             past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
             target_columns = ["target"]
@@ -114,14 +112,19 @@ def predict_with_model(
             stacked_batch = left_pad_and_stack_2d(batch)
             stacked_batch = stacked_batch[..., -max_context_length:]
             stacked_batch = stacked_batch.to(device=device)
+            # Impute missing values
             stacked_batch = ffill(stacked_batch)
             nan_mask = torch.isnan(stacked_batch)
             stacked_batch[nan_mask] = 0.0
 
             current_batch_size, _, context_length = stacked_batch.shape
+            # each item in the batch is assigned a unique ID from [0, ..., current_batch_size - 1]
             id_mask = torch.arange(current_batch_size, dtype=torch.int, device=device)[:, None, None].repeat(
                 1, num_variates, context_length
             )
+
+            # FIXME: technically this should be a tensor of unix epochs but it is not used
+            # by the current model (Datadog/Toto-Open-Base-1.0)
             timestamp_seconds = torch.zeros_like(stacked_batch, dtype=torch.int)
             time_interval_seconds = torch.full(
                 (current_batch_size, 1), fill_value=time_delta_seconds, device=device, dtype=torch.int
@@ -161,15 +164,17 @@ def predict_with_model(
 
         inference_time += time.monotonic() - start_time
 
-        # Combine batches
-        combined_forecast = {variate_name: {} for variate_name in target_columns}
-        for key in task.predictions_schema.keys():
-            for variate_name in target_columns:
-                combined_forecast[variate_name][key] = np.concatenate(
-                    [batch[variate_name][key] for batch in forecast_batches], axis=0
-                )
-
-        predictions_per_window.append(combined_forecast)
+        predictions_dict: dict = {}
+        for variate_name in target_columns:
+            predictions_dict[variate_name] = datasets.Dataset.from_dict(
+                {
+                    k: np.concatenate([batch[variate_name][k] for batch in forecast_batches], axis=0)
+                    for k in ["predictions"] + [str(q) for q in task.quantile_levels]
+                }
+            )
+        predictions = datasets.DatasetDict(predictions_dict)
+        predictions.set_format("numpy")
+        predictions_per_window.append(predictions)
 
     extra_info = {
         "model_config": {
@@ -192,7 +197,7 @@ if __name__ == "__main__":
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
     benchmark = fev.Benchmark.from_yaml(
-        "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/chronos_zeroshot/tasks.yaml"
+        "https://raw.githubusercontent.com/autogluon/fev/refs/heads/main/benchmarks/fev_bench/tasks.yaml"
     )
     summaries = []
     for task in benchmark.tasks[:num_tasks]:
