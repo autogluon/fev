@@ -108,18 +108,19 @@ fev.leaderboard(summaries)
     - [Quickstart](https://autogluon.github.io/fev/latest/tutorials/01-quickstart/): Define a task and evaluate a model.
     - [Datasets](https://autogluon.github.io/fev/latest/tutorials/02-dataset-format/): Use `fev` with your own datasets.
     - [Tasks & benchmarks](https://autogluon.github.io/fev/latest/tutorials/03-tasks-and-benchmarks/): Advanced features for defining tasks and benchmarks.
-    - [Models](https://autogluon.github.io/fev/latest/tutorials/04-models/): Evaluate your models and submit results to the leaderboard.
+    - [Adapters](https://autogluon.github.io/fev/latest/tutorials/04-adapters/): Easily convert data into formats expected by popular time series libraries like [AutoGluon](https://auto.gluon.ai/), [Nixtlaverse](https://nixtlaverse.nixtla.io/), [GluonTS](https://ts.gluon.ai/), [Darts](https://unit8co.github.io/darts/) and more.
+    - [Models](https://autogluon.github.io/fev/latest/tutorials/05-add-your-model/): Evaluate your models and submit results to the leaderboard.
 - [API reference](https://autogluon.github.io/fev/latest/api/task/)
 
 Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
 
 
 ## 🏅 Leaderboards
-We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard.
+We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard. A mirror of the leaderboard is available at https://huggingface.co/spaces/autogluon/fev-leaderboard-mirror.
 
 This leaderboard includes results for the benchmark from [fev-bench: A Realistic Benchmark for Time Series Forecasting](https://arxiv.org/abs/2509.26468).
 
-Previous results for Chronos Benchmark II are available in [./benchmark/chronos_zeroshot/].
+Previous results for Chronos Benchmark II are available in [benchmarks/chronos_zeroshot/](benchmarks/chronos_zeroshot/).
 
 ## 📈 Datasets
 Repositories with datasets in format compatible with `fev`:
