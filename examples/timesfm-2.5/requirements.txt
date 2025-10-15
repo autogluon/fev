@@ -1,0 +1,3 @@
+"timesfm[torch] @ git+https://github.com/google-research/timesfm@58e01ad82fec7f4e975d708409d51fd5c0131bbd"
+# GluonTS used for missing value imputation
+gluonts==0.16.0
