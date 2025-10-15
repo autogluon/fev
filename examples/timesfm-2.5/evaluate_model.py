@@ -4,9 +4,12 @@ import datasets
 import numpy as np
 import pandas as pd
 import timesfm
+import torch
 from gluonts.transform import LastValueImputation
 
 import fev
+
+torch.set_float32_matmul_precision("high")
 
 TIMESFM_MODEL_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
@@ -69,12 +72,12 @@ def predict_with_model(
     model_name: str = "google/timesfm-2.5-200m-pytorch",
     batch_size: int = 256,
     context_length: int = 16_000,
+    per_core_batch_size: int = 64,
 ) -> tuple[list[datasets.DatasetDict], float, dict]:
     context_length = min(context_length, max([len(t) for t in task.load_full_dataset()[task.timestamp_column]]))
     print(f"Setting context_length={context_length}")
 
-    model = timesfm.TimesFM_2p5_200M_torch()
-    model.load_checkpoint(hf_repo_id=model_name)
+    model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(model_name)
     model_hparams = dict(
         max_context=context_length,
         max_horizon=task.horizon,
@@ -83,6 +86,7 @@ def predict_with_model(
         force_flip_invariance=True,
         infer_is_positive=True,
         fix_quantile_crossing=True,
+        per_core_batch_size=per_core_batch_size,
     )
     model.compile(timesfm.ForecastConfig(**model_hparams))
 
