@@ -14,7 +14,7 @@ torch.set_float32_matmul_precision("high")
 TIMESFM_MODEL_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 
-def batchify(lst: list, batch_size: int = 32):
+def batchify(lst: list, batch_size: int):
     """Convert list into batches of desired size."""
     for i in range(0, len(lst), batch_size):
         yield lst[i : i + batch_size]
