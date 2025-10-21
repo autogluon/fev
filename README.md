@@ -1,6 +1,6 @@
 <div align="center">
 
-# fev: Forecast EValuation library
+# fev
 
 [![preprint](https://img.shields.io/static/v1?label=Paper&message=2509.26468&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2509.26468)
 [![fev-bench](https://img.shields.io/badge/%F0%9F%8F%86%20fev--bench-Leaderboard-0078D4)](https://huggingface.co/spaces/autogluon/fev-leaderboard)
@@ -10,7 +10,7 @@
 
 </div>
 
-A lightweight library that makes it easy to benchmark time series forecasting models.
+`fev` (Forecast EValuation library) is a lightweight package that makes it easy to benchmark time series forecasting models.
 
 - Extensible: Easy to define your own forecasting tasks and benchmarks.
 - Reproducible: Ensures that the results obtained by different users are comparable.
