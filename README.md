@@ -1,6 +1,6 @@
 <div align="center">
 
-# fev: Forecast EValuation Library
+# fev: Forecast EValuation library
 
 [![preprint](https://img.shields.io/static/v1?label=Paper&message=2509.26468&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2509.26468)
 [![fev-bench](https://img.shields.io/badge/%F0%9F%93%8A%20fev--bench-Leaderboard-0078D4)](https://github.com/autogluon/fev)
