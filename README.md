@@ -1,4 +1,15 @@
-# fev
+<div align="center">
+
+# fev: Forecast EValuation Library
+
+[![preprint](https://img.shields.io/static/v1?label=Paper&message=2509.26468&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2509.26468)
+[![fev-bench](https://img.shields.io/badge/%F0%9F%93%8A%20fev--bench-Leaderboard-0078D4)](https://github.com/autogluon/fev)
+[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20HF-Chronos_Datasets-FFD21E)](https://huggingface.co/datasets/autogluon/chronos_datasets)
+[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20HF-fev_Datasets-FFD21E)](https://huggingface.co/collections/amazon/chronos-models-65f1791d630a8d57cb718444)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+
+</div>
+
 A lightweight library that makes it easy to benchmark time series forecasting models.
 
 - Extensible: Easy to define your own forecasting tasks and benchmarks.
@@ -126,3 +137,17 @@ Previous results for Chronos Benchmark II are available in [benchmarks/chronos_z
 Repositories with datasets in format compatible with `fev`:
 - [`chronos_datasets`](https://huggingface.co/datasets/autogluon/chronos_datasets)
 - [`fev_datasets`](https://huggingface.co/datasets/autogluon/fev_datasets)
+
+## Citation
+
+If you find this package useful for your research, please consider citing the associated paper(s):
+```
+@article{shchur2025fev,
+  title={{fev-bench}: A Realistic Benchmark for Time Series Forecasting},
+  author={Shchur, Oleksandr and Ansari, Abdul Fatir and Turkmen, Caner and Stella, Lorenzo and Erickson, Nick and Guerron, Pablo and Bohlke-Schneider, Michael and Wang, Yuyang},
+  year={2025},
+  eprint={2509.26468},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG}
+}
+```
