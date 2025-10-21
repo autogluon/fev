@@ -5,7 +5,7 @@
 [![preprint](https://img.shields.io/static/v1?label=Paper&message=2509.26468&color=B31B1B&logo=arXiv)](https://arxiv.org/abs/2509.26468)
 [![fev-bench](https://img.shields.io/badge/%F0%9F%8F%86%20fev--bench-Leaderboard-0078D4)](https://huggingface.co/spaces/autogluon/fev-leaderboard)
 [![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20HF-Chronos_Datasets-FFD21E)](https://huggingface.co/datasets/autogluon/chronos_datasets)
-[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20HF-fev_Datasets-FFD21E)](https://huggingface.co/collections/amazon/chronos-models-65f1791d630a8d57cb718444)
+[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20HF-fev_Datasets-FFD21E)](https://huggingface.co/datasets/autogluon/fev_datasets)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </div>
