@@ -1170,7 +1170,7 @@ stack-data==0.6.3
     # via ipython
 stanio==0.5.1
     # via cmdstanpy
-starlette==0.47.2
+starlette==0.49.1
     # via
     #   mcp
     #   pydantic-ai-slim
