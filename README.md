@@ -127,11 +127,7 @@ Examples of model implementations compatible with `fev` are available in [`examp
 
 
 ## 🏅 Leaderboards
-We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-leaderboard. A mirror of the leaderboard is available at https://huggingface.co/spaces/autogluon/fev-leaderboard-mirror.
-
-This leaderboard includes results for the benchmark from [fev-bench: A Realistic Benchmark for Time Series Forecasting](https://arxiv.org/abs/2509.26468).
-
-Previous results for Chronos Benchmark II are available in [benchmarks/chronos_zeroshot/](benchmarks/chronos_zeroshot/).
+We host leaderboards obtained using `fev` under https://huggingface.co/spaces/autogluon/fev-bench. This leaderboard includes results for the benchmark from [fev-bench: A Realistic Benchmark for Time Series Forecasting](https://arxiv.org/abs/2509.26468). Previous results for Chronos Benchmark II are available in [benchmarks/chronos_zeroshot/](benchmarks/chronos_zeroshot/).
 
 ## 📈 Datasets
 Repositories with datasets in format compatible with `fev`:
