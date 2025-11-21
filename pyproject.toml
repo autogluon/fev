@@ -13,7 +13,7 @@ license = { file = "LICENSE" }
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
-    "datasets[s3]>=2.15,<4.0",
+    "datasets[s3]>=2.15,<5.0",
     "pydantic~=2.0",
     "numpy",
     "scipy",
