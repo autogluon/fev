@@ -1025,7 +1025,7 @@ pyzmq==27.0.0
     #   jupyter-client
     #   jupyter-console
     #   jupyter-server
-ray==2.49.0
+ray==2.52.0
     # via neuralforecast
 referencing==0.36.2
     # via
