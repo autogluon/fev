@@ -230,7 +230,7 @@ fire==0.7.0
     # via timecopilot
 flask==3.1.2
     # via dash
-fonttools==4.59.0
+fonttools==4.61.0
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
