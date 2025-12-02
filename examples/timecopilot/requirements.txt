@@ -509,7 +509,7 @@ matplotlib-inline==0.1.7
     # via
     #   ipykernel
     #   ipython
-mcp==1.12.2
+mcp==1.23.0
     # via pydantic-ai-slim
 mdurl==0.1.2
     # via markdown-it-py
