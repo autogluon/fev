@@ -415,11 +415,14 @@ def slice_sequence_columns(
     if isinstance(cutoff, str):
         timestamps_col = table[timestamp_column].combine_chunks()
         offsets = timestamps_col.offsets.to_numpy()
+        lengths = np.diff(offsets)
         cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
         cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
     else:
-        offsets = table[columns_to_slice[0]].combine_chunks().offsets.to_numpy()
-        cutoff_indices = np.full(len(table), cutoff, dtype=np.int64)
+        timestamps_col = table[timestamp_column].combine_chunks()
+        offsets = timestamps_col.offsets.to_numpy()
+        lengths = np.diff(offsets)
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
 
     if horizon is not None:
         start_indices = cutoff_indices
@@ -428,13 +431,12 @@ def slice_sequence_columns(
         start_indices = cutoff_indices - max_context_length if max_context_length else None
         end_indices = cutoff_indices
 
-    lengths = np.diff(offsets)
     slice_start = (
         np.zeros(len(table), dtype=np.int64)
         if start_indices is None
-        else np.clip(np.where(start_indices >= 0, start_indices, lengths + start_indices), 0, lengths)
+        else np.clip(start_indices, 0, lengths).astype(np.int64)
     )
-    slice_end = np.clip(np.where(end_indices >= 0, end_indices, lengths + end_indices), 0, lengths)
+    slice_end = np.clip(end_indices, 0, lengths).astype(np.int64)
     valid = slice_start < slice_end
 
     events = np.zeros(offsets[-1] + 1, dtype=np.int8)
