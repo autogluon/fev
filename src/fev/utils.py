@@ -4,7 +4,9 @@ from collections import defaultdict
 
 import datasets
 import multiprocess as mp
+import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
@@ -15,6 +17,8 @@ __all__ = [
     "validate_time_series_dataset",
     "generate_univariate_targets_from_multivariate",
     "combine_univariate_predictions_to_multivariate",
+    "filter_short_series",
+    "slice_sequence_columns",
 ]
 
 
@@ -325,3 +329,129 @@ def combine_univariate_predictions_to_multivariate(
     for i, col in enumerate(target_columns):
         prediction_dict[col] = predictions.select(range(i, len(predictions), len(target_columns)))
     return datasets.DatasetDict(prediction_dict)
+
+
+def filter_short_series(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    min_context_length: int,
+    horizon: int,
+) -> datasets.Dataset:
+    """Filter time series that don't have sufficient data before and after the cutoff.
+
+    Uses vectorized operations to efficiently filter series based on minimum required
+    context length before cutoff and horizon length after cutoff.
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to filter.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    min_context_length
+        Minimum required observations before cutoff.
+    horizon
+        Minimum required observations after cutoff.
+
+    Returns
+    -------
+    datasets.Dataset
+        Filtered dataset containing only series with sufficient data.
+    """
+    table = dataset.data.table
+    timestamps_col = table[timestamp_column].combine_chunks()
+    offsets = timestamps_col.offsets.to_numpy()
+    lengths = np.diff(offsets)
+
+    if isinstance(cutoff, str):
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
+        before_count = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
+        after_count = lengths - before_count
+    else:
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+        before_count = np.clip(cutoff_indices, 0, lengths)
+        after_count = lengths - before_count
+
+    valid = (before_count >= min_context_length) & (after_count >= horizon)
+    return dataset.select(np.where(valid)[0])
+
+
+def slice_sequence_columns(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    max_context_length: int | None = None,
+    horizon: int | None = None,
+) -> datasets.Dataset:
+    """Slice all Sequence columns in dataset to extract data before or after cutoff.
+
+    Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
+    (when max_context_length is provided) or future data (when horizon is provided).
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to slice.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    max_context_length
+        Maximum observations to include before cutoff. If None, includes all data before cutoff.
+    horizon
+        Number of observations to include after cutoff. If None, extracts past data instead.
+
+    Returns
+    -------
+    datasets.Dataset
+        Dataset with all Sequence columns sliced to specified range.
+    """
+    table = dataset.data.table
+    columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+
+    if isinstance(cutoff, str):
+        timestamps_col = table[timestamp_column].combine_chunks()
+        offsets = timestamps_col.offsets.to_numpy()
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
+        cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
+    else:
+        offsets = table[columns_to_slice[0]].combine_chunks().offsets.to_numpy()
+        cutoff_indices = np.full(len(table), cutoff, dtype=np.int64)
+
+    if horizon is not None:
+        start_indices = cutoff_indices
+        end_indices = cutoff_indices + horizon
+    else:
+        start_indices = cutoff_indices - max_context_length if max_context_length else None
+        end_indices = cutoff_indices
+
+    lengths = np.diff(offsets)
+    slice_start = (
+        np.zeros(len(table), dtype=np.int64)
+        if start_indices is None
+        else np.clip(np.where(start_indices >= 0, start_indices, lengths + start_indices), 0, lengths)
+    )
+    slice_end = np.clip(np.where(end_indices >= 0, end_indices, lengths + end_indices), 0, lengths)
+    valid = slice_start < slice_end
+
+    events = np.zeros(offsets[-1] + 1, dtype=np.int8)
+    events[offsets[:-1][valid] + slice_start[valid]] = 1
+    events[offsets[:-1][valid] + slice_end[valid]] = -1
+    mask = np.cumsum(events)[:-1].astype(bool)
+    new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
+
+    new_columns = {}
+    for col_name in table.column_names:
+        if col_name in columns_to_slice:
+            list_array = table[col_name].combine_chunks()
+            new_columns[col_name] = pa.ListArray.from_arrays(
+                pa.array(new_offsets, type=pa.int32()),
+                pa.array(list_array.values.to_numpy(zero_copy_only=False)[mask], type=list_array.values.type),
+            )
+        else:
+            new_columns[col_name] = table[col_name]
+
+    return datasets.Dataset(pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint())

@@ -14,7 +14,6 @@ from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
-from .arrow_slice import filter_short_series, slice_sequence_columns
 from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import Metric, get_metric
 
@@ -57,15 +56,10 @@ class EvaluationWindow:
     def __post_init__(self):
         self._dataset_dict: datasets.DatasetDict | None = None
 
-    def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
+    def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
         To convert the input data to a different format, use [`fev.convert_input_data`][fev.convert_input_data].
-
-        Parameters
-        ----------
-        num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use when splitting the dataset.
 
         Returns
         -------
@@ -81,23 +75,18 @@ class EvaluationWindow:
             Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+            self._dataset_dict = self._prepare_dataset_dict()
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
-    def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
+    def get_ground_truth(self) -> datasets.Dataset:
         """Get ground truth future test data.
 
         **This data should never be provided to the model!**
 
         This is a convenience method that exists for debugging and additional evaluation.
-
-        Parameters
-        ----------
-        num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use when splitting the dataset.
         """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+            self._dataset_dict = self._prepare_dataset_dict()
         return self._dataset_dict[TEST]
 
     def compute_metrics(
@@ -149,7 +138,7 @@ class EvaluationWindow:
         fewer than `horizon` observations after `cutoff`.
         """
         num_items_before = len(dataset)
-        filtered_dataset = filter_short_series(
+        filtered_dataset = utils.filter_short_series(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
@@ -171,7 +160,7 @@ class EvaluationWindow:
             )
         return filtered_dataset
 
-    def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
+    def _prepare_dataset_dict(self) -> datasets.DatasetDict:
         dataset = self.full_dataset.select_columns(
             [self.id_column, self.timestamp_column]
             + self.target_columns
@@ -181,13 +170,13 @@ class EvaluationWindow:
         )
         dataset = self._filter_short_series(dataset)
 
-        past_data = slice_sequence_columns(
+        past_data = utils.slice_sequence_columns(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
             max_context_length=self.max_context_length,
         )
-        future_data = slice_sequence_columns(
+        future_data = utils.slice_sequence_columns(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
