@@ -454,4 +454,6 @@ def slice_sequence_columns(
         else:
             new_columns[col_name] = table[col_name]
 
-    return datasets.Dataset(pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint())
+    return datasets.Dataset(
+        pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint()
+    ).with_format(dataset.format["type"])
