@@ -14,6 +14,7 @@ from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
+from .arrow_slice import slice_sequence_columns
 from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import Metric, get_metric
 
@@ -187,30 +188,21 @@ class EvaluationWindow:
             + self.static_columns
         )
         dataset = self._filter_short_series(dataset, num_proc=num_proc)
-        columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
-        past_data = dataset.map(
-            _select_past,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                max_context_length=self.max_context_length,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting past data",
+
+        past_data = slice_sequence_columns(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            start_offset=-self.max_context_length if self.max_context_length else None,
+        )
+        future_data = slice_sequence_columns(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            start_offset=0,
+            length=self.horizon,
         )
 
-        future_data = dataset.map(
-            _select_future,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                horizon=self.horizon,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting future data",
-        )
         future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
         test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
