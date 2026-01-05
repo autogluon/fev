@@ -193,14 +193,13 @@ class EvaluationWindow:
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
-            start_offset=-self.max_context_length if self.max_context_length else None,
+            max_context_length=self.max_context_length,
         )
         future_data = slice_sequence_columns(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
-            start_offset=0,
-            length=self.horizon,
+            horizon=self.horizon,
         )
 
         future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
