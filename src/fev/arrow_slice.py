@@ -18,23 +18,17 @@ def slice_sequence_columns(
     if isinstance(cutoff, str):
         timestamps_col = table[timestamp_column].combine_chunks()
         offsets = timestamps_col.offsets.to_numpy()
-        timestamps_flat = timestamps_col.values.to_numpy()
-        cutoff_ts = np.datetime64(cutoff)
-        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= cutoff_ts)])
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
         end_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
     else:
         offsets = table[columns_to_slice[0]].combine_chunks().offsets.to_numpy()
         end_indices = np.full(len(table), cutoff, dtype=np.int64)
 
-    if start_offset is not None:
-        start_indices = end_indices + start_offset
-    else:
-        start_indices = None
-
+    start_indices = end_indices + start_offset if start_offset is not None else None
     if length is not None:
-        end_indices = (start_indices if start_indices is not None else np.zeros(len(table), dtype=np.int64)) + length
+        end_indices = (start_indices if start_indices is not None else 0) + length
 
-    # Compute slice bounds once for all columns
+    # Compute slice bounds
     lengths = np.diff(offsets)
     slice_start = (
         np.zeros(len(table), dtype=np.int64)
@@ -44,24 +38,23 @@ def slice_sequence_columns(
     slice_end = np.clip(np.where(end_indices >= 0, end_indices, lengths + end_indices), 0, lengths)
     valid = slice_start < slice_end
 
-    # Compute mask once using cumsum trick
+    # Compute mask using cumsum trick
     events = np.zeros(offsets[-1] + 1, dtype=np.int8)
-    events[offsets[:-1][valid] + slice_start[valid]] += 1
-    events[offsets[:-1][valid] + slice_end[valid]] -= 1
+    events[offsets[:-1][valid] + slice_start[valid]] = 1
+    events[offsets[:-1][valid] + slice_end[valid]] = -1
     mask = np.cumsum(events)[:-1].astype(bool)
-    new_lengths = np.where(valid, slice_end - slice_start, 0)
-    new_offsets = np.concatenate([[0], np.cumsum(new_lengths)])
+    new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
 
     # Apply mask to all columns
     new_columns = {}
     for col_name in table.column_names:
-        if col_name not in columns_to_slice:
-            new_columns[col_name] = table[col_name]
-        else:
+        if col_name in columns_to_slice:
             list_array = table[col_name].combine_chunks()
-            values = list_array.values.to_numpy()[mask]
             new_columns[col_name] = pa.ListArray.from_arrays(
-                pa.array(new_offsets, type=pa.int32()), pa.array(values, type=list_array.values.type)
+                pa.array(new_offsets, type=pa.int32()),
+                pa.array(list_array.values.to_numpy()[mask], type=list_array.values.type),
             )
+        else:
+            new_columns[col_name] = table[col_name]
 
     return datasets.Dataset(pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint())
