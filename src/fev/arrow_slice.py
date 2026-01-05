@@ -3,6 +3,32 @@ import numpy as np
 import pyarrow as pa
 
 
+def filter_short_series(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    min_context_length: int,
+    horizon: int,
+) -> datasets.Dataset:
+    """Vectorized filtering of time series that are too short."""
+    table = dataset.data.table
+    timestamps_col = table[timestamp_column].combine_chunks()
+    offsets = timestamps_col.offsets.to_numpy()
+    lengths = np.diff(offsets)
+
+    if isinstance(cutoff, str):
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
+        before_count = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
+        after_count = lengths - before_count
+    else:
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+        before_count = np.clip(cutoff_indices, 0, lengths)
+        after_count = lengths - before_count
+
+    valid = (before_count >= min_context_length) & (after_count >= horizon)
+    return dataset.select(np.where(valid)[0])
+
+
 def slice_sequence_columns(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -11,7 +37,7 @@ def slice_sequence_columns(
     horizon: int | None = None,
 ) -> datasets.Dataset:
     """Fast slicing of Sequence columns using vectorized PyArrow operations.
-    
+
     Selects data before cutoff (if max_context_length is provided) or after cutoff (if horizon is provided).
     """
     table = dataset.data.table
@@ -39,7 +65,11 @@ def slice_sequence_columns(
 
     # Compute slice bounds
     lengths = np.diff(offsets)
-    slice_start = np.zeros(len(table), dtype=np.int64) if start_indices is None else np.clip(np.where(start_indices >= 0, start_indices, lengths + start_indices), 0, lengths)
+    slice_start = (
+        np.zeros(len(table), dtype=np.int64)
+        if start_indices is None
+        else np.clip(np.where(start_indices >= 0, start_indices, lengths + start_indices), 0, lengths)
+    )
     slice_end = np.clip(np.where(end_indices >= 0, end_indices, lengths + end_indices), 0, lengths)
     valid = slice_start < slice_end
 
