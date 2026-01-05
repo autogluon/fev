@@ -44,6 +44,7 @@ RESULTS_DTYPES = {
     "training_time_s": float,
     "trained_on_this_dataset": pd.BooleanDtype(),
     "inference_time_s": float,
+    "num_forecasts": pd.Int64Dtype(),
     "fev_version": pd.StringDtype(),
 }
 
@@ -233,6 +234,7 @@ def leaderboard(
     leakage_imputation_model: str | None = None,
     n_resamples: int | None = None,
     seed: int = 123,
+    normalize_time_per_n_forecasts: int | None = 100,
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
 
@@ -267,6 +269,8 @@ def leaderboard(
         Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
+    normalize_time_per_n_forecasts : int | None, default 100
+        Normalize training and inference times per this many series. If None, no normalization is performed.
 
     Returns
     -------
@@ -279,8 +283,8 @@ def leaderboard(
         - `skill_score`: Skill score (1 - geometric mean relative error)
         - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
         - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
-        - `median_training_time_s`: Median training time across tasks
-        - `median_inference_time_s`: Median inference time across tasks
+        - `median_training_time_s`: Median training time across tasks (normalized if `normalize_time_per_n_forecasts` is set)
+        - `median_inference_time_s`: Median inference time across tasks (normalized if `normalize_time_per_n_forecasts` is set)
         - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
@@ -291,6 +295,18 @@ def leaderboard(
     training_time_df = pivot_table(summaries, metric_column="training_time_s")
     inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
     training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+
+    if normalize_time_per_n_forecasts is not None:
+        num_forecasts_df = pivot_table(summaries, metric_column="num_forecasts")
+        if num_forecasts_df.isna().any().any():
+            raise ValueError(
+                "Column 'num_forecasts' is missing for some summaries. "
+                "All summaries must include 'num_forecasts' to compute normalized times. "
+                "Please regenerate summaries using the latest version of fev."
+            )
+        training_time_df = training_time_df / num_forecasts_df * normalize_time_per_n_forecasts
+        inference_time_df = inference_time_df / num_forecasts_df * normalize_time_per_n_forecasts
+
     if leakage_imputation_model is not None:
         errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
     errors_df = errors_df.clip(lower=min_relative_error, upper=max_relative_error)
