@@ -376,7 +376,9 @@ def filter_short_series(
         after_count = lengths - before_count
 
     valid = (before_count >= min_context_length) & (after_count >= horizon)
-    return dataset.select(np.where(valid)[0])
+    # flatten_indices ensures that the arrow table is updated after filtering and we are not just working with a view.
+    # This is required for slice_sequence_columns to work correctly
+    return dataset.select(np.where(valid)[0]).flatten_indices()
 
 
 def slice_sequence_columns(
@@ -456,6 +458,10 @@ def slice_sequence_columns(
         else:
             new_columns[col_name] = table[col_name]
 
-    return datasets.Dataset(
+    # Use random fingerprint to avoid (very expensive) fingerprint recomputation.
+    # This has no effect since the dataset is stored in memory (not memmapped from arrow on disk)
+    new_dataset = datasets.Dataset(
         pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint()
-    ).with_format(dataset.format["type"])
+    )
+    # Use the same format as the original dataset
+    return new_dataset.with_format(dataset.format["type"])
