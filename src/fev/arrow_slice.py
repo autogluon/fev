@@ -52,7 +52,7 @@ def slice_sequence_columns(
             list_array = table[col_name].combine_chunks()
             new_columns[col_name] = pa.ListArray.from_arrays(
                 pa.array(new_offsets, type=pa.int32()),
-                pa.array(list_array.values.to_numpy()[mask], type=list_array.values.type),
+                pa.array(list_array.values.to_numpy(zero_copy_only=False)[mask], type=list_array.values.type),
             )
         else:
             new_columns[col_name] = table[col_name]
