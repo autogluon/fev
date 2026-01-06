@@ -234,7 +234,7 @@ def leaderboard(
     leakage_imputation_model: str | None = None,
     n_resamples: int | None = None,
     seed: int = 123,
-    normalize_time_per_n_forecasts: int | None = 100,
+    normalize_time_per_n_forecasts: int | None = None,
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
 
@@ -297,15 +297,15 @@ def leaderboard(
     training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
 
     if normalize_time_per_n_forecasts is not None:
-        num_forecasts_df = pivot_table(summaries, metric_column="num_forecasts")
-        if num_forecasts_df.isna().any().any():
+        num_forecasts_df = pivot_table(summaries, metric_column="num_forecasts").astype(pd.Int64Dtype())
+        if not (num_forecasts_df.nunique(axis=1, dropna=True) == 1).all():
             raise ValueError(
-                "Column 'num_forecasts' is missing for some summaries. "
-                "All summaries must include 'num_forecasts' to compute normalized times. "
-                "Please regenerate summaries using the latest version of fev."
+                "Column 'num_forecasts' has inconsistent values across models for the same task. "
+                "This indicates corrupted evaluation summaries."
             )
-        training_time_df = training_time_df / num_forecasts_df * normalize_time_per_n_forecasts
-        inference_time_df = inference_time_df / num_forecasts_df * normalize_time_per_n_forecasts
+        num_forecasts = num_forecasts_df.bfill(axis=1).iloc[:, 0]
+        training_time_df = training_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
+        inference_time_df = inference_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
 
     if leakage_imputation_model is not None:
         errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
