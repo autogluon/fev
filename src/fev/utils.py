@@ -361,6 +361,9 @@ def filter_short_series(
     datasets.Dataset
         Filtered dataset containing only series with sufficient data.
     """
+    # Materialize indices if present to ensure underlying table matches logical order
+    if getattr(dataset, "_indices", None) is not None:
+        dataset = dataset.flatten_indices(keep_in_memory=True)
     table = dataset.data.table
     timestamps_col = table[timestamp_column].combine_chunks()
     offsets = timestamps_col.offsets.to_numpy()
@@ -376,9 +379,11 @@ def filter_short_series(
         after_count = lengths - before_count
 
     valid = (before_count >= min_context_length) & (after_count >= horizon)
+    if valid.all():
+        return dataset
     # flatten_indices ensures that the arrow table is updated after filtering and we are not just working with a view.
     # This is required for slice_sequence_columns to work correctly
-    return dataset.select(np.where(valid)[0]).flatten_indices()
+    return dataset.select(np.where(valid)[0]).flatten_indices(keep_in_memory=True)
 
 
 def slice_sequence_columns(
@@ -411,19 +416,20 @@ def slice_sequence_columns(
     datasets.Dataset
         Dataset with all Sequence columns sliced to specified range.
     """
+    # Materialize indices if present to ensure underlying table matches logical order
+    if dataset._indices is not None:
+        dataset = dataset.flatten_indices(keep_in_memory=True)
     table = dataset.data.table
     columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
 
+    timestamps_col = table[timestamp_column].combine_chunks()
+    offsets = timestamps_col.offsets.to_numpy()
+    lengths = np.diff(offsets)
+
     if isinstance(cutoff, str):
-        timestamps_col = table[timestamp_column].combine_chunks()
-        offsets = timestamps_col.offsets.to_numpy()
-        lengths = np.diff(offsets)
         cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
         cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
     else:
-        timestamps_col = table[timestamp_column].combine_chunks()
-        offsets = timestamps_col.offsets.to_numpy()
-        lengths = np.diff(offsets)
         cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
 
     if horizon is not None:
