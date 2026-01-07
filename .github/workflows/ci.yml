@@ -38,6 +38,6 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install ".[test]" -f https://download.pytorch.org/whl/cpu/torch_stable.html
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install ".[test]"
       - name: Test with pytest
         run: pytest test
