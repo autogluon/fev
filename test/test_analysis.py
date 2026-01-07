@@ -119,15 +119,20 @@ def test_when_leaderboard_called_with_num_forecasts_then_times_are_normalized(
         # model_a: task1 = 10/100*N=0.1N, task2 = 30/200*N=0.15N -> median = 0.125N
         expected_training = 0.125 * normalize_time_per_n_forecasts
         expected_inference = 0.0625 * normalize_time_per_n_forecasts  # median(5/100, 15/200) = median(0.05, 0.075)
-        assert result.loc["model_a", "median_training_time_s"] == expected_training
-        assert result.loc["model_a", "median_inference_time_s"] == expected_inference
+        time_suffix = "" if normalize_time_per_n_forecasts is None else f"_per{normalize_time_per_n_forecasts}"
+        assert result.loc["model_a", "median_training_time_s" + time_suffix] == expected_training
+        assert result.loc["model_a", "median_inference_time_s" + time_suffix] == expected_inference
 
 
 def test_when_leaderboard_called_with_partial_num_forecasts_then_bfill_works(mock_summaries):
     mock_summaries.loc[mock_summaries["model_name"] == "model_b", "num_forecasts"] = None
-    result = fev.leaderboard(mock_summaries.head(2), baseline_model="model_b", normalize_time_per_n_forecasts=100)
-    assert result.loc["model_a", "median_training_time_s"] == 10.0
-    assert result.loc["model_b", "median_training_time_s"] == 20.0
+    normalize_time_per_n_forecasts = 100
+    result = fev.leaderboard(
+        mock_summaries.head(2), baseline_model="model_b", normalize_time_per_n_forecasts=normalize_time_per_n_forecasts
+    )
+    time_suffix = f"_per{normalize_time_per_n_forecasts}"
+    assert result.loc["model_a", "median_training_time_s" + time_suffix] == 10.0
+    assert result.loc["model_b", "median_training_time_s" + time_suffix] == 20.0
 
 
 def test_when_leaderboard_called_with_inconsistent_num_forecasts_then_raises(mock_summaries):

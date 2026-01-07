@@ -889,7 +889,7 @@ class Task:
         for predictions, window in zip(predictions_per_window, self.iter_windows(), strict=True):
             cleaned_predictions = self.clean_and_validate_predictions(predictions)
             # Count total forecasts: num_items * num_target_columns (per window)
-            num_forecasts += len(next(iter(cleaned_predictions.values()))) * len(cleaned_predictions)
+            num_forecasts += len(cleaned_predictions) * len(next(iter(cleaned_predictions.values())))
             metric_scores = window.compute_metrics(
                 cleaned_predictions,
                 metrics=metrics,
