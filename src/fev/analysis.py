@@ -269,8 +269,10 @@ def leaderboard(
         Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
-    normalize_time_per_n_forecasts : int | None, default 100
-        Normalize training and inference times per this many series. If None, no normalization is performed.
+    normalize_time_per_n_forecasts : int, optional
+        If set, rescale each task's runtime to represent the time for this many forecasts (by dividing by the task's
+        num_forecasts and multiplying by this value). Inference and training time column names will have suffix `"_per{value}"` added.
+        If None, no normalization is performed.
 
     Returns
     -------
@@ -283,8 +285,8 @@ def leaderboard(
         - `skill_score`: Skill score (1 - geometric mean relative error)
         - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
         - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
-        - `median_training_time_s`: Median training time across tasks (normalized if `normalize_time_per_n_forecasts` is set)
-        - `median_inference_time_s`: Median inference time across tasks (normalized if `normalize_time_per_n_forecasts` is set)
+        - `median_training_time_s`: Median training time across tasks. If `normalize_time_per_n_forecasts` is set, each task's time normalized by `num_forecasts` before taking the median
+        - `median_inference_time_s`: Median inference time across tasks. If `normalize_time_per_n_forecasts` is set, each task's time normalized by `num_forecasts` before taking the median
         - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
@@ -303,6 +305,9 @@ def leaderboard(
                 "Column 'num_forecasts' has inconsistent values across models for the same task. "
                 "This indicates corrupted evaluation summaries."
             )
+        # num_forecasts is per-task (not per-model), so all models should report the same value.
+        # Some models may have NaN (old fev versions). Use bfill to propagate non-NaN values across
+        # columns, then extract first column to get a Series with one num_forecasts per task.
         num_forecasts = num_forecasts_df.bfill(axis=1).iloc[:, 0]
         training_time_df = training_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
         inference_time_df = inference_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
@@ -358,7 +363,7 @@ def leaderboard(
         )
     if normalize_time_per_n_forecasts is not None:
         result_df = result_df.rename(
-            {
+            columns={
                 col: col + f"_per{int(normalize_time_per_n_forecasts)}"
                 for col in ["median_training_time_s", "median_inference_time_s"]
             }
