@@ -46,6 +46,10 @@ test = [
     "nbformat",
     "nbconvert",
     "jupyter",
+    # Pin these versions to simplify dependency resolution for pip
+    "aiobotocore==2.26.0",
+    "botocore==1.41.5",
+    "boto3==1.41.5",
 ]
 
 [build-system]
