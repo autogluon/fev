@@ -11,7 +11,8 @@ notebook_files = [
         "01-quickstart.ipynb",
         "02-dataset-format.ipynb",
         "03-tasks-and-benchmarks.ipynb",
-        "04-models.ipynb",
+        "04-adapters.ipynb",
+        "05-add-your-model.ipynb",
     ]
 ]
 

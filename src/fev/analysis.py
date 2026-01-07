@@ -359,7 +359,7 @@ def leaderboard(
     if normalize_time_per_n_forecasts is not None:
         result_df = result_df.rename(
             {
-                col: col + f"_per{normalize_time_per_n_forecasts}"
+                col: col + f"_per{int(normalize_time_per_n_forecasts)}"
                 for col in ["median_training_time_s", "median_inference_time_s"]
             }
         )
