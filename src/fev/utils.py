@@ -4,7 +4,9 @@ from collections import defaultdict
 
 import datasets
 import multiprocess as mp
+import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
@@ -15,6 +17,8 @@ __all__ = [
     "validate_time_series_dataset",
     "generate_univariate_targets_from_multivariate",
     "combine_univariate_predictions_to_multivariate",
+    "filter_short_series",
+    "slice_sequence_columns",
 ]
 
 
@@ -325,3 +329,141 @@ def combine_univariate_predictions_to_multivariate(
     for i, col in enumerate(target_columns):
         prediction_dict[col] = predictions.select(range(i, len(predictions), len(target_columns)))
     return datasets.DatasetDict(prediction_dict)
+
+
+def filter_short_series(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    min_context_length: int,
+    horizon: int,
+) -> datasets.Dataset:
+    """Filter time series that don't have sufficient data before and after the cutoff.
+
+    Uses vectorized operations to efficiently filter series based on minimum required
+    context length before cutoff and horizon length after cutoff.
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to filter.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    min_context_length
+        Minimum required observations before cutoff.
+    horizon
+        Minimum required observations after cutoff.
+
+    Returns
+    -------
+    datasets.Dataset
+        Filtered dataset containing only series with sufficient data.
+    """
+    # Use numpy format to get clean access to columns without worrying about internal indices
+    dataset_np = dataset.with_format("numpy")
+    timestamps_list = dataset_np[timestamp_column]
+    lengths = np.array([len(ts) for ts in timestamps_list])
+
+    if isinstance(cutoff, str):
+        timestamps_flat = np.concatenate(timestamps_list)
+        offsets = np.concatenate([[0], np.cumsum(lengths)])
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
+        before_count = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
+        after_count = lengths - before_count
+    else:
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+        before_count = np.clip(cutoff_indices, 0, lengths)
+        after_count = lengths - before_count
+
+    valid = (before_count >= min_context_length) & (after_count >= horizon)
+    if valid.all():
+        return dataset
+    return dataset.select(np.where(valid)[0])
+
+
+def slice_sequence_columns(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    max_context_length: int | None = None,
+    horizon: int | None = None,
+) -> datasets.Dataset:
+    """Slice all Sequence columns in dataset to extract data before or after cutoff.
+
+    Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
+    (when max_context_length is provided) or future data (when horizon is provided).
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to slice.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    max_context_length
+        Maximum observations to include before cutoff. If None, includes all data before cutoff.
+    horizon
+        Number of observations to include after cutoff. If None, extracts past data instead.
+
+    Returns
+    -------
+    datasets.Dataset
+        Dataset with all Sequence columns sliced to specified range.
+    """
+    # Use numpy format to get clean access to columns without worrying about internal indices
+    dataset = dataset.with_format("numpy")
+    columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+
+    timestamps_list = dataset[timestamp_column]
+    lengths = np.array([len(ts) for ts in timestamps_list])
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
+
+    if isinstance(cutoff, str):
+        timestamps_flat = np.concatenate(timestamps_list)
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
+        cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
+    else:
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+
+    if horizon is not None:
+        start_indices = cutoff_indices
+        end_indices = cutoff_indices + horizon
+    else:
+        start_indices = cutoff_indices - max_context_length if max_context_length else None
+        end_indices = cutoff_indices
+
+    slice_start = (
+        np.zeros(len(dataset), dtype=np.int64)
+        if start_indices is None
+        else np.clip(start_indices, 0, lengths).astype(np.int64)
+    )
+    slice_end = np.clip(end_indices, 0, lengths).astype(np.int64)
+    valid = slice_start < slice_end
+
+    events = np.zeros(offsets[-1] + 1, dtype=np.int8)
+    events[offsets[:-1][valid] + slice_start[valid]] = 1
+    events[offsets[:-1][valid] + slice_end[valid]] = -1
+    mask = np.cumsum(events)[:-1].astype(bool)
+    new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
+
+    new_columns = {}
+    for col_name in dataset.column_names:
+        if col_name in columns_to_slice:
+            col_flat = np.concatenate(dataset[col_name])
+            new_columns[col_name] = pa.ListArray.from_arrays(
+                pa.array(new_offsets, type=pa.int32()),
+                pa.array(col_flat[mask]),
+            )
+        else:
+            new_columns[col_name] = pa.array(dataset[col_name])
+
+    # Use random fingerprint to avoid (very expensive) fingerprint recomputation.
+    # This has no effect since the dataset is stored in memory (not memmapped from arrow on disk)
+    new_dataset = datasets.Dataset(
+        pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint()
+    )
+    # Use the same format as the original dataset
+    return new_dataset.with_format(dataset.format["type"])
