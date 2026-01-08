@@ -361,16 +361,15 @@ def filter_short_series(
     datasets.Dataset
         Filtered dataset containing only series with sufficient data.
     """
-    # Materialize indices if present to ensure underlying table matches logical order
-    if getattr(dataset, "_indices", None) is not None:
-        dataset = dataset.flatten_indices(keep_in_memory=True)
-    table = dataset.data.table
-    timestamps_col = table[timestamp_column].combine_chunks()
-    offsets = timestamps_col.offsets.to_numpy()
-    lengths = np.diff(offsets)
+    # Use numpy format to get clean access to columns without worrying about internal indices
+    dataset_np = dataset.with_format("numpy")
+    timestamps_list = dataset_np[timestamp_column]
+    lengths = np.array([len(ts) for ts in timestamps_list])
 
     if isinstance(cutoff, str):
-        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
+        timestamps_flat = np.concatenate(timestamps_list)
+        offsets = np.concatenate([[0], np.cumsum(lengths)])
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
         before_count = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
         after_count = lengths - before_count
     else:
@@ -381,9 +380,7 @@ def filter_short_series(
     valid = (before_count >= min_context_length) & (after_count >= horizon)
     if valid.all():
         return dataset
-    # flatten_indices ensures that the arrow table is updated after filtering and we are not just working with a view.
-    # This is required for slice_sequence_columns to work correctly
-    return dataset.select(np.where(valid)[0]).flatten_indices(keep_in_memory=True)
+    return dataset.select(np.where(valid)[0])
 
 
 def slice_sequence_columns(
@@ -416,18 +413,17 @@ def slice_sequence_columns(
     datasets.Dataset
         Dataset with all Sequence columns sliced to specified range.
     """
-    # Materialize indices if present to ensure underlying table matches logical order
-    if dataset._indices is not None:
-        dataset = dataset.flatten_indices(keep_in_memory=True)
-    table = dataset.data.table
+    # Use numpy format to get clean access to columns without worrying about internal indices
+    dataset_np = dataset.with_format("numpy")
     columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
 
-    timestamps_col = table[timestamp_column].combine_chunks()
-    offsets = timestamps_col.offsets.to_numpy()
-    lengths = np.diff(offsets)
+    timestamps_list = dataset_np[timestamp_column]
+    lengths = np.array([len(ts) for ts in timestamps_list])
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
 
     if isinstance(cutoff, str):
-        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_col.values.to_numpy() <= np.datetime64(cutoff))])
+        timestamps_flat = np.concatenate(timestamps_list)
+        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
         cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
     else:
         cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
@@ -440,7 +436,7 @@ def slice_sequence_columns(
         end_indices = cutoff_indices
 
     slice_start = (
-        np.zeros(len(table), dtype=np.int64)
+        np.zeros(len(dataset), dtype=np.int64)
         if start_indices is None
         else np.clip(start_indices, 0, lengths).astype(np.int64)
     )
@@ -454,15 +450,15 @@ def slice_sequence_columns(
     new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
 
     new_columns = {}
-    for col_name in table.column_names:
+    for col_name in dataset.column_names:
         if col_name in columns_to_slice:
-            list_array = table[col_name].combine_chunks()
+            col_flat = np.concatenate(dataset_np[col_name])
             new_columns[col_name] = pa.ListArray.from_arrays(
                 pa.array(new_offsets, type=pa.int32()),
-                pa.array(list_array.values.to_numpy(zero_copy_only=False)[mask], type=list_array.values.type),
+                pa.array(col_flat[mask], type=pa.from_numpy_dtype(col_flat.dtype)),
             )
         else:
-            new_columns[col_name] = table[col_name]
+            new_columns[col_name] = pa.array(dataset_np[col_name])
 
     # Use random fingerprint to avoid (very expensive) fingerprint recomputation.
     # This has no effect since the dataset is stored in memory (not memmapped from arrow on disk)
