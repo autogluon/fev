@@ -330,6 +330,7 @@ def combine_univariate_predictions_to_multivariate(
     return datasets.DatasetDict(prediction_dict)
 
 
+# @line_timing
 def filter_short_series_old(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -372,7 +373,7 @@ def filter_short_series_old(
     )
 
 
-@line_timing
+# @line_timing
 def filter_short_series(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -382,7 +383,7 @@ def filter_short_series(
 ) -> datasets.Dataset:
     """Filter time series that don't have sufficient data before and after the cutoff.
 
-    NEW VERSION: Uses vectorized operations to efficiently filter series based on minimum required
+    Uses vectorized PyArrow operations to efficiently filter series based on minimum required
     context length before cutoff and horizon length after cutoff.
 
     Parameters
@@ -403,30 +404,30 @@ def filter_short_series(
     datasets.Dataset
         Filtered dataset containing only series with sufficient data.
     """
-    # Use numpy format to get clean access to columns without worrying about internal indices
-    dataset_np = dataset.with_format("numpy")
-    timestamps_list = dataset_np[timestamp_column]
-    lengths = np.array([len(ts) for ts in timestamps_list])
+    timestamps_col = dataset.data.table[timestamp_column].combine_chunks()
+    lengths = pc.list_value_length(timestamps_col).to_numpy()
 
+    # Compute cutoff index for each series
     if isinstance(cutoff, str):
-        timestamps_flat = np.concatenate(timestamps_list)
-        offsets = np.concatenate([[0], np.cumsum(lengths)])
-        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
-        before_count = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
-        after_count = lengths - before_count
-    else:
-        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
-        before_count = np.clip(cutoff_indices, 0, lengths)
-        after_count = lengths - before_count
+        timestamps_flat = pc.list_flatten(timestamps_col)
+        cutoff_scalar = pc.cast(pa.scalar(cutoff), timestamps_flat.type)
+        before_mask_int = pc.cast(pc.less_equal(timestamps_flat, cutoff_scalar), pa.int32())
 
-    valid = (before_count >= min_context_length) & (after_count >= horizon)
-    if not valid.all():
-        dataset = dataset.select(np.where(valid)[0])
-    # if getattr(dataset, "_indices", None) is not None:
-    #     dataset = dataset.flatten_indices(num_proc=DEFAULT_NUM_PROC)
+        offsets = np.concatenate([[0], np.cumsum(lengths)])
+        cumsum = np.concatenate([[0], np.cumsum(before_mask_int.to_numpy())])
+        cutoff_indices = cumsum[offsets[1:]] - cumsum[offsets[:-1]]
+    else:
+        cutoff_indices = np.full(len(dataset), cutoff, dtype=np.int64) if cutoff >= 0 else lengths + cutoff
+        cutoff_indices = np.clip(cutoff_indices, 0, lengths)
+
+    # Filter series with sufficient data before and after cutoff
+    valid_mask = (cutoff_indices >= min_context_length) & ((lengths - cutoff_indices) >= horizon)
+    if not np.all(valid_mask):
+        dataset = dataset.select(np.where(valid_mask)[0]).flatten_indices()
     return dataset
 
 
+# @line_timing
 def slice_sequence_columns_old(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -484,7 +485,7 @@ def slice_sequence_columns_old(
         )
 
 
-@line_timing
+# @line_timing
 def slice_sequence_columns(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -494,8 +495,8 @@ def slice_sequence_columns(
 ) -> datasets.Dataset:
     """Slice all Sequence columns in dataset to extract data before or after cutoff.
 
-    NEW VERSION: Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
-    (when max_context_length is provided) or future data (when horizon is provided).
+    Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
+    (when horizon is None) or future data (when horizon is provided).
 
     Parameters
     ----------
@@ -515,63 +516,65 @@ def slice_sequence_columns(
     datasets.Dataset
         Dataset with all Sequence columns sliced to specified range.
     """
-    # Use numpy format to get clean access to columns without worrying about internal indices
-    dataset = dataset.with_format("numpy")
+    table = dataset.data.table
+    timestamps_col = table[timestamp_column].combine_chunks()
     columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+    lengths = pc.list_value_length(timestamps_col).to_numpy()
 
-    timestamps_list = dataset[timestamp_column]
-    lengths = np.array([len(ts) for ts in timestamps_list])
-    offsets = np.concatenate([[0], np.cumsum(lengths)])
-
+    # Compute cutoff index for each series
     if isinstance(cutoff, str):
-        timestamps_flat = np.concatenate(timestamps_list)
-        cumsum_mask = np.concatenate([[0], np.cumsum(timestamps_flat <= np.datetime64(cutoff))])
-        cutoff_indices = cumsum_mask[offsets[1:]] - cumsum_mask[offsets[:-1]]
-    else:
-        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+        timestamps_flat = pc.list_flatten(timestamps_col)
+        cutoff_scalar = pc.cast(pa.scalar(cutoff), timestamps_flat.type)
+        before_mask_int = pc.cast(pc.less_equal(timestamps_flat, cutoff_scalar), pa.int32())
 
+        offsets = np.concatenate([[0], np.cumsum(lengths)])
+        cumsum = np.concatenate([[0], np.cumsum(before_mask_int.to_numpy())])
+        cutoff_indices = cumsum[offsets[1:]] - cumsum[offsets[:-1]]
+    else:
+        cutoff_indices = np.full(len(dataset), cutoff, dtype=np.int64) if cutoff >= 0 else lengths + cutoff
+
+    # Compute slice bounds
     if horizon is not None:
-        start_indices = cutoff_indices
-        end_indices = cutoff_indices + horizon
+        slice_start, slice_end = cutoff_indices, cutoff_indices + horizon
     else:
-        start_indices = cutoff_indices - max_context_length if max_context_length else None
-        end_indices = cutoff_indices
+        if max_context_length is not None:
+            slice_start = cutoff_indices - max_context_length
+        else:
+            slice_start = np.zeros(len(dataset), dtype=np.int64)
+        slice_end = cutoff_indices
 
-    slice_start = (
-        np.zeros(len(dataset), dtype=np.int64)
-        if start_indices is None
-        else np.clip(start_indices, 0, lengths).astype(np.int64)
-    )
-    slice_end = np.clip(end_indices, 0, lengths).astype(np.int64)
-    valid = slice_start < slice_end
+    slice_start = np.clip(slice_start, 0, lengths)
+    slice_end = np.clip(slice_end, 0, lengths)
+    slice_lengths = slice_end - slice_start
 
-    events = np.zeros(offsets[-1] + 1, dtype=np.int8)
-    events[offsets[:-1][valid] + slice_start[valid]] = 1
-    events[offsets[:-1][valid] + slice_end[valid]] = -1
-    mask = np.cumsum(events)[:-1].astype(bool)
-    new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
-
+    # Precompute offsets for vectorized slicing
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
     new_columns = {}
-    import time
 
     for col_name in dataset.column_names:
-        if col_name in columns_to_slice:
-            t0 = time.time()
-            col_flat = np.concatenate(dataset[col_name])
-            print(f"Col {col_name} took {time.time() - t0:.1f}s")
-            new_columns[col_name] = pa.ListArray.from_arrays(
-                pa.array(new_offsets, type=pa.int32()),
-                pa.array(col_flat[mask]),
-            )
-        else:
-            new_columns[col_name] = pa.array(dataset[col_name])
+        col_arrow = table[col_name].combine_chunks()
 
-    # Use random fingerprint to avoid (very expensive) fingerprint recomputation.
-    # This has no effect since the dataset is stored in memory (not memmapped from arrow on disk)
-    new_dataset = datasets.Dataset(
-        pa.table(new_columns), fingerprint=datasets.fingerprint.generate_random_fingerprint()
-    )
-    # Use the same format as the original dataset
+        if col_name in columns_to_slice:
+            col_flat = pc.list_flatten(col_arrow)
+
+            # Build mask using event-based approach: +1 at start, -1 at end
+            events = np.zeros(len(col_flat) + 1, dtype=np.int8)
+            valid = slice_lengths > 0
+            if np.any(valid):
+                global_starts = np.clip(offsets[:-1][valid] + slice_start[valid], 0, len(col_flat))
+                global_ends = np.clip(offsets[:-1][valid] + slice_end[valid], 0, len(col_flat))
+                events[global_starts] = 1
+                events[global_ends] = -1
+
+            mask = np.cumsum(events)[:-1].astype(bool)
+            filtered_values = pc.filter(col_flat, pa.array(mask))
+            new_offsets = np.concatenate([[0], np.cumsum(slice_lengths)])
+            new_columns[col_name] = pa.ListArray.from_arrays(pa.array(new_offsets, type=pa.int32()), filtered_values)
+        else:
+            new_columns[col_name] = col_arrow
+
+    new_table = pa.table(new_columns)
+    new_dataset = datasets.Dataset(new_table, fingerprint=datasets.fingerprint.generate_random_fingerprint())
     return new_dataset.with_format(dataset.format["type"])
 
 

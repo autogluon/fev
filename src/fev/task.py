@@ -16,6 +16,7 @@ from . import utils
 from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import Metric, get_metric
+from .timer import line_timing
 
 # from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
@@ -165,6 +166,7 @@ class EvaluationWindow:
             )
         return filtered_dataset
 
+    # @line_timing
     def _prepare_dataset_dict(self) -> datasets.DatasetDict:
         dataset = self.full_dataset.select_columns(
             [self.id_column, self.timestamp_column]
@@ -694,6 +696,8 @@ class Task:
         if ds.features[self.id_column].dtype != "string":
             ds = ds.cast_column(self.id_column, datasets.Value("string"))
         ds = ds.sort(self.id_column)
+        if getattr(ds, "_indices", None) is not None:
+            ds = ds.flatten_indices(num_proc=num_proc)
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
