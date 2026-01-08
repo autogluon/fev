@@ -448,6 +448,11 @@ def past_future_split(
     tuple[datasets.Dataset, datasets.Dataset]
         Tuple of (past_data, future_data) with sequence columns sliced appropriately.
     """
+    # Flatten indices if dataset has been sorted/filtered, so row order in dataset
+    # matches the physical order in the underlying Arrow table
+    if getattr(dataset, "_indices", None) is not None:
+        dataset = dataset.flatten_indices()
+
     table = dataset.data.table
     timestamps_col = table[timestamp_column].combine_chunks()
     sequence_columns = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
