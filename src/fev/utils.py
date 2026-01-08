@@ -10,7 +10,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
-from .timer import line_timing
 
 __all__ = [
     "convert_long_df_to_hf_dataset",
@@ -18,6 +17,7 @@ __all__ = [
     "validate_time_series_dataset",
     "generate_univariate_targets_from_multivariate",
     "combine_univariate_predictions_to_multivariate",
+    "past_future_split",
 ]
 
 
@@ -330,316 +330,152 @@ def combine_univariate_predictions_to_multivariate(
     return datasets.DatasetDict(prediction_dict)
 
 
-# @line_timing
-def filter_short_series_old(
-    dataset: datasets.Dataset,
-    timestamp_column: str,
-    cutoff: int | str,
-    min_context_length: int,
-    horizon: int,
-) -> datasets.Dataset:
-    """Filter time series that don't have sufficient data before and after the cutoff.
+def _compute_cutoff_indices(
+    timestamps_col: pa.Array, cutoff: int | str, lengths: np.ndarray, offsets: np.ndarray
+) -> np.ndarray:
+    """Compute cutoff index for each time series (number of elements at or before cutoff).
 
-    OLD VERSION: Uses dataset.filter with num_proc.
-
-    Parameters
-    ----------
-    dataset
-        Time series dataset to filter.
-    timestamp_column
-        Name of the column containing timestamps.
-    cutoff
-        Cutoff point as integer index or timestamp string. Negative indices count from end.
-    min_context_length
-        Minimum required observations before cutoff.
-    horizon
-        Minimum required observations after cutoff.
-
-    Returns
-    -------
-    datasets.Dataset
-        Filtered dataset containing only series with sufficient data.
+    For string cutoffs (timestamps), counts elements where timestamp <= cutoff.
+    For integer cutoffs, treats as array index (negative indices count from end).
     """
-    return dataset.filter(
-        _has_enough_past_and_future_observations,
-        fn_kwargs=dict(
-            timestamp_column=timestamp_column,
-            horizon=horizon,
-            cutoff=cutoff,
-            min_context_length=min_context_length,
-        ),
-        num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
-        desc="Filtering short time series",
-    )
-
-
-# @line_timing
-def filter_short_series(
-    dataset: datasets.Dataset,
-    timestamp_column: str,
-    cutoff: int | str,
-    min_context_length: int,
-    horizon: int,
-) -> datasets.Dataset:
-    """Filter time series that don't have sufficient data before and after the cutoff.
-
-    Uses vectorized PyArrow operations to efficiently filter series based on minimum required
-    context length before cutoff and horizon length after cutoff.
-
-    Parameters
-    ----------
-    dataset
-        Time series dataset to filter.
-    timestamp_column
-        Name of the column containing timestamps.
-    cutoff
-        Cutoff point as integer index or timestamp string. Negative indices count from end.
-    min_context_length
-        Minimum required observations before cutoff.
-    horizon
-        Minimum required observations after cutoff.
-
-    Returns
-    -------
-    datasets.Dataset
-        Filtered dataset containing only series with sufficient data.
-    """
-    timestamps_col = dataset.data.table[timestamp_column].combine_chunks()
-    lengths = pc.list_value_length(timestamps_col).to_numpy()
-
-    # Compute cutoff index for each series
     if isinstance(cutoff, str):
         timestamps_flat = pc.list_flatten(timestamps_col)
         cutoff_scalar = pc.cast(pa.scalar(cutoff), timestamps_flat.type)
-        before_mask_int = pc.cast(pc.less_equal(timestamps_flat, cutoff_scalar), pa.int32())
-
-        offsets = np.concatenate([[0], np.cumsum(lengths)])
-        cumsum = np.concatenate([[0], np.cumsum(before_mask_int.to_numpy())])
-        cutoff_indices = cumsum[offsets[1:]] - cumsum[offsets[:-1]]
+        mask = pc.less_equal(timestamps_flat, cutoff_scalar)
+        cumsum = np.concatenate([[0], np.cumsum(mask.to_numpy(zero_copy_only=False))])
+        return cumsum[offsets[1:]] - cumsum[offsets[:-1]]
     else:
-        cutoff_indices = np.full(len(dataset), cutoff, dtype=np.int64) if cutoff >= 0 else lengths + cutoff
-        cutoff_indices = np.clip(cutoff_indices, 0, lengths)
+        cutoff_indices = np.where(cutoff >= 0, cutoff, lengths + cutoff)
+        return np.clip(cutoff_indices, 0, lengths)
 
-    # Filter series with sufficient data before and after cutoff
+
+def _filter_by_length(
+    dataset: datasets.Dataset,
+    cutoff_indices: np.ndarray,
+    lengths: np.ndarray,
+    min_context_length: int,
+    horizon: int,
+) -> tuple[datasets.Dataset, np.ndarray, np.ndarray]:
+    """Filter dataset to keep only series with sufficient context and future observations.
+
+    Returns filtered (dataset, cutoff_indices, lengths) tuple.
+    """
     valid_mask = (cutoff_indices >= min_context_length) & ((lengths - cutoff_indices) >= horizon)
-    if not np.all(valid_mask):
-        dataset = dataset.select(np.where(valid_mask)[0]).flatten_indices()
-    return dataset
+
+    if valid_mask.all():
+        return dataset, cutoff_indices, lengths
+
+    valid_indices = np.nonzero(valid_mask)[0]
+    filtered_dataset = dataset.select(valid_indices).flatten_indices()
+    return filtered_dataset, cutoff_indices[valid_mask], lengths[valid_mask]
 
 
-# @line_timing
-def slice_sequence_columns_old(
+def _build_sliced_dataset(
     dataset: datasets.Dataset,
-    timestamp_column: str,
-    cutoff: int | str,
-    max_context_length: int | None = None,
-    horizon: int | None = None,
+    table: pa.Table,
+    sequence_columns: list[str],
+    offsets: np.ndarray,
+    slice_start: np.ndarray,
+    slice_end: np.ndarray,
 ) -> datasets.Dataset:
-    """Slice all Sequence columns in dataset to extract data before or after cutoff.
+    """Build a new dataset with sequence columns sliced to [slice_start, slice_end) per row.
 
-    OLD VERSION: Uses dataset.map with num_proc.
-
-    Parameters
-    ----------
-    dataset
-        Time series dataset to slice.
-    timestamp_column
-        Name of the column containing timestamps.
-    cutoff
-        Cutoff point as integer index or timestamp string. Negative indices count from end.
-    max_context_length
-        Maximum observations to include before cutoff. If None, includes all data before cutoff.
-    horizon
-        Number of observations to include after cutoff. If None, extracts past data instead.
-
-    Returns
-    -------
-    datasets.Dataset
-        Dataset with all Sequence columns sliced to specified range.
+    Uses an event-based approach to efficiently build a boolean mask for the flattened
+    sequences, then reconstructs list arrays with new offsets.
     """
-    columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
-
-    if horizon is not None:
-        return dataset.map(
-            _select_future,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=timestamp_column,
-                cutoff=cutoff,
-                horizon=horizon,
-            ),
-            num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
-            desc="Selecting future data",
-        )
-    else:
-        return dataset.map(
-            _select_past,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=timestamp_column,
-                cutoff=cutoff,
-                max_context_length=max_context_length,
-            ),
-            num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
-            desc="Selecting past data",
-        )
-
-
-# @line_timing
-def slice_sequence_columns(
-    dataset: datasets.Dataset,
-    timestamp_column: str,
-    cutoff: int | str,
-    max_context_length: int | None = None,
-    horizon: int | None = None,
-) -> datasets.Dataset:
-    """Slice all Sequence columns in dataset to extract data before or after cutoff.
-
-    Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
-    (when horizon is None) or future data (when horizon is provided).
-
-    Parameters
-    ----------
-    dataset
-        Time series dataset to slice.
-    timestamp_column
-        Name of the column containing timestamps.
-    cutoff
-        Cutoff point as integer index or timestamp string. Negative indices count from end.
-    max_context_length
-        Maximum observations to include before cutoff. If None, includes all data before cutoff.
-    horizon
-        Number of observations to include after cutoff. If None, extracts past data instead.
-
-    Returns
-    -------
-    datasets.Dataset
-        Dataset with all Sequence columns sliced to specified range.
-    """
-    table = dataset.data.table
-    timestamps_col = table[timestamp_column].combine_chunks()
-    columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
-    lengths = pc.list_value_length(timestamps_col).to_numpy()
-
-    # Compute cutoff index for each series
-    if isinstance(cutoff, str):
-        timestamps_flat = pc.list_flatten(timestamps_col)
-        cutoff_scalar = pc.cast(pa.scalar(cutoff), timestamps_flat.type)
-        before_mask_int = pc.cast(pc.less_equal(timestamps_flat, cutoff_scalar), pa.int32())
-
-        offsets = np.concatenate([[0], np.cumsum(lengths)])
-        cumsum = np.concatenate([[0], np.cumsum(before_mask_int.to_numpy())])
-        cutoff_indices = cumsum[offsets[1:]] - cumsum[offsets[:-1]]
-    else:
-        cutoff_indices = np.full(len(dataset), cutoff, dtype=np.int64) if cutoff >= 0 else lengths + cutoff
-
-    # Compute slice bounds
-    if horizon is not None:
-        slice_start, slice_end = cutoff_indices, cutoff_indices + horizon
-    else:
-        if max_context_length is not None:
-            slice_start = cutoff_indices - max_context_length
-        else:
-            slice_start = np.zeros(len(dataset), dtype=np.int64)
-        slice_end = cutoff_indices
-
-    slice_start = np.clip(slice_start, 0, lengths)
-    slice_end = np.clip(slice_end, 0, lengths)
     slice_lengths = slice_end - slice_start
+    total_elements = offsets[-1]
 
-    # Precompute offsets for vectorized slicing
-    offsets = np.concatenate([[0], np.cumsum(lengths)])
+    # Build boolean mask using +1/-1 events at slice boundaries
+    events = np.zeros(total_elements + 1, dtype=np.int8)
+    global_starts = offsets[:-1] + slice_start
+    global_ends = offsets[:-1] + slice_end
+    np.add.at(events, global_starts, 1)
+    np.add.at(events, global_ends, -1)
+    mask = pa.array(np.cumsum(events[:total_elements], dtype=np.int8).view(bool))
+
+    # Compute new offsets for the sliced arrays
+    new_offsets = pa.array(np.concatenate([[0], np.cumsum(slice_lengths)]))
+
+    # Build new columns
     new_columns = {}
-
     for col_name in dataset.column_names:
-        col_arrow = table[col_name].combine_chunks()
-
-        if col_name in columns_to_slice:
-            col_flat = pc.list_flatten(col_arrow)
-
-            # Build mask using event-based approach: +1 at start, -1 at end
-            events = np.zeros(len(col_flat) + 1, dtype=np.int8)
-            valid = slice_lengths > 0
-            if np.any(valid):
-                global_starts = np.clip(offsets[:-1][valid] + slice_start[valid], 0, len(col_flat))
-                global_ends = np.clip(offsets[:-1][valid] + slice_end[valid], 0, len(col_flat))
-                events[global_starts] = 1
-                events[global_ends] = -1
-
-            mask = np.cumsum(events)[:-1].astype(bool)
-            filtered_values = pc.filter(col_flat, pa.array(mask))
-            new_offsets = np.concatenate([[0], np.cumsum(slice_lengths)])
-            new_columns[col_name] = pa.ListArray.from_arrays(pa.array(new_offsets, type=pa.int32()), filtered_values)
+        col = table[col_name].combine_chunks()
+        if col_name in sequence_columns:
+            filtered_values = pc.filter(pc.list_flatten(col), mask)
+            if isinstance(filtered_values, pa.ChunkedArray):
+                filtered_values = filtered_values.combine_chunks()
+            new_columns[col_name] = pa.ListArray.from_arrays(new_offsets, filtered_values)
         else:
-            new_columns[col_name] = col_arrow
+            new_columns[col_name] = col
 
     new_table = pa.table(new_columns)
     new_dataset = datasets.Dataset(new_table, fingerprint=datasets.fingerprint.generate_random_fingerprint())
     return new_dataset.with_format(dataset.format["type"])
 
 
-# These methods are stored outside of classes to ensure that HF datasets caching logic recognizes them
-def _select_past(
-    record: dict,
-    columns_to_slice: list[str],
+def past_future_split(
+    dataset: datasets.Dataset,
     timestamp_column: str,
     cutoff: int | str,
-    max_context_length: int | None,
-) -> dict:
-    """Select values up to cutoff in the columns_to_slice."""
-    if isinstance(cutoff, str):
-        selection = record[timestamp_column] <= np.datetime64(cutoff)
-    else:
-        selection = slice(None, cutoff)
-    processed_record = {}
-    for name, value in record.items():
-        if name in columns_to_slice:
-            value = value[selection]
-            if len(value) < 1:
-                raise ValueError(f"Sequences too short to create the train set with {cutoff=} for record {record}")
-            if max_context_length is not None:
-                value = value[-max_context_length:]
-        processed_record[name] = value
-    return processed_record
-
-
-def _select_future(
-    record: dict,
-    columns_to_slice: list[str],
-    timestamp_column: str,
     horizon: int,
-    cutoff: int | str,
-) -> dict:
-    """Select horizon values after the cutoff in the columns_to_slice."""
-    if isinstance(cutoff, str):
-        selection = record[timestamp_column] > np.datetime64(cutoff)
-    else:
-        selection = slice(cutoff, None)
-    processed_record = {}
-    for name, value in record.items():
-        if name in columns_to_slice:
-            value = value[selection][:horizon]
-            if len(value) < horizon:
-                raise ValueError(
-                    f"Sequences too short to create the test set with {cutoff=} and {horizon=} for record {record}"
-                )
-        processed_record[name] = value
-    return processed_record
-
-
-def _has_enough_past_and_future_observations(
-    record: dict,
-    timestamp_column: str,
-    horizon: int,
-    cutoff: str | int,
     min_context_length: int,
-) -> bool:
-    """Return True if time series has >= `min_context_length` observations before `cutoff` and >= `horizon` observations after."""
-    timestamps = record[timestamp_column]
-    if isinstance(cutoff, str):
-        before = timestamps[timestamps <= np.datetime64(cutoff)]
-        after = timestamps[timestamps > np.datetime64(cutoff)]
+    max_context_length: int | None = None,
+) -> tuple[datasets.Dataset, datasets.Dataset]:
+    """Filter and slice time series sequences in a single efficient pass.
+
+    Computes cutoff indices once and returns both past and future data, filtering
+    out series that don't have sufficient data. This is more efficient than calling
+    separate filtering and slicing methods.
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to process.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    horizon
+        Number of observations to include in future data.
+    min_context_length
+        Minimum required observations before cutoff for filtering.
+    max_context_length
+        Maximum observations to include in past data. If None, includes all data before cutoff.
+
+    Returns
+    -------
+    tuple[datasets.Dataset, datasets.Dataset]
+        Tuple of (past_data, future_data) with sequence columns sliced appropriately.
+    """
+    table = dataset.data.table
+    timestamps_col = table[timestamp_column].combine_chunks()
+    sequence_columns = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+    lengths = pc.list_value_length(timestamps_col).to_numpy()
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
+
+    # Compute cutoff indices
+    cutoff_indices = _compute_cutoff_indices(timestamps_col, cutoff, lengths, offsets)
+
+    # Filter series with insufficient context or future observations
+    dataset, cutoff_indices, lengths = _filter_by_length(dataset, cutoff_indices, lengths, min_context_length, horizon)
+
+    # Re-extract table and recompute offsets after filtering
+    table = dataset.data.table
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
+    n = len(dataset)
+
+    # Past data: [max(0, cutoff - max_context_length), cutoff)
+    # After filtering: cutoff_indices >= min_context_length, so cutoff_indices is valid
+    if max_context_length is not None:
+        past_start = np.maximum(cutoff_indices - max_context_length, 0)
     else:
-        before = timestamps[:cutoff]
-        after = timestamps[cutoff:]
-    return len(before) >= min_context_length and len(after) >= horizon
+        past_start = np.zeros(n, dtype=np.int64)
+    past_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, past_start, cutoff_indices)
+
+    # Future data: [cutoff, cutoff + horizon)
+    # After filtering: lengths - cutoff_indices >= horizon, so cutoff + horizon <= lengths
+    future_end = cutoff_indices + horizon
+    future_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, cutoff_indices, future_end)
+
+    return past_data, future_data

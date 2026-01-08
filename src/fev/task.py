@@ -137,35 +137,6 @@ class EvaluationWindow:
                 test_scores[metric.name] = float(np.mean(scores))
         return test_scores
 
-    def _filter_short_series(self, dataset: datasets.Dataset) -> datasets.Dataset:
-        """Remove records from the dataset that are too short for the given task configuration.
-
-        Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
-        fewer than `horizon` observations after `cutoff`.
-        """
-        num_items_before = len(dataset)
-        filtered_dataset = utils.filter_short_series(
-            dataset,
-            timestamp_column=self.timestamp_column,
-            cutoff=self.cutoff,
-            min_context_length=self.min_context_length,
-            horizon=self.horizon,
-        )
-        num_items_after = len(filtered_dataset)
-        if num_items_after < num_items_before:
-            logger.info(
-                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
-                f"because they had fewer than min_context_length ({self.min_context_length}) "
-                f"observations before cutoff ({self.cutoff}) "
-                f"or fewer than horizon ({self.horizon}) "
-                f"observations after cutoff."
-            )
-        if len(filtered_dataset) == 0:
-            raise ValueError(
-                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
-            )
-        return filtered_dataset
-
     # @line_timing
     def _prepare_dataset_dict(self) -> datasets.DatasetDict:
         dataset = self.full_dataset.select_columns(
@@ -175,19 +146,31 @@ class EvaluationWindow:
             + self.past_dynamic_columns
             + self.static_columns
         )
-        dataset = self._filter_short_series(dataset)
-        past_data = utils.slice_sequence_columns(
-            dataset,
-            timestamp_column=self.timestamp_column,
-            cutoff=self.cutoff,
-            max_context_length=self.max_context_length,
-        )
-        future_data = utils.slice_sequence_columns(
+
+        num_items_before = len(dataset)
+        past_data, future_data = utils.slice_and_filter_sequences(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
             horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
         )
+        num_items_after = len(past_data)
+
+        if num_items_after < num_items_before:
+            logger.info(
+                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
+                f"because they had fewer than min_context_length ({self.min_context_length}) "
+                f"observations before cutoff ({self.cutoff}) "
+                f"or fewer than horizon ({self.horizon}) "
+                f"observations after cutoff."
+            )
+        if len(past_data) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+
         future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
         test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
