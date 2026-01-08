@@ -414,10 +414,10 @@ def slice_sequence_columns(
         Dataset with all Sequence columns sliced to specified range.
     """
     # Use numpy format to get clean access to columns without worrying about internal indices
-    dataset_np = dataset.with_format("numpy")
+    dataset = dataset.with_format("numpy")
     columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
 
-    timestamps_list = dataset_np[timestamp_column]
+    timestamps_list = dataset[timestamp_column]
     lengths = np.array([len(ts) for ts in timestamps_list])
     offsets = np.concatenate([[0], np.cumsum(lengths)])
 
@@ -452,13 +452,13 @@ def slice_sequence_columns(
     new_columns = {}
     for col_name in dataset.column_names:
         if col_name in columns_to_slice:
-            col_flat = np.concatenate(dataset_np[col_name])
+            col_flat = np.concatenate(dataset[col_name])
             new_columns[col_name] = pa.ListArray.from_arrays(
                 pa.array(new_offsets, type=pa.int32()),
-                pa.array(col_flat[mask], type=pa.from_numpy_dtype(col_flat.dtype)),
+                pa.array(col_flat[mask]),
             )
         else:
-            new_columns[col_name] = pa.array(dataset_np[col_name])
+            new_columns[col_name] = pa.array(dataset[col_name])
 
     # Use random fingerprint to avoid (very expensive) fingerprint recomputation.
     # This has no effect since the dataset is stored in memory (not memmapped from arrow on disk)
