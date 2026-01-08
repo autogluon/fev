@@ -148,7 +148,7 @@ class EvaluationWindow:
         )
 
         num_items_before = len(dataset)
-        past_data, future_data = utils.slice_and_filter_sequences(
+        past_data, future_data = utils.past_future_split(
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
