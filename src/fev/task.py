@@ -147,7 +147,7 @@ class EvaluationWindow:
             dataset,
             timestamp_column=self.timestamp_column,
             cutoff=self.cutoff,
-            min_context_length=self.max_context_length,
+            min_context_length=self.min_context_length,
             horizon=self.horizon,
         )
         num_items_after = len(filtered_dataset)

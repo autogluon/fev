@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
+from .timer import line_timing
 
 __all__ = [
     "convert_long_df_to_hf_dataset",
@@ -329,6 +330,49 @@ def combine_univariate_predictions_to_multivariate(
     return datasets.DatasetDict(prediction_dict)
 
 
+def filter_short_series_old(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    min_context_length: int,
+    horizon: int,
+) -> datasets.Dataset:
+    """Filter time series that don't have sufficient data before and after the cutoff.
+
+    OLD VERSION: Uses dataset.filter with num_proc.
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to filter.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    min_context_length
+        Minimum required observations before cutoff.
+    horizon
+        Minimum required observations after cutoff.
+
+    Returns
+    -------
+    datasets.Dataset
+        Filtered dataset containing only series with sufficient data.
+    """
+    return dataset.filter(
+        _has_enough_past_and_future_observations,
+        fn_kwargs=dict(
+            timestamp_column=timestamp_column,
+            horizon=horizon,
+            cutoff=cutoff,
+            min_context_length=min_context_length,
+        ),
+        num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
+        desc="Filtering short time series",
+    )
+
+
+@line_timing
 def filter_short_series(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -338,7 +382,7 @@ def filter_short_series(
 ) -> datasets.Dataset:
     """Filter time series that don't have sufficient data before and after the cutoff.
 
-    Uses vectorized operations to efficiently filter series based on minimum required
+    NEW VERSION: Uses vectorized operations to efficiently filter series based on minimum required
     context length before cutoff and horizon length after cutoff.
 
     Parameters
@@ -376,11 +420,71 @@ def filter_short_series(
         after_count = lengths - before_count
 
     valid = (before_count >= min_context_length) & (after_count >= horizon)
-    if valid.all():
-        return dataset
-    return dataset.select(np.where(valid)[0])
+    if not valid.all():
+        dataset = dataset.select(np.where(valid)[0])
+    # if getattr(dataset, "_indices", None) is not None:
+    #     dataset = dataset.flatten_indices(num_proc=DEFAULT_NUM_PROC)
+    return dataset
 
 
+def slice_sequence_columns_old(
+    dataset: datasets.Dataset,
+    timestamp_column: str,
+    cutoff: int | str,
+    max_context_length: int | None = None,
+    horizon: int | None = None,
+) -> datasets.Dataset:
+    """Slice all Sequence columns in dataset to extract data before or after cutoff.
+
+    OLD VERSION: Uses dataset.map with num_proc.
+
+    Parameters
+    ----------
+    dataset
+        Time series dataset to slice.
+    timestamp_column
+        Name of the column containing timestamps.
+    cutoff
+        Cutoff point as integer index or timestamp string. Negative indices count from end.
+    max_context_length
+        Maximum observations to include before cutoff. If None, includes all data before cutoff.
+    horizon
+        Number of observations to include after cutoff. If None, extracts past data instead.
+
+    Returns
+    -------
+    datasets.Dataset
+        Dataset with all Sequence columns sliced to specified range.
+    """
+    columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
+
+    if horizon is not None:
+        return dataset.map(
+            _select_future,
+            fn_kwargs=dict(
+                columns_to_slice=columns_to_slice,
+                timestamp_column=timestamp_column,
+                cutoff=cutoff,
+                horizon=horizon,
+            ),
+            num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
+            desc="Selecting future data",
+        )
+    else:
+        return dataset.map(
+            _select_past,
+            fn_kwargs=dict(
+                columns_to_slice=columns_to_slice,
+                timestamp_column=timestamp_column,
+                cutoff=cutoff,
+                max_context_length=max_context_length,
+            ),
+            num_proc=min(DEFAULT_NUM_PROC, len(dataset)),
+            desc="Selecting past data",
+        )
+
+
+@line_timing
 def slice_sequence_columns(
     dataset: datasets.Dataset,
     timestamp_column: str,
@@ -390,7 +494,7 @@ def slice_sequence_columns(
 ) -> datasets.Dataset:
     """Slice all Sequence columns in dataset to extract data before or after cutoff.
 
-    Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
+    NEW VERSION: Uses vectorized PyArrow operations for efficient slicing. Extracts either past data
     (when max_context_length is provided) or future data (when horizon is provided).
 
     Parameters
@@ -448,9 +552,13 @@ def slice_sequence_columns(
     new_offsets = np.concatenate([[0], np.cumsum(np.where(valid, slice_end - slice_start, 0))])
 
     new_columns = {}
+    import time
+
     for col_name in dataset.column_names:
         if col_name in columns_to_slice:
+            t0 = time.time()
             col_flat = np.concatenate(dataset[col_name])
+            print(f"Col {col_name} took {time.time() - t0:.1f}s")
             new_columns[col_name] = pa.ListArray.from_arrays(
                 pa.array(new_offsets, type=pa.int32()),
                 pa.array(col_flat[mask]),
