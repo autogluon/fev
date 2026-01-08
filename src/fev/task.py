@@ -16,7 +16,6 @@ from . import utils
 from .__about__ import __version__ as FEV_VERSION
 from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
 from .metrics import Metric, get_metric
-from .timer import line_timing
 
 # from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
 
@@ -137,7 +136,6 @@ class EvaluationWindow:
                 test_scores[metric.name] = float(np.mean(scores))
         return test_scores
 
-    # @line_timing
     def _prepare_dataset_dict(self) -> datasets.DatasetDict:
         dataset = self.full_dataset.select_columns(
             [self.id_column, self.timestamp_column]
