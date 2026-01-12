@@ -43,7 +43,7 @@ class EvaluationWindow:
     full_dataset: datasets.Dataset = dataclasses.field(repr=False)
     cutoff: int | str
     horizon: int
-    min_context_length: int | None
+    min_context_length: int
     max_context_length: int | None
     # Dataset info
     id_column: str
@@ -56,15 +56,10 @@ class EvaluationWindow:
     def __post_init__(self):
         self._dataset_dict: datasets.DatasetDict | None = None
 
-    def get_input_data(self, num_proc: int = DEFAULT_NUM_PROC) -> tuple[datasets.Dataset, datasets.Dataset]:
+    def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
         To convert the input data to a different format, use [`fev.convert_input_data`][fev.convert_input_data].
-
-        Parameters
-        ----------
-        num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use when splitting the dataset.
 
         Returns
         -------
@@ -80,10 +75,10 @@ class EvaluationWindow:
             Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+            self._dataset_dict = self._prepare_dataset_dict()
         return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
 
-    def get_ground_truth(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.Dataset:
+    def get_ground_truth(self) -> datasets.Dataset:
         """Get ground truth future test data.
 
         **This data should never be provided to the model!**
@@ -96,7 +91,7 @@ class EvaluationWindow:
             Number of processes to use when splitting the dataset.
         """
         if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict(num_proc=num_proc)
+            self._dataset_dict = self._prepare_dataset_dict()
         return self._dataset_dict[TEST]
 
     def compute_metrics(
@@ -141,29 +136,26 @@ class EvaluationWindow:
                 test_scores[metric.name] = float(np.mean(scores))
         return test_scores
 
-    def _filter_short_series(
-        self,
-        dataset: datasets.Dataset,
-        num_proc: int,
-    ) -> datasets.Dataset:
-        """Remove records from the dataset that are too short for the given task configuration.
-
-        Filters out time series if they have either fewer than `min_context_length` observations before `cutoff`, or
-        fewer than `horizon` observations after `cutoff`.
-        """
-        num_items_before = len(dataset)
-        filtered_dataset = dataset.filter(
-            _has_enough_past_and_future_observations,
-            fn_kwargs=dict(
-                timestamp_column=self.timestamp_column,
-                horizon=self.horizon,
-                cutoff=self.cutoff,
-                min_context_length=self.min_context_length,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Filtering short time series",
+    def _prepare_dataset_dict(self) -> datasets.DatasetDict:
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
         )
-        num_items_after = len(filtered_dataset)
+
+        num_items_before = len(dataset)
+        past_data, future_data = utils.past_future_split(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
+        )
+        num_items_after = len(past_data)
+
         if num_items_after < num_items_before:
             logger.info(
                 f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
@@ -172,45 +164,11 @@ class EvaluationWindow:
                 f"or fewer than horizon ({self.horizon}) "
                 f"observations after cutoff."
             )
-        if len(filtered_dataset) == 0:
+        if len(past_data) == 0:
             raise ValueError(
                 "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
             )
-        return filtered_dataset
 
-    def _prepare_dataset_dict(self, num_proc: int = DEFAULT_NUM_PROC) -> datasets.DatasetDict:
-        dataset = self.full_dataset.select_columns(
-            [self.id_column, self.timestamp_column]
-            + self.target_columns
-            + self.known_dynamic_columns
-            + self.past_dynamic_columns
-            + self.static_columns
-        )
-        dataset = self._filter_short_series(dataset, num_proc=num_proc)
-        columns_to_slice = [col for col, feat in dataset.features.items() if isinstance(feat, datasets.Sequence)]
-        past_data = dataset.map(
-            _select_past,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                max_context_length=self.max_context_length,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting past data",
-        )
-
-        future_data = dataset.map(
-            _select_future,
-            fn_kwargs=dict(
-                columns_to_slice=columns_to_slice,
-                timestamp_column=self.timestamp_column,
-                cutoff=self.cutoff,
-                horizon=self.horizon,
-            ),
-            num_proc=min(num_proc, len(dataset)),
-            desc="Selecting future data",
-        )
         future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
         test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
         return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
@@ -930,70 +888,3 @@ class Task:
             return self.target
         else:
             return [self.target]
-
-
-# These methods are stored outside of classes to ensure that HF datasets caching logic recognizes them
-def _select_past(
-    record: dict,
-    columns_to_slice: list[str],
-    timestamp_column: str,
-    cutoff: int | str,
-    max_context_length: int | None,
-) -> dict:
-    """Select values up to cutoff in the columns_to_slice."""
-    if isinstance(cutoff, str):
-        selection = record[timestamp_column] <= np.datetime64(cutoff)
-    else:
-        selection = slice(None, cutoff)
-    processed_record = {}
-    for name, value in record.items():
-        if name in columns_to_slice:
-            value = value[selection]
-            if len(value) < 1:
-                raise ValueError(f"Sequences too short to create the train set with {cutoff=} for record {record}")
-            if max_context_length is not None:
-                value = value[-max_context_length:]
-        processed_record[name] = value
-    return processed_record
-
-
-def _select_future(
-    record: dict,
-    columns_to_slice: list[str],
-    timestamp_column: str,
-    horizon: int,
-    cutoff: int | str,
-) -> dict:
-    """Select horizon values after the cutoff in the columns_to_slice."""
-    if isinstance(cutoff, str):
-        selection = record[timestamp_column] > np.datetime64(cutoff)
-    else:
-        selection = slice(cutoff, None)
-    processed_record = {}
-    for name, value in record.items():
-        if name in columns_to_slice:
-            value = value[selection][:horizon]
-            if len(value) < horizon:
-                raise ValueError(
-                    f"Sequences too short to create the test set with {cutoff=} and {horizon=} for record {record}"
-                )
-        processed_record[name] = value
-    return processed_record
-
-
-def _has_enough_past_and_future_observations(
-    record: dict,
-    timestamp_column: str,
-    horizon: int,
-    cutoff: str | int,
-    min_context_length: int,
-) -> bool:
-    """Return True if time series has >= `min_context_length` observations before `cutoff` and >= `horizon` observations after."""
-    timestamps = record[timestamp_column]
-    if isinstance(cutoff, str):
-        before = timestamps[timestamps <= np.datetime64(cutoff)]
-        after = timestamps[timestamps > np.datetime64(cutoff)]
-    else:
-        before = timestamps[:cutoff]
-        after = timestamps[cutoff:]
-    return len(before) >= min_context_length and len(after) >= horizon
