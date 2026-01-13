@@ -479,19 +479,21 @@ def past_future_split(
 
     # Past data: [max(0, cutoff - max_context_length), cutoff)
     # After filtering: cutoff_indices >= min_context_length, so cutoff_indices is valid
-    past_data = None
     if return_past:
         if max_context_length is not None:
             past_start = np.maximum(cutoff_indices - max_context_length, 0)
         else:
             past_start = np.zeros(n, dtype=np.int64)
         past_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, past_start, cutoff_indices)
+    else:
+        past_data = None
 
     # Future data: [cutoff, cutoff + horizon)
     # After filtering: lengths - cutoff_indices >= horizon, so cutoff + horizon <= lengths
-    future_data = None
     if return_future:
         future_end = cutoff_indices + horizon
         future_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, cutoff_indices, future_end)
+    else:
+        future_data = None
 
     return past_data, future_data
