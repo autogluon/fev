@@ -14,7 +14,7 @@ from pydantic_core import ArgsKwargs
 
 from . import utils
 from .__about__ import __version__ as FEV_VERSION
-from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, FUTURE, PREDICTIONS, TEST, TRAIN
+from .constants import DEFAULT_NUM_PROC, DEPRECATED_TASK_FIELDS, PREDICTIONS
 from .metrics import Metric, get_metric
 
 # from .metrics import AVAILABLE_METRICS, QUANTILE_METRICS
@@ -53,9 +53,6 @@ class EvaluationWindow:
     past_dynamic_columns: list[str]
     static_columns: list[str]
 
-    def __post_init__(self):
-        self._dataset_dict: datasets.DatasetDict | None = None
-
     def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
@@ -74,9 +71,40 @@ class EvaluationWindow:
 
             Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
-        if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
-        return self._dataset_dict[TRAIN], self._dataset_dict[FUTURE]
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
+        )
+
+        num_items_before = len(dataset)
+        past_data, future_data = utils.past_future_split(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
+        )
+        num_items_after = len(past_data)
+
+        if num_items_after < num_items_before:
+            logger.info(
+                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
+                f"because they had fewer than min_context_length ({self.min_context_length}) "
+                f"observations before cutoff ({self.cutoff}) "
+                f"or fewer than horizon ({self.horizon}) "
+                f"observations after cutoff."
+            )
+        if len(past_data) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+
+        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
+        return past_data, future_known
 
     def get_ground_truth(self) -> datasets.Dataset:
         """Get ground truth future test data.
@@ -84,15 +112,25 @@ class EvaluationWindow:
         **This data should never be provided to the model!**
 
         This is a convenience method that exists for debugging and additional evaluation.
-
-        Parameters
-        ----------
-        num_proc : int, default DEFAULT_NUM_PROC
-            Number of processes to use when splitting the dataset.
         """
-        if self._dataset_dict is None:
-            self._dataset_dict = self._prepare_dataset_dict()
-        return self._dataset_dict[TEST]
+        dataset = self.full_dataset.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
+
+        _, future_data = utils.past_future_split(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
+            return_past=False,
+        )
+
+        if future_data is None or len(future_data) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+
+        return future_data
 
     def compute_metrics(
         self,
@@ -135,43 +173,6 @@ class EvaluationWindow:
                     )
                 test_scores[metric.name] = float(np.mean(scores))
         return test_scores
-
-    def _prepare_dataset_dict(self) -> datasets.DatasetDict:
-        dataset = self.full_dataset.select_columns(
-            [self.id_column, self.timestamp_column]
-            + self.target_columns
-            + self.known_dynamic_columns
-            + self.past_dynamic_columns
-            + self.static_columns
-        )
-
-        num_items_before = len(dataset)
-        past_data, future_data = utils.past_future_split(
-            dataset,
-            timestamp_column=self.timestamp_column,
-            cutoff=self.cutoff,
-            horizon=self.horizon,
-            min_context_length=self.min_context_length,
-            max_context_length=self.max_context_length,
-        )
-        num_items_after = len(past_data)
-
-        if num_items_after < num_items_before:
-            logger.info(
-                f"Dropped {num_items_before - num_items_after} out of {num_items_before} time series "
-                f"because they had fewer than min_context_length ({self.min_context_length}) "
-                f"observations before cutoff ({self.cutoff}) "
-                f"or fewer than horizon ({self.horizon}) "
-                f"observations after cutoff."
-            )
-        if len(past_data) == 0:
-            raise ValueError(
-                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
-            )
-
-        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
-        test = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
-        return datasets.DatasetDict({TRAIN: past_data, FUTURE: future_known, TEST: test})
 
 
 @pydantic.dataclasses.dataclass(config={"extra": "forbid"})
@@ -619,7 +620,7 @@ class Task:
             path=path,
             name=name,
             data_files=data_files,
-            split=TRAIN,
+            split=datasets.Split.TRAIN,
             storage_options=copy.deepcopy(storage_options),
             trust_remote_code=trust_remote_code,
         )
