@@ -5,7 +5,7 @@ import pytest
 from autogluon.timeseries import TimeSeriesPredictor
 
 import fev
-from fev.metrics import AVAILABLE_METRICS
+from fev.metrics import AVAILABLE_METRICS, _seasonal_error_per_item
 
 
 # Include datasets with NaN values (nn5) and all-zero history values (covid deaths)
@@ -59,3 +59,43 @@ def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_me
     fev_score = task.evaluation_summary([fev_predictions], model_name="")[eval_metric]
 
     assert np.isclose(ag_score, fev_score)
+
+
+def _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn, nan_fill_value=1.0):
+    """Simple for-loop reference implementation for testing."""
+    result = []
+    for arr in arrays:
+        if len(arr) <= seasonality:
+            result.append(nan_fill_value)
+        else:
+            diffs = arr[seasonality:] - arr[:-seasonality]
+            errors = aggregate_fn(diffs)
+            mean_error = np.nanmean(errors)
+            result.append(nan_fill_value if np.isnan(mean_error) else mean_error)
+    return np.array(result, dtype="float64")
+
+
+@pytest.mark.parametrize("aggregate_fn", [np.abs, np.square])
+def test_seasonal_error_per_item(aggregate_fn):
+    """Test vectorized impl against reference with mixed edge cases."""
+    arrays = [
+        np.array([1.0]),  # too short
+        np.array([1.0, 2.0, np.nan, 4.0, 5.0]),  # has NaN
+        np.array([np.nan, np.nan, np.nan, np.nan]),  # all NaN
+        np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),  # normal
+        np.array([1.0, 2.0]),  # too short
+        np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0]),  # longer series
+    ]
+    seasonality = 2
+
+    result = _seasonal_error_per_item(arrays, seasonality, aggregate_fn)
+    expected = _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn)
+
+    np.testing.assert_allclose(result, expected)
+
+
+def test_seasonal_error_per_item_empty():
+    """Test with empty input."""
+    result = _seasonal_error_per_item([], 2, 1.0, np.abs)
+    assert len(result) == 0
+    assert result.dtype == np.float64

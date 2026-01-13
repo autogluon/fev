@@ -1,9 +1,9 @@
-from typing import Any, Type
+from typing import Any, Callable, Type
 
 import datasets
 import numpy as np
 
-from fev.constants import DEFAULT_NUM_PROC, PREDICTIONS
+from fev.constants import PREDICTIONS
 
 MetricConfig = str | dict[str, Any]
 
@@ -321,43 +321,6 @@ class WQL(Metric):
         return np.nanmean(ql) / max(self.epsilon, np.nanmean(np.abs(np.array(test_data[target_column]))))
 
 
-def _seasonal_diff(array: np.ndarray, seasonality: int) -> np.ndarray:
-    if len(array) <= seasonality:
-        return np.array([])
-    else:
-        return array[seasonality:] - array[:-seasonality]
-
-
-def _abs_seasonal_error(array: np.ndarray, seasonality: int) -> float:
-    return np.nanmean(np.abs(_seasonal_diff(array=array, seasonality=seasonality)))
-
-
-def _squared_seasonal_error(array: np.ndarray, seasonality: int) -> float:
-    return np.nanmean(_seasonal_diff(array=array, seasonality=seasonality) ** 2)
-
-
-def _abs_seasonal_error_per_item(
-    past_data: datasets.Dataset, seasonality: int, target_column: str, nan_fill_value: float = 1.0
-) -> np.ndarray:
-    """Compute mean absolute seasonal error for each time series in past_data."""
-    abs_seasonal_error = past_data.map(
-        lambda record: {"_abs_seasonal_error": float(_abs_seasonal_error(record[target_column], seasonality))},
-        num_proc=min(DEFAULT_NUM_PROC, len(past_data)),
-    )["_abs_seasonal_error"]
-    return np.nan_to_num(abs_seasonal_error, nan=nan_fill_value).astype("float64")
-
-
-def _squared_seasonal_error_per_item(
-    past_data: datasets.Dataset, seasonality: int, target_column: str, nan_fill_value: float = 1.0
-) -> np.ndarray:
-    """Compute mean squared seasonal error for each time series in past_data."""
-    squared_seasonal_error = past_data.map(
-        lambda record: {"_squared_seasonal_error": float(_squared_seasonal_error(record[target_column], seasonality))},
-        num_proc=min(DEFAULT_NUM_PROC, len(past_data)),
-    )["_squared_seasonal_error"]
-    return np.nan_to_num(squared_seasonal_error, nan=nan_fill_value).astype("float64")
-
-
 def _quantile_loss(
     *,
     test_data: datasets.Dataset,
@@ -373,6 +336,64 @@ def _quantile_loss(
     y_test = np.array(test_data[target_column])[..., None]  # [num_series, horizon, 1]
     assert y_test.shape[:-1] == q_pred.shape[:-1]
     return 2 * np.abs((y_test - q_pred) * ((y_test <= q_pred) - np.array(quantile_levels)))
+
+
+def _seasonal_error_per_item(
+    arrays: list[np.ndarray],
+    seasonality: int,
+    aggregate_fn: Callable,
+    nan_fill_value: float = 1.0,
+) -> np.ndarray:
+    """Compute seasonal error for each time series using vectorized operations.
+
+    Uses bincount with weights to efficiently compute per-series aggregations.
+    """
+    num_series = len(arrays)
+    if num_series == 0:
+        return np.array([], dtype="float64")
+
+    lengths = np.array([a.size for a in arrays], dtype=np.int64)
+    num_diffs_per_series = np.maximum(lengths - seasonality, 0)
+
+    if num_diffs_per_series.sum() == 0:
+        return np.full(num_series, nan_fill_value, dtype="float64")
+
+    flat = np.concatenate(arrays)
+    series_starts = np.concatenate([[0], np.cumsum(lengths[:-1])])
+
+    # Build indices for all (t, t-seasonality) pairs across all series
+    total_diffs = int(num_diffs_per_series.sum())
+    series_ids = np.repeat(np.arange(num_series, dtype=np.int64), num_diffs_per_series)
+    diff_offsets = np.arange(total_diffs) - np.repeat(
+        np.cumsum(num_diffs_per_series) - num_diffs_per_series, num_diffs_per_series
+    )
+
+    idx_current = series_starts[series_ids] + seasonality + diff_offsets
+    idx_lagged = idx_current - seasonality
+
+    diffs = flat[idx_current] - flat[idx_lagged]
+    errors = aggregate_fn(diffs)
+
+    # Compute per-series nanmean via bincount
+    valid = ~np.isnan(errors)
+    sums = np.bincount(series_ids, weights=np.where(valid, errors, 0.0), minlength=num_series)
+    counts = np.bincount(series_ids, weights=valid.astype("float64"), minlength=num_series)
+
+    result = np.full(num_series, nan_fill_value, dtype="float64")
+    np.divide(sums, counts, out=result, where=counts > 0)
+    return result
+
+
+def _abs_seasonal_error_per_item(past_data: datasets.Dataset, seasonality: int, target_column: str) -> np.ndarray:
+    """Compute mean absolute seasonal error for each time series in past_data."""
+    arrays = past_data.with_format("numpy")[target_column]
+    return _seasonal_error_per_item(arrays, seasonality, aggregate_fn=np.abs)
+
+
+def _squared_seasonal_error_per_item(past_data: datasets.Dataset, seasonality: int, target_column: str) -> np.ndarray:
+    """Compute mean squared seasonal error for each time series in past_data."""
+    arrays = past_data.with_format("numpy")[target_column]
+    return _seasonal_error_per_item(arrays, seasonality, aggregate_fn=np.square)
 
 
 AVAILABLE_METRICS: dict[str, Type[Metric]] = {
