@@ -219,7 +219,7 @@ fastjsonschema==2.21.1
     # via nbformat
 fev==0.5.0
     # via timecopilot-fev
-filelock==3.18.0
+filelock==3.20.3
     # via
     #   datasets
     #   huggingface-hub
