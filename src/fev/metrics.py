@@ -321,6 +321,23 @@ class WQL(Metric):
         return np.nanmean(ql) / max(self.epsilon, np.nanmean(np.abs(np.array(test_data[target_column]))))
 
 
+def _quantile_loss(
+    *,
+    test_data: datasets.Dataset,
+    predictions: datasets.Dataset,
+    quantile_levels: list[float],
+    target_column: str,
+):
+    """Compute quantile loss for each observation"""
+    pred_per_quantile = []
+    for q in quantile_levels:
+        pred_per_quantile.append(np.array(predictions[str(q)]))
+    q_pred = np.stack(pred_per_quantile, axis=-1)  # [num_series, horizon, len(quantile_levels)]
+    y_test = np.array(test_data[target_column])[..., None]  # [num_series, horizon, 1]
+    assert y_test.shape[:-1] == q_pred.shape[:-1]
+    return 2 * np.abs((y_test - q_pred) * ((y_test <= q_pred) - np.array(quantile_levels)))
+
+
 def _seasonal_error_per_item(
     arrays: list[np.ndarray],
     seasonality: int,
@@ -377,23 +394,6 @@ def _squared_seasonal_error_per_item(past_data: datasets.Dataset, seasonality: i
     """Compute mean squared seasonal error for each time series in past_data."""
     arrays = past_data.with_format("numpy")[target_column]
     return _seasonal_error_per_item(arrays, seasonality, aggregate_fn=np.square)
-
-
-def _quantile_loss(
-    *,
-    test_data: datasets.Dataset,
-    predictions: datasets.Dataset,
-    quantile_levels: list[float],
-    target_column: str,
-):
-    """Compute quantile loss for each observation"""
-    pred_per_quantile = []
-    for q in quantile_levels:
-        pred_per_quantile.append(np.array(predictions[str(q)]))
-    q_pred = np.stack(pred_per_quantile, axis=-1)  # [num_series, horizon, len(quantile_levels)]
-    y_test = np.array(test_data[target_column])[..., None]  # [num_series, horizon, 1]
-    assert y_test.shape[:-1] == q_pred.shape[:-1]
-    return 2 * np.abs((y_test - q_pred) * ((y_test <= q_pred) - np.array(quantile_levels)))
 
 
 AVAILABLE_METRICS: dict[str, Type[Metric]] = {
