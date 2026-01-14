@@ -100,7 +100,12 @@ class WAPE(Metric):
 
 
 class MASE(Metric):
-    """Mean absolute scaled error."""
+    """Mean absolute scaled error.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
@@ -144,7 +149,12 @@ class RMSE(Metric):
 
 
 class RMSSE(Metric):
-    """Root mean squared scaled error."""
+    """Root mean squared scaled error.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
@@ -268,7 +278,12 @@ class MQL(Metric):
 
 
 class SQL(Metric):
-    """Scaled quantile loss."""
+    """Scaled quantile loss.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     needs_quantiles: bool = True
 
