@@ -96,6 +96,6 @@ def test_seasonal_error_per_item(aggregate_fn):
 
 def test_seasonal_error_per_item_empty():
     """Test with empty input."""
-    result = _seasonal_error_per_item([], 2, 1.0, np.abs)
+    result = _seasonal_error_per_item([], 2, np.abs)
     assert len(result) == 0
     assert result.dtype == np.float64
