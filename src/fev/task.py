@@ -53,6 +53,32 @@ class EvaluationWindow:
     past_dynamic_columns: list[str]
     static_columns: list[str]
 
+    def _get_past_future_test_data(self) -> tuple[datasets.Dataset, datasets.Dataset, datasets.Dataset]:
+        dataset = self.full_dataset.select_columns(
+            [self.id_column, self.timestamp_column]
+            + self.target_columns
+            + self.known_dynamic_columns
+            + self.past_dynamic_columns
+            + self.static_columns
+        )
+
+        past_data, future_data = utils.past_future_split(
+            dataset,
+            timestamp_column=self.timestamp_column,
+            cutoff=self.cutoff,
+            horizon=self.horizon,
+            min_context_length=self.min_context_length,
+            max_context_length=self.max_context_length,
+        )
+        if len(past_data) == 0:
+            raise ValueError(
+                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
+            )
+
+        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
+        test_data = future_data.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
+        return past_data, future_known, test_data
+
     def get_input_data(self) -> tuple[datasets.Dataset, datasets.Dataset]:
         """Get data available to the model at prediction time for this evaluation window.
 
@@ -71,23 +97,8 @@ class EvaluationWindow:
 
             Columns corresponding to `id_column`, `timestamp_column`, `static_columns`, `known_dynamic_columns`.
         """
-        dataset = self.full_dataset.select_columns(
-            [self.id_column, self.timestamp_column]
-            + self.target_columns
-            + self.known_dynamic_columns
-            + self.past_dynamic_columns
-            + self.static_columns
-        )
-
-        num_items_before = len(dataset)
-        past_data, future_data = utils.past_future_split(
-            dataset,
-            timestamp_column=self.timestamp_column,
-            cutoff=self.cutoff,
-            horizon=self.horizon,
-            min_context_length=self.min_context_length,
-            max_context_length=self.max_context_length,
-        )
+        past_data, future_known, _ = self._get_past_future_test_data()
+        num_items_before = len(self.full_dataset)
         num_items_after = len(past_data)
 
         if num_items_after < num_items_before:
@@ -98,12 +109,7 @@ class EvaluationWindow:
                 f"or fewer than horizon ({self.horizon}) "
                 f"observations after cutoff."
             )
-        if len(past_data) == 0:
-            raise ValueError(
-                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
-            )
 
-        future_known = future_data.remove_columns(self.target_columns + self.past_dynamic_columns)
         return past_data, future_known
 
     def get_ground_truth(self) -> datasets.Dataset:
@@ -113,24 +119,8 @@ class EvaluationWindow:
 
         This is a convenience method that exists for debugging and additional evaluation.
         """
-        dataset = self.full_dataset.select_columns([self.id_column, self.timestamp_column] + self.target_columns)
-
-        _, future_data = utils.past_future_split(
-            dataset,
-            timestamp_column=self.timestamp_column,
-            cutoff=self.cutoff,
-            horizon=self.horizon,
-            min_context_length=self.min_context_length,
-            max_context_length=self.max_context_length,
-            return_past=False,
-        )
-
-        if future_data is None or len(future_data) == 0:
-            raise ValueError(
-                "All time series in the dataset are too short for the chosen cutoff, horizon and min_context_length"
-            )
-
-        return future_data
+        _, _, test_data = self._get_past_future_test_data()
+        return test_data
 
     def compute_metrics(
         self,
@@ -145,8 +135,9 @@ class EvaluationWindow:
 
         This is a convenience method that exists for debugging and additional evaluation.
         """
-        test_data = self.get_ground_truth().with_format("numpy")
-        past_data = self.get_input_data()[0].with_format("numpy")
+        past_data, _, test_data = self._get_past_future_test_data()
+        past_data.set_format("numpy")
+        test_data.set_format("numpy")
 
         for target_column, predictions_for_column in predictions.items():
             if len(predictions_for_column) != len(test_data):

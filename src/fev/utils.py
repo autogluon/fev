@@ -421,8 +421,6 @@ def past_future_split(
     horizon: int,
     min_context_length: int,
     max_context_length: int | None = None,
-    return_past: bool = True,
-    return_future: bool = True,
 ) -> tuple[datasets.Dataset | None, datasets.Dataset | None]:
     """Filter and slice time series sequences in a single efficient pass.
 
@@ -444,16 +442,11 @@ def past_future_split(
         Minimum required observations before cutoff for filtering.
     max_context_length
         Maximum observations to include in past data. If None, includes all data before cutoff.
-    return_past
-        Whether to compute and return past data. If False, past_data will be None.
-    return_future
-        Whether to compute and return future data. If False, future_data will be None.
 
     Returns
     -------
-    tuple[datasets.Dataset | None, datasets.Dataset | None]
+    tuple[datasets.Dataset, datasets.Dataset]
         Tuple of (past_data, future_data) with sequence columns sliced appropriately.
-        Either may be None if the corresponding return flag is False.
     """
     # Flatten indices if dataset has been sorted/filtered, so row order in dataset
     # matches the physical order in the underlying Arrow table
@@ -479,21 +472,15 @@ def past_future_split(
 
     # Past data: [max(0, cutoff - max_context_length), cutoff)
     # After filtering: cutoff_indices >= min_context_length, so cutoff_indices is valid
-    if return_past:
-        if max_context_length is not None:
-            past_start = np.maximum(cutoff_indices - max_context_length, 0)
-        else:
-            past_start = np.zeros(n, dtype=np.int64)
-        past_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, past_start, cutoff_indices)
+    if max_context_length is not None:
+        past_start = np.maximum(cutoff_indices - max_context_length, 0)
     else:
-        past_data = None
+        past_start = np.zeros(n, dtype=np.int64)
+    past_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, past_start, cutoff_indices)
 
     # Future data: [cutoff, cutoff + horizon)
     # After filtering: lengths - cutoff_indices >= horizon, so cutoff + horizon <= lengths
-    if return_future:
-        future_end = cutoff_indices + horizon
-        future_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, cutoff_indices, future_end)
-    else:
-        future_data = None
+    future_end = cutoff_indices + horizon
+    future_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, cutoff_indices, future_end)
 
     return past_data, future_data
