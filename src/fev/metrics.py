@@ -342,7 +342,6 @@ def _seasonal_error_per_item(
     arrays: list[np.ndarray],
     seasonality: int,
     aggregate_fn: Callable,
-    nan_fill_value: float = 1.0,
 ) -> np.ndarray:
     """Compute seasonal error for each time series using vectorized operations.
 
@@ -356,9 +355,9 @@ def _seasonal_error_per_item(
     num_diffs_per_series = np.maximum(lengths - seasonality, 0)
 
     if num_diffs_per_series.sum() == 0:
-        return np.full(num_series, nan_fill_value, dtype="float64")
+        return np.full(num_series, np.nan, dtype="float64")
 
-    flat = np.concatenate(arrays)
+    flat = np.concatenate(arrays).astype("float64")
     series_starts = np.concatenate([[0], np.cumsum(lengths[:-1])])
 
     # Build indices for all (t, t-seasonality) pairs across all series
@@ -379,7 +378,7 @@ def _seasonal_error_per_item(
     sums = np.bincount(series_ids, weights=np.where(valid, errors, 0.0), minlength=num_series)
     counts = np.bincount(series_ids, weights=valid.astype("float64"), minlength=num_series)
 
-    result = np.full(num_series, nan_fill_value, dtype="float64")
+    result = np.full(num_series, np.nan, dtype="float64")
     np.divide(sums, counts, out=result, where=counts > 0)
     return result
 

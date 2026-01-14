@@ -61,17 +61,17 @@ def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_me
     assert np.isclose(ag_score, fev_score)
 
 
-def _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn, nan_fill_value=1.0):
+def _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn):
     """Simple for-loop reference implementation for testing."""
     result = []
     for arr in arrays:
         if len(arr) <= seasonality:
-            result.append(nan_fill_value)
+            result.append(float("nan"))
         else:
             diffs = arr[seasonality:] - arr[:-seasonality]
             errors = aggregate_fn(diffs)
             mean_error = np.nanmean(errors)
-            result.append(nan_fill_value if np.isnan(mean_error) else mean_error)
+            result.append(mean_error)
     return np.array(result, dtype="float64")
 
 
