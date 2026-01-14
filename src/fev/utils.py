@@ -421,7 +421,7 @@ def past_future_split(
     horizon: int,
     min_context_length: int,
     max_context_length: int | None = None,
-) -> tuple[datasets.Dataset | None, datasets.Dataset | None]:
+) -> tuple[datasets.Dataset, datasets.Dataset]:
     """Filter and slice time series sequences in a single efficient pass.
 
     Computes cutoff indices once and returns both past and future data, filtering
