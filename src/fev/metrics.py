@@ -23,6 +23,11 @@ class Metric:
         """Compute mean of an array, ignoring NaN, Inf, and -Inf values."""
         return float(np.mean(arr[np.isfinite(arr)]))
 
+    @staticmethod
+    def _get_y_test(test_data: datasets.Dataset, target_column: str) -> np.ndarray:
+        """ "Return array of shape [len(test_data), horizon] with ground truth values in float64 dtype."""
+        return np.array(test_data[target_column], dtype=np.float64)
+
     def compute(
         self,
         *,
@@ -67,7 +72,7 @@ class MAE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         return np.nanmean(np.abs(y_test - y_pred))
 
@@ -88,14 +93,19 @@ class WAPE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
 
         return np.nanmean(np.abs(y_test - y_pred)) / max(self.epsilon, np.nanmean(np.abs(y_test)))
 
 
 class MASE(Metric):
-    """Mean absolute scaled error."""
+    """Mean absolute scaled error.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
@@ -110,7 +120,7 @@ class MASE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
 
         seasonal_error = _abs_seasonal_error_per_item(
@@ -133,13 +143,18 @@ class RMSE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         return np.sqrt(np.nanmean((y_test - y_pred) ** 2))
 
 
 class RMSSE(Metric):
-    """Root mean squared scaled error."""
+    """Root mean squared scaled error.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
@@ -154,7 +169,7 @@ class RMSSE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         seasonal_error = _squared_seasonal_error_per_item(
             past_data, seasonality=seasonality, target_column=target_column
@@ -176,7 +191,7 @@ class MSE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         return np.nanmean((y_test - y_pred) ** 2)
 
@@ -194,7 +209,7 @@ class RMSLE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         return np.sqrt(np.nanmean((np.log1p(y_test) - np.log1p(y_pred)) ** 2))
 
@@ -212,7 +227,7 @@ class MAPE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         ratio = np.abs(y_test - y_pred) / np.abs(y_test)
         return self._safemean(ratio)
@@ -231,7 +246,7 @@ class SMAPE(Metric):
         quantile_levels: list[float],
         target_column: str = "target",
     ):
-        y_test = np.array(test_data[target_column])
+        y_test = self._get_y_test(test_data, target_column=target_column)
         y_pred = np.array(predictions[PREDICTIONS])
         return self._safemean(2 * np.abs(y_test - y_pred) / (np.abs(y_test) + np.abs(y_pred)))
 
@@ -263,7 +278,12 @@ class MQL(Metric):
 
 
 class SQL(Metric):
-    """Scaled quantile loss."""
+    """Scaled quantile loss.
+
+    Warning:
+        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
+        all-NaN history, or zero seasonal error) are excluded from aggregation.
+    """
 
     needs_quantiles: bool = True
 
@@ -333,7 +353,7 @@ def _quantile_loss(
     for q in quantile_levels:
         pred_per_quantile.append(np.array(predictions[str(q)]))
     q_pred = np.stack(pred_per_quantile, axis=-1)  # [num_series, horizon, len(quantile_levels)]
-    y_test = np.array(test_data[target_column])[..., None]  # [num_series, horizon, 1]
+    y_test = Metric._get_y_test(test_data, target_column=target_column)[..., None]  # [num_series, horizon, 1]
     assert y_test.shape[:-1] == q_pred.shape[:-1]
     return 2 * np.abs((y_test - q_pred) * ((y_test <= q_pred) - np.array(quantile_levels)))
 
@@ -342,7 +362,6 @@ def _seasonal_error_per_item(
     arrays: list[np.ndarray],
     seasonality: int,
     aggregate_fn: Callable,
-    nan_fill_value: float = 1.0,
 ) -> np.ndarray:
     """Compute seasonal error for each time series using vectorized operations.
 
@@ -356,9 +375,9 @@ def _seasonal_error_per_item(
     num_diffs_per_series = np.maximum(lengths - seasonality, 0)
 
     if num_diffs_per_series.sum() == 0:
-        return np.full(num_series, nan_fill_value, dtype="float64")
+        return np.full(num_series, np.nan, dtype="float64")
 
-    flat = np.concatenate(arrays)
+    flat = np.concatenate(arrays).astype("float64")
     series_starts = np.concatenate([[0], np.cumsum(lengths[:-1])])
 
     # Build indices for all (t, t-seasonality) pairs across all series
@@ -379,7 +398,7 @@ def _seasonal_error_per_item(
     sums = np.bincount(series_ids, weights=np.where(valid, errors, 0.0), minlength=num_series)
     counts = np.bincount(series_ids, weights=valid.astype("float64"), minlength=num_series)
 
-    result = np.full(num_series, nan_fill_value, dtype="float64")
+    result = np.full(num_series, np.nan, dtype="float64")
     np.divide(sums, counts, out=result, where=counts > 0)
     return result
 
