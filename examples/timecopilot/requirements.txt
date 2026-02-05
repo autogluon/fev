@@ -884,7 +884,7 @@ propcache==0.3.2
     #   yarl
 prophet==1.1.7
     # via timecopilot
-protobuf==6.31.1
+protobuf==6.33.5
     # via
     #   googleapis-common-protos
     #   logfire
