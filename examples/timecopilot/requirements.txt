@@ -938,7 +938,7 @@ pydantic==2.11.7
     #   wandb
 pydantic-ai==0.4.10
     # via timecopilot
-pydantic-ai-slim==0.4.10
+pydantic-ai-slim==1.56.0
     # via
     #   pydantic-ai
     #   pydantic-evals
