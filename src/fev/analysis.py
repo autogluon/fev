@@ -287,6 +287,7 @@ def leaderboard(
         - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
         - `median_training_time_s`: Median training time across tasks. If `normalize_time_per_n_forecasts` is set, each task's time normalized by `num_forecasts` before taking the median
         - `median_inference_time_s`: Median inference time across tasks. If `normalize_time_per_n_forecasts` is set, each task's time normalized by `num_forecasts` before taking the median
+        - `median_e2e_time_s`: Median end-to-end time (training + inference) across tasks. If `normalize_time_per_n_forecasts` is set, each task's time normalized by `num_forecasts` before taking the median
         - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
@@ -296,6 +297,7 @@ def leaderboard(
 
     training_time_df = pivot_table(summaries, metric_column="training_time_s")
     inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
+    e2e_time_df = training_time_df + inference_time_df
     training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
 
     if normalize_time_per_n_forecasts is not None:
@@ -311,6 +313,7 @@ def leaderboard(
         num_forecasts = num_forecasts_df.bfill(axis=1).iloc[:, 0]
         training_time_df = training_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
         inference_time_df = inference_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
+        e2e_time_df = e2e_time_df.div(num_forecasts, axis=0) * normalize_time_per_n_forecasts
 
     if leakage_imputation_model is not None:
         errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
@@ -352,6 +355,7 @@ def leaderboard(
             # Select only tasks that are also in errors_df (in case some tasks were dropped with missing_strategy="drop")
             "median_training_time_s": training_time_df.loc[errors_df.index].median(),
             "median_inference_time_s": inference_time_df.loc[errors_df.index].median(),
+            "median_e2e_time_s": e2e_time_df.loc[errors_df.index].median(),
             "training_corpus_overlap": training_corpus_overlap_df.loc[errors_df.index].mean(),
             "num_failures": num_failures_per_model,
         },
@@ -365,7 +369,7 @@ def leaderboard(
         result_df = result_df.rename(
             columns={
                 col: col + f"_per{int(normalize_time_per_n_forecasts)}"
-                for col in ["median_training_time_s", "median_inference_time_s"]
+                for col in ["median_training_time_s", "median_inference_time_s", "median_e2e_time_s"]
             }
         )
     return result_df.sort_values(by="win_rate", ascending=False)
