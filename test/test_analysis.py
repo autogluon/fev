@@ -69,6 +69,7 @@ def test_when_leaderboard_called_then_all_expected_columns_are_present(n_resampl
         "skill_score_upper",
         "median_training_time_s",
         "median_inference_time_s",
+        "median_e2e_time_s",
         "training_corpus_overlap",
         "num_failures",
     ]
@@ -114,14 +115,17 @@ def test_when_leaderboard_called_with_num_forecasts_then_times_are_normalized(
         # No normalization: median of raw times
         assert result.loc["model_a", "median_training_time_s"] == 20.0  # median(10, 30)
         assert result.loc["model_a", "median_inference_time_s"] == 10.0  # median(5, 15)
+        assert result.loc["model_a", "median_e2e_time_s"] == 30.0  # median(15, 45)
     else:
         # Normalized: (time / num_forecasts) * normalize_time_per_n_forecasts
         # model_a: task1 = 10/100*N=0.1N, task2 = 30/200*N=0.15N -> median = 0.125N
         expected_training = 0.125 * normalize_time_per_n_forecasts
         expected_inference = 0.0625 * normalize_time_per_n_forecasts  # median(5/100, 15/200) = median(0.05, 0.075)
+        expected_e2e = 0.1875 * normalize_time_per_n_forecasts  # median(15/100, 45/200) = median(0.15, 0.225)
         time_suffix = "" if normalize_time_per_n_forecasts is None else f"_per{normalize_time_per_n_forecasts}"
         assert result.loc["model_a", "median_training_time_s" + time_suffix] == expected_training
         assert result.loc["model_a", "median_inference_time_s" + time_suffix] == expected_inference
+        assert result.loc["model_a", "median_e2e_time_s" + time_suffix] == expected_e2e
 
 
 def test_when_leaderboard_called_with_partial_num_forecasts_then_bfill_works(mock_summaries):
@@ -133,6 +137,8 @@ def test_when_leaderboard_called_with_partial_num_forecasts_then_bfill_works(moc
     time_suffix = f"_per{normalize_time_per_n_forecasts}"
     assert result.loc["model_a", "median_training_time_s" + time_suffix] == 10.0
     assert result.loc["model_b", "median_training_time_s" + time_suffix] == 20.0
+    assert result.loc["model_a", "median_e2e_time_s" + time_suffix] == 15.0
+    assert result.loc["model_b", "median_e2e_time_s" + time_suffix] == 30.0
 
 
 def test_when_leaderboard_called_with_inconsistent_num_forecasts_then_raises(mock_summaries):
