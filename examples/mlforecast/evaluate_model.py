@@ -79,14 +79,14 @@ class MLForecastModel:
 
     def __init__(
         self,
-        regressor: Literal["gbm", "cat"] = "gbm",
+        regressor: Literal["lightgbm", "catboost"] = "lightgbm",
         lags: list[int] | None = None,
         date_features: list | None = None,
         differences: list[int] | None = None,
         fit_time_limit: float | None = 600,
         model_kwargs: dict | None = None,
     ):
-        self.regressor = regressor.lower()
+        self.regressor = regressor
         self.lags = lags
         self.date_features = date_features
         self.differences = differences
@@ -94,9 +94,9 @@ class MLForecastModel:
         self.model_kwargs = model_kwargs or {}
 
     def _create_model(self):
-        if self.regressor == "gbm":
+        if self.regressor == "lightgbm":
             return _create_lgbm(self.fit_time_limit, **self.model_kwargs)
-        if self.regressor == "cat":
+        if self.regressor == "catboost":
             return _create_catboost(self.fit_time_limit, **self.model_kwargs)
         raise ValueError(f"Unknown regressor: {self.regressor}")
 
@@ -254,7 +254,7 @@ class MLForecastAutoModel(MLForecastModel):
 
     def __init__(
         self,
-        regressor: Literal["gbm", "cat"] = "gbm",
+        regressor: Literal["lightgbm", "catboost"] = "lightgbm",
         num_samples: int = 20,
         n_windows: int = 3,
         hpo_time_limit: float | None = 1800,
@@ -403,7 +403,7 @@ class MLForecastAutoModel(MLForecastModel):
 if __name__ == "__main__":
     # Configuration
     use_auto = True  # Set to False for fixed preprocessing
-    regressor = "gbm"  # "gbm" or "cat"
+    model_name = "lightgbm"  # "lightgbm" or "catboost"
     num_tasks = None  # Set to small number for testing, None for full benchmark
 
     benchmark = fev.Benchmark.from_yaml(
@@ -411,11 +411,10 @@ if __name__ == "__main__":
     )
 
     if use_auto:
-        model = MLForecastAutoModel(regressor=regressor)
-        model_name = f"mlforecast-{regressor}-auto"
+        model = MLForecastAutoModel(regressor=model_name)
+        model_name = f"auto{model_name}"
     else:
-        model = MLForecastModel(regressor=regressor)
-        model_name = f"mlforecast-{regressor}"
+        model = MLForecastModel(regressor=model_name)
 
     summaries = []
     for task in tqdm(benchmark.tasks[:num_tasks]):
