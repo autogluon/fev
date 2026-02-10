@@ -412,7 +412,6 @@ if __name__ == "__main__":
 
     if use_auto:
         model = MLForecastAutoModel(regressor=model_name)
-        model_name = f"auto{model_name}"
     else:
         model = MLForecastModel(regressor=model_name)
 
