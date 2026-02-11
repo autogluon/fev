@@ -850,7 +850,7 @@ pexpect==4.9.0 ; sys_platform != 'emscripten' and sys_platform != 'win32'
     # via ipython
 pfzy==0.3.4
     # via inquirerpy
-pillow==11.3.0
+pillow==12.1.1
     # via
     #   matplotlib
     #   reportlab
