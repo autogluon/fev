@@ -106,6 +106,9 @@ class MLForecastModel:
 
         from autogluon.timeseries.utils.datetime import get_lags_for_frequency
 
+        # Limit max lag so that we have enough training samples even for short series.
+        # After differencing, the effective length decreases, and we need some rows left
+        # for training features; hence we reserve at least 10 rows for feature construction.
         diff_cost = max(self.differences) if self.differences else seasonality
         effective_len = median_series_len - diff_cost
         max_lag = min(effective_len - 1, max(1, effective_len - 10))
@@ -317,6 +320,9 @@ class MLForecastAutoModel(MLForecastModel):
 
         optuna.logging.set_verbosity(optuna.logging.ERROR)
 
+        # MLForecast doesn't allow passing kwargs to model.fit(), so we use custom model wrappers
+        # to inject time limit callbacks and specify categorical features. We also construct custom
+        # search spaces since the default ones in MLForecast can lead to catastrophically bad performance.
         forecaster = AutoMLForecast(
             models={self.regressor: AutoModel(model=self._create_model(), config=lambda t: {})},
             freq=task.freq,
