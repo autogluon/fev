@@ -750,7 +750,7 @@ optuna==4.5.0
     # via
     #   mlforecast
     #   neuralforecast
-orjson==3.11.1
+orjson==3.11.6
     # via
     #   nixtla
     #   plotly-resampler
