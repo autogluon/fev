@@ -1269,7 +1269,7 @@ torchmetrics==1.8.0
     #   pytorch-lightning
 torchvision==0.21.0
     # via timecopilot-tirex
-tornado==6.5.1
+tornado==6.5.5
     # via
     #   ipykernel
     #   jupyter-client
