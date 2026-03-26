@@ -1036,7 +1036,7 @@ regex==2025.7.34
     # via transformers
 reportlab==4.4.3
     # via xlstm
-requests==2.32.4
+requests==2.33.0
     # via
     #   cohere
     #   dash
