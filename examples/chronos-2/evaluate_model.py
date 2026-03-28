@@ -11,7 +11,7 @@ datasets.disable_progress_bars()
 
 def predict_with_model(
     task: fev.Task,
-    model_name: str = "s3://autogluon/chronos-2",
+    model_name: str = "amazon/chronos-2",
     batch_size: int = 100,
     device_map: str = "cuda",
     torch_dtype: torch.dtype = torch.float32,
@@ -42,7 +42,7 @@ def predict_with_model(
 
 
 if __name__ == "__main__":
-    model_name = "s3://autogluon/chronos-2"
+    model_name = "amazon/chronos-2"
     num_tasks = 2  # replace with `num_tasks = None` to run on all tasks
 
     benchmark = fev.Benchmark.from_yaml(
