@@ -936,7 +936,7 @@ pydantic==2.11.7
     #   pydantic-graph
     #   pydantic-settings
     #   wandb
-pydantic-ai==0.4.10
+pydantic-ai==1.56.0
     # via timecopilot
 pydantic-ai-slim==0.4.10
     # via
