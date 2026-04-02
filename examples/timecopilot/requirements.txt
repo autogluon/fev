@@ -985,7 +985,7 @@ python-dotenv==1.1.1
     #   timecopilot-uni2ts
 python-json-logger==3.3.0
     # via jupyter-events
-python-multipart==0.0.20
+python-multipart==0.0.22
     # via mcp
 pytorch-lightning==2.4.0
     # via
