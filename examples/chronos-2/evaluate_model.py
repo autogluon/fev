@@ -16,14 +16,14 @@ def predict_with_model(
     device_map: str = "cuda",
     torch_dtype: torch.dtype = torch.float32,
     as_univariate: bool = False,
-    predict_batches_jointly: bool = True,
+    cross_learning: bool = True,
     seed: int = 123,
 ) -> tuple[list[datasets.DatasetDict], float, dict]:
     pipeline = BaseChronosPipeline.from_pretrained(model_name, device_map=device_map, torch_dtype=torch_dtype)
     torch.manual_seed(seed)
 
     predictions_per_window, inference_time = pipeline.predict_fev(
-        task, batch_size=batch_size, as_univariate=as_univariate, predict_batches_jointly=predict_batches_jointly
+        task, batch_size=batch_size, as_univariate=as_univariate, cross_learning=cross_learning
     )
 
     extra_info = {
@@ -34,7 +34,7 @@ def predict_with_model(
             "device_map": device_map,
             "torch_dtype": str(torch_dtype),
             "as_univariate": as_univariate,
-            "predict_batches_jointly": predict_batches_jointly,
+            "cross_learning": cross_learning,
             "seed": seed,
         },
     }
