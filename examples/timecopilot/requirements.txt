@@ -1317,7 +1317,7 @@ transformers==4.40.1 ; python_full_version < '3.13'
     #   timecopilot
     #   timecopilot-chronos-forecasting
     #   xlstm
-transformers==4.53.3 ; python_full_version >= '3.13'
+transformers==5.0.0rc3 ; python_full_version >= '3.13'
     # via
     #   timecopilot
     #   timecopilot-chronos-forecasting
