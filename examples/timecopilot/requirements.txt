@@ -978,7 +978,7 @@ python-dateutil==2.9.0.post0
     #   matplotlib
     #   mistralai
     #   pandas
-python-dotenv==1.1.1
+python-dotenv==1.2.2
     # via
     #   pydantic-settings
     #   tabpfn-time-series
