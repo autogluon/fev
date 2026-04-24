@@ -430,7 +430,6 @@ class Task:
     def load_full_dataset(
         self,
         storage_options: dict | None = None,
-        trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
         """Load the full raw dataset with preprocessing applied.
@@ -445,8 +444,6 @@ class Task:
         ----------
         storage_options : dict, optional
             Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
-        trust_remote_code : bool, optional
-            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -456,15 +453,12 @@ class Task:
             The preprocessed dataset with all time series.
         """
         if self._full_dataset is None:
-            self._full_dataset = self._load_dataset(
-                storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
-            )
+            self._full_dataset = self._load_dataset(storage_options=storage_options, num_proc=num_proc)
         return self._full_dataset
 
     def iter_windows(
         self,
         storage_options: dict | None = None,
-        trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> Iterable[EvaluationWindow]:
         """Iterate over the rolling evaluation windows in the task.
@@ -476,8 +470,6 @@ class Task:
         ----------
         storage_options : dict, optional
             Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
-        trust_remote_code : bool, optional
-            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -493,15 +485,12 @@ class Task:
         ...     # Make predictions using past_data and future_data
         """
         for window_idx in range(self.num_windows):
-            yield self.get_window(
-                window_idx, storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
-            )
+            yield self.get_window(window_idx, storage_options=storage_options, num_proc=num_proc)
 
     def get_window(
         self,
         window_idx: int,
         storage_options: dict | None = None,
-        trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> EvaluationWindow:
         """Get a single evaluation window by index.
@@ -512,8 +501,6 @@ class Task:
             Index of the evaluation window in [0, 1, ..., num_windows - 1].
         storage_options : dict, optional
             Passed to `datasets.load_dataset()` for accessing remote datasets (e.g., S3 credentials).
-        trust_remote_code : bool, optional
-            Passed to `datasets.load_dataset()` for trusting remote code from Hugging Face Hub.
         num_proc : int, default DEFAULT_NUM_PROC
             Number of processes to use for dataset preprocessing.
 
@@ -522,9 +509,7 @@ class Task:
         EvaluationWindow
             A single evaluation window at a specific cutoff containing the data needed to make and evaluate forecasts.
         """
-        full_dataset = self.load_full_dataset(
-            storage_options=storage_options, trust_remote_code=trust_remote_code, num_proc=num_proc
-        )
+        full_dataset = self.load_full_dataset(storage_options=storage_options, num_proc=num_proc)
         if window_idx >= self.num_windows:
             raise ValueError(f"Window index {window_idx} is out of range (num_windows={self.num_windows})")
         return EvaluationWindow(
@@ -585,7 +570,6 @@ class Task:
     def _load_dataset(
         self,
         storage_options: dict | None = None,
-        trust_remote_code: bool | None = None,
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
         """Load the raw dataset and apply initial preprocessing based on the Task definition."""
@@ -613,7 +597,6 @@ class Task:
             data_files=data_files,
             split=datasets.Split.TRAIN,
             storage_options=copy.deepcopy(storage_options),
-            trust_remote_code=trust_remote_code,
         )
         try:
             ds = datasets.load_dataset(
