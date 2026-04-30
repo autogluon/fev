@@ -574,7 +574,7 @@ ninja==1.11.1.4
     #   xlstm
 nixtla==0.6.6
     # via timecopilot
-notebook==7.4.4
+notebook==7.5.6
     # via jupyter
 notebook-shim==0.2.4
     # via
