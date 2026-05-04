@@ -17,7 +17,7 @@ uv pip install -e .
 ## Evaluate a model
 
 ```bash
-python models/evaluate.py -m chronos2
+python models/evaluate.py -m chronos
 ```
 
 Options:
