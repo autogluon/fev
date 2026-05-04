@@ -1,8 +1,12 @@
+import importlib.util
 import time
+from pathlib import Path
 
 import pytest
 
 from fev.model import ForecastingModel
+
+MODELS_DIR = Path(__file__).parent.parent / "models"
 
 
 class DummyModel(ForecastingModel):
@@ -59,13 +63,13 @@ def test_when_fit_predict_called_twice_then_timing_reflects_only_last_call():
 
 def test_when_model_name_set_then_registered_under_custom_name():
     class MyCustomModel(ForecastingModel):
-        model_name = "timesfm-2.5"
+        model_name = "my-custom-model-v3"
 
         def _fit_predict(self, task):
             return []
 
-    assert "timesfm-2.5" in ForecastingModel.list_available_models()
-    assert ForecastingModel.get_model_cls("timesfm-2.5") is MyCustomModel
+    assert "my-custom-model-v3" in ForecastingModel.list_available_models()
+    assert ForecastingModel.get_model_cls("my-custom-model-v3") is MyCustomModel
 
 
 def test_when_duplicate_model_name_registered_then_error_is_raised():
@@ -74,3 +78,18 @@ def test_when_duplicate_model_name_registered_then_error_is_raised():
         class DummyModel(ForecastingModel):  # noqa: F811
             def _fit_predict(self, task):
                 return []
+
+
+def test_when_model_wrapper_imported_then_folder_name_matches_model_name():
+    """Ensure each model folder registers exactly one model_name equal to the folder name."""
+    import re
+
+    model_folders = [p.parent for p in MODELS_DIR.glob("*/model.py")]
+    assert len(model_folders) > 0, "No model folders found"
+    for folder in model_folders:
+        model_file = folder / "model.py"
+        content = model_file.read_text()
+        matches = re.findall(r'model_name\s*=\s*"([^"]+)"', content)
+        assert matches == [folder.name], (
+            f"Expected exactly model_name = \"{folder.name}\" in {model_file}, got: {matches}"
+        )

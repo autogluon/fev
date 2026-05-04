@@ -287,6 +287,42 @@ def generate_univariate_targets_from_multivariate(
     )
 
 
+def convert_forecast_df_to_predictions(
+    forecast_df: "pd.DataFrame",
+    horizon: int,
+    quantile_levels: list[float],
+    target_columns: list[str],
+) -> datasets.DatasetDict:
+    """Convert a flat univariate forecast DataFrame into fev's DatasetDict format.
+
+    Parameters
+    ----------
+    forecast_df
+        DataFrame with columns "predictions" and one column per quantile level (as str).
+        Rows are ordered as returned by ``fev.convert_input_data(..., as_univariate=True)``:
+        items cycle through target columns, each item has ``horizon`` consecutive rows.
+        Total rows = ``num_items * len(target_columns) * horizon``.
+    horizon
+        Forecast horizon.
+    quantile_levels
+        Quantile levels corresponding to columns in ``forecast_df``.
+    target_columns
+        Target column names from the task.
+    """
+    columns = ["predictions"] + [str(q) for q in quantile_levels]
+    num_targets = len(target_columns)
+    total_series = len(forecast_df) // horizon
+
+    prediction_dict = {}
+    for i, col in enumerate(target_columns):
+        col_data = {}
+        for key in columns:
+            arr = forecast_df[key].to_numpy().reshape(total_series, horizon)
+            col_data[key] = arr[i::num_targets]
+        prediction_dict[col] = datasets.Dataset.from_dict(col_data)
+    return datasets.DatasetDict(prediction_dict)
+
+
 def combine_univariate_predictions_to_multivariate(
     predictions: datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]],
     target_columns: list[str],

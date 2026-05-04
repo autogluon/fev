@@ -1,0 +1,2 @@
+statsforecast==2.0.1
+autogluon.timeseries==1.5.0

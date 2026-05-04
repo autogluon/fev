@@ -45,13 +45,12 @@ def main():
     from tqdm import tqdm
 
     import fev
-    from fev.model import ForecastingModel
 
     spec = importlib.util.spec_from_file_location(f"models.{args.model}", model_dir / "model.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    model_cls = ForecastingModel.get_model_cls(args.model)
+    model_cls = fev.ForecastingModel.get_model_cls(args.model)
     model = model_cls(**json.loads(args.model_kwargs))
     display_name = args.name or args.model
 
