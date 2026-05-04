@@ -16,26 +16,47 @@ if TYPE_CHECKING:
 class ForecastingModel(ABC):
     """Base class for forecasting model wrappers.
 
-    Subclasses are registered on import: importing a module that defines a concrete subclass
-    is sufficient for it to appear in `list_available_models()` / `get_model_cls()`.
-    Registry key is the class name with "Model" suffix stripped, lowercased.
+    Concrete subclasses are registered on import and discoverable via `get_model_cls()`.
+
+    How to implement a subclass:
+    - Set `model_name` class attribute if the default doesn't work for you.
+    - Implement _fit_predict(task) -> predictions for all windows in the task.
+    - Each _fit_predict call should be independent (don't carry over state from prior tasks).
+    - Caching expensive resources (weights, tokenizers) on self across calls is fine.
     """
 
     _registry: dict[str, type] = {}
+    model_name: str | None = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if not inspect.isabstract(cls):
-            name = cls.__name__.removesuffix("Model").lower()
-            cls._registry[name] = cls
+            if cls.model_name is None:
+                cls.model_name = cls.__name__.removesuffix("Model").lower()
+            if cls.model_name in cls._registry and cls._registry[cls.model_name] is not cls:
+                raise ValueError(
+                    f"Model name '{cls.model_name}' is already registered by "
+                    f"{cls._registry[cls.model_name].__qualname__}"
+                )
+            cls._registry[cls.model_name] = cls
 
     def __init__(self):
+        # Set these directly or use _record_training_time / _record_inference_time helpers
         self.training_time: float = 0.0
         self.inference_time: float = 0.0
 
-    @abstractmethod
     def fit_predict(self, task: Task) -> list[datasets.DatasetDict]:
-        """Must be implemented by all models. Produce predictions for all windows in the task."""
+        """Produce predictions for all windows in the task.
+
+        Resets timing attributes before each call. Subclasses implement `_fit_predict`.
+        """
+        self.training_time = 0.0
+        self.inference_time = 0.0
+        return self._fit_predict(task)
+
+    @abstractmethod
+    def _fit_predict(self, task: Task) -> list[datasets.DatasetDict]:
+        """Implement this. Called by `fit_predict` after timing is reset."""
         ...
 
     @classmethod
@@ -45,8 +66,7 @@ class ForecastingModel(ABC):
 
     @classmethod
     def get_model_cls(cls, model_name: str) -> Type[Self]:
-        """Look up a registered model class by name. Raises ValueError if not found."""
-        model_name = model_name.lower()
+        """Look up a registered model class by name (exact match). Raises ValueError if not found."""
         if model_name not in cls._registry:
             available = cls.list_available_models()
             raise ValueError(f"Unknown model '{model_name}'. Available: {available}")
@@ -54,7 +74,7 @@ class ForecastingModel(ABC):
 
     @contextmanager
     def _record_training_time(self):
-        """Context manager that accumulates elapsed time into self.training_time."""
+        """Optional helper. Accumulates elapsed time into self.training_time."""
         start = time.monotonic()
         try:
             yield
@@ -63,7 +83,7 @@ class ForecastingModel(ABC):
 
     @contextmanager
     def _record_inference_time(self):
-        """Context manager that accumulates elapsed time into self.inference_time."""
+        """Optional helper. Accumulates elapsed time into self.inference_time."""
         start = time.monotonic()
         try:
             yield
