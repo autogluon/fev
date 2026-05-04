@@ -66,7 +66,8 @@ class ForecastingModel(ABC):
 
     @classmethod
     def get_model_cls(cls, model_name: str) -> Type[Self]:
-        """Look up a registered model class by name (exact match). Raises ValueError if not found."""
+        """Look up a registered model class by name (case-insensitive). Raises ValueError if not found."""
+        model_name = model_name.lower()
         if model_name not in cls._registry:
             available = cls.list_available_models()
             raise ValueError(f"Unknown model '{model_name}'. Available: {available}")

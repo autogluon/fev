@@ -26,6 +26,7 @@ def test_when_concrete_subclass_defined_then_it_is_registered():
 
 def test_when_get_model_cls_called_then_correct_class_returned():
     assert ForecastingModel.get_model_cls("dummy") is DummyModel
+    assert ForecastingModel.get_model_cls("Dummy") is DummyModel
     assert DummyModel.model_name == "dummy"
 
 
@@ -57,14 +58,14 @@ def test_when_fit_predict_called_twice_then_timing_reflects_only_last_call():
 
 
 def test_when_model_name_set_then_registered_under_custom_name():
-    class MyWeirdModel(ForecastingModel):
+    class MyCustomModel(ForecastingModel):
         model_name = "timesfm-2.5"
 
         def _fit_predict(self, task):
             return []
 
     assert "timesfm-2.5" in ForecastingModel.list_available_models()
-    assert ForecastingModel.get_model_cls("timesfm-2.5") is MyWeirdModel
+    assert ForecastingModel.get_model_cls("timesfm-2.5") is MyCustomModel
 
 
 def test_when_duplicate_model_name_registered_then_error_is_raised():
