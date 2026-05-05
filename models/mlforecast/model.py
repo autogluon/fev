@@ -280,6 +280,26 @@ class MLForecastModel(fev.ForecastingModel):
 
 # Custom regressor subclasses inject time-limit callbacks into fit() since
 # MLForecast doesn't expose a way to pass kwargs through to the underlying model.
+_LGBM_DEFAULTS = {
+    "objective": "mae",
+    "n_estimators": 200,
+    "max_depth": 8,
+    "learning_rate": 0.1,
+    "random_state": 42,
+    "verbose": -1,
+}
+
+_CATBOOST_DEFAULTS = {
+    "loss_function": "MAE",
+    "iterations": 200,
+    "depth": 6,
+    "learning_rate": 0.1,
+    "random_seed": 42,
+    "verbose": False,
+    "allow_writing_files": False,
+}
+
+
 def _create_lgbm(fit_time_limit: float | None, **model_kwargs):
     from lightgbm import LGBMRegressor
     from lightgbm.callback import EarlyStopException
@@ -298,7 +318,7 @@ def _create_lgbm(fit_time_limit: float | None, **model_kwargs):
                 kwargs["callbacks"] = callbacks + [_time_callback]
             return super().fit(X, y, **kwargs)
 
-    return _LGBMRegressor(objective="mae", verbose=-1, **model_kwargs)
+    return _LGBMRegressor(**{**_LGBM_DEFAULTS, **model_kwargs})
 
 
 def _create_catboost(fit_time_limit: float | None, **model_kwargs):
@@ -328,4 +348,4 @@ def _create_catboost(fit_time_limit: float | None, **model_kwargs):
 
             return super().fit(X, y, **kwargs)
 
-    return _CatBoostRegressor(loss_function="MAE", verbose=False, allow_writing_files=False, **model_kwargs)
+    return _CatBoostRegressor(**{**_CATBOOST_DEFAULTS, **model_kwargs})
