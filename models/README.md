@@ -43,6 +43,10 @@ from fev.model import ForecastingModel
 class MyModel(ForecastingModel):
     model_name = "my-model"  # must match the folder name
 
+    # List HF dataset configs (from autogluon/fev_datasets) used during pretraining.
+    # This is used to flag potential data leakage during evaluation.
+    trained_on_datasets = ["kdd_cup_2022_10T", "m5_1D"]
+
     def __init__(self, model_size: str = "small"):
         super().__init__()
         self.model_size = model_size
@@ -52,3 +56,5 @@ class MyModel(ForecastingModel):
 ```
 
 3. Add `requirements.txt` with pinned dependencies for the model.
+
+4. For pretrained models, set `trained_on_datasets` to the list of dataset configs from `autogluon/fev_datasets` that overlap with the model's training data. Leave empty for models that train from scratch.

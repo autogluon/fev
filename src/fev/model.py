@@ -23,10 +23,14 @@ class ForecastingModel(ABC):
     - Implement _fit_predict(task) -> predictions for all windows in the task.
     - Each _fit_predict call should be independent (don't carry over state from prior tasks).
     - Caching expensive resources (weights, tokenizers) on self across calls is fine.
+    - For pretrained models, set `trained_on_datasets` to the list of HF dataset configs
+      (from autogluon/fev_datasets) that were in the model's training data. This is used
+      to flag potential data leakage during evaluation.
     """
 
     _registry: dict[str, type] = {}
     model_name: str | None = None
+    trained_on_datasets: list[str] = []
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

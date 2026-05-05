@@ -10,6 +10,9 @@ class TiRexModel(fev.ForecastingModel):
     """TiRex model from https://github.com/NX-AI/tirex."""
 
     model_name = "tirex"
+    trained_on_datasets = [
+        "kdd_cup_2022_10T",
+    ]
 
     def __init__(
         self,

@@ -10,6 +10,9 @@ class SundialModel(fev.ForecastingModel):
     """Sundial model from https://huggingface.co/thuml/sundial-base-128m."""
 
     model_name = "sundial"
+    trained_on_datasets = [
+        "kdd_cup_2022_10T",
+    ]
 
     def __init__(
         self,

@@ -8,6 +8,17 @@ class TimesFM25Model(fev.ForecastingModel):
     """TimesFM 2.5 model from https://github.com/google-research/timesfm."""
 
     model_name = "timesfm-2.5"
+    trained_on_datasets = [
+        "favorita_transactions_1D",
+        "favorita_transactions_1W",
+        "fred_md_2025",
+        "proenfo_gfc12",
+        "proenfo_gfc14",
+        "proenfo_gfc17",
+        "kdd_cup_2022_10T",
+        "m5_1D",
+        "m5_1W",
+    ]
     TIMESFM_MODEL_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
     def __init__(

@@ -11,6 +11,35 @@ class MoiraiModel(fev.ForecastingModel):
     """Moirai v2 from https://huggingface.co/Salesforce/moirai-2.0-R-small."""
 
     model_name = "moirai"
+    trained_on_datasets = [
+        "ETT_15T",
+        "ETT_1D",
+        "ETT_1H",
+        "ETT_1W",
+        "LOOP_SEATTLE_1D",
+        "LOOP_SEATTLE_1H",
+        "LOOP_SEATTLE_5T",
+        "M_DENSE_1D",
+        "M_DENSE_1H",
+        "SZ_TAXI_15T",
+        "SZ_TAXI_1H",
+        "bizitobs_l2c_1H",
+        "bizitobs_l2c_5T",
+        "favorita_transactions_1D",
+        "fred_md_2025",
+        "hierarchical_sales_1D",
+        "hierarchical_sales_1W",
+        "hospital",
+        "jena_weather_10T",
+        "jena_weather_1D",
+        "jena_weather_1H",
+        "kdd_cup_2022_10T",
+        "m5_1D",
+        "proenfo_gfc12",
+        "proenfo_gfc14",
+        "proenfo_gfc17",
+        "restaurant",
+    ]
 
     def __init__(
         self,

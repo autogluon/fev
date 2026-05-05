@@ -66,6 +66,7 @@ def main():
             model_name=display_name,
             training_time_s=model.training_time,
             inference_time_s=model.inference_time,
+            trained_on_this_dataset=task.dataset_config in model.trained_on_datasets,
         )
         summaries.append(summary)
 

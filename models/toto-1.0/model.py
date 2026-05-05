@@ -10,6 +10,15 @@ class TotoModel(fev.ForecastingModel):
     """Toto model from https://github.com/DataDog/toto."""
 
     model_name = "toto-1.0"
+    trained_on_datasets = [
+        "favorita_transactions_1D",
+        "fred_md_2025",
+        "proenfo_gfc12",
+        "proenfo_gfc14",
+        "proenfo_gfc17",
+        "kdd_cup_2022_10T",
+        "m5_1D",
+    ]
 
     def __init__(
         self,
