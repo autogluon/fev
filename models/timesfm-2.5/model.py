@@ -3,13 +3,12 @@ import numpy as np
 
 import fev
 
-TIMESFM_MODEL_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-
 
 class TimesFM25Model(fev.ForecastingModel):
     """TimesFM 2.5 model from https://github.com/google-research/timesfm."""
 
     model_name = "timesfm-2.5"
+    TIMESFM_MODEL_QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
     def __init__(
         self,
@@ -77,7 +76,7 @@ class TimesFM25Model(fev.ForecastingModel):
         quantile_to_index = {}
         task_quantiles = [0.5] + quantile_levels
         for q in task_quantiles:
-            quantile_to_index[q] = int(np.argmin(np.abs(np.array(TIMESFM_MODEL_QUANTILES) - q))) + 1
+            quantile_to_index[q] = int(np.argmin(np.abs(np.array(self.TIMESFM_MODEL_QUANTILES) - q))) + 1
 
         past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
         past_data = past_data.with_format("numpy").cast_column("target", datasets.Sequence(datasets.Value("float32")))
@@ -87,7 +86,7 @@ class TimesFM25Model(fev.ForecastingModel):
 
         forecast_batches = []
         with self._record_inference_time():
-            for batch in _batchify(inputs, batch_size=self.batch_size):
+            for batch in self._batchify(inputs, batch_size=self.batch_size):
                 mean_forecast, full_forecast = model.forecast(inputs=batch, horizon=window.horizon)
                 if return_mean:
                     forecast = {"predictions": mean_forecast}
@@ -107,7 +106,7 @@ class TimesFM25Model(fev.ForecastingModel):
             predictions, target_columns=window.target_columns
         )
 
-
-def _batchify(lst: list, batch_size: int):
-    for i in range(0, len(lst), batch_size):
-        yield lst[i : i + batch_size]
+    @staticmethod
+    def _batchify(lst: list, batch_size: int):
+        for i in range(0, len(lst), batch_size):
+            yield lst[i : i + batch_size]

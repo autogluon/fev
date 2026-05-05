@@ -1,6 +1,4 @@
 import datasets
-import torch
-from chronos import BaseChronosPipeline
 
 import fev
 
@@ -13,21 +11,25 @@ class Chronos2Model(fev.ForecastingModel):
     def __init__(
         self,
         model_path: str = "amazon/chronos-2",
-        device_map: str = "cuda",
-        torch_dtype: torch.dtype = torch.float32,
+        device: str = "cuda",
         batch_size: int = 100,
         cross_learning: bool = True,
     ):
         super().__init__()
         self.model_path = model_path
-        self.device_map = device_map
-        self.torch_dtype = torch_dtype
+        self.device = device
         self.batch_size = batch_size
         self.cross_learning = cross_learning
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
+        import torch
+        from chronos import BaseChronosPipeline
+
+        if self.device == "auto":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
         pipeline = BaseChronosPipeline.from_pretrained(
-            self.model_path, device_map=self.device_map, torch_dtype=self.torch_dtype
+            self.model_path, device_map=self.device, torch_dtype=torch.float32
         )
 
         predictions_per_window, self.inference_time = pipeline.predict_fev(

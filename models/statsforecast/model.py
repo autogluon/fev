@@ -104,7 +104,7 @@ class StatsForecastModel(fev.ForecastingModel):
         model_names = [str(m) for m in predictor.models]
         forecast_df["predictions"] = forecast_df[model_names].median(1)
         for q in quantile_levels:
-            suffix = _quantile_to_suffix(q)
+            suffix = self._quantile_to_suffix(q)
             forecast_df[str(q)] = forecast_df[[m + suffix for m in model_names]].median(1).to_numpy()
 
         forecast_df = forecast_df.fillna(0.0)
@@ -116,8 +116,8 @@ class StatsForecastModel(fev.ForecastingModel):
             target_columns=window.target_columns,
         )
 
-
-def _quantile_to_suffix(q: float) -> str:
-    if q < 0.5:
-        return f"-lo-{int(100 - 200 * q)}"
-    return f"-hi-{int(200 * q - 100)}"
+    @staticmethod
+    def _quantile_to_suffix(q: float) -> str:
+        if q < 0.5:
+            return f"-lo-{int(100 - 200 * q)}"
+        return f"-hi-{int(200 * q - 100)}"
