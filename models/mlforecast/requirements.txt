@@ -1,0 +1,5 @@
+mlforecast==0.14.0
+optuna==4.6.0
+lightgbm==4.6.0
+autogluon.timeseries==1.5.0
+catboost==1.2.8
