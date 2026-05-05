@@ -12,6 +12,7 @@ import pyarrow.compute as pc
 from .constants import DEFAULT_NUM_PROC
 
 __all__ = [
+    "maybe_cache_from_s3",
     "convert_long_df_to_hf_dataset",
     "infer_column_types",
     "validate_time_series_dataset",
@@ -520,3 +521,28 @@ def past_future_split(
     future_data = _build_sliced_dataset(dataset, table, sequence_columns, offsets, cutoff_indices, future_end)
 
     return past_data, future_data
+
+
+def maybe_cache_from_s3(path: str, cache_dir: str | None = None) -> str:
+    """If path is an S3 URI, download and cache locally. Otherwise return as-is."""
+    import os
+
+    if not path.startswith("s3://"):
+        return path
+
+    import s3fs
+
+    if cache_dir is None:
+        cache_dir = os.path.expanduser("~/.cache/fev")
+
+    cache_key = path.replace("s3://", "").replace("/", "_")
+    local_path = os.path.join(cache_dir, cache_key)
+
+    if os.path.exists(local_path):
+        return local_path
+
+    os.makedirs(local_path, exist_ok=True)
+    print(f"Downloading {path} to {local_path}")
+    fs = s3fs.S3FileSystem()
+    fs.get(path, local_path, recursive=True)
+    return local_path

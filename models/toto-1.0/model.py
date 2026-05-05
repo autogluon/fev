@@ -42,14 +42,14 @@ class TotoModel(fev.ForecastingModel):
         self.device = device
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
-        import pandas as pd
         import torch
         from toto.inference.forecaster import TotoForecaster
         from toto.model.toto import Toto
 
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        toto = Toto.from_pretrained(self.model_path)
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
+        toto = Toto.from_pretrained(model_path)
         toto.to(self.device)
         if self.compile_model:
             toto.compile()

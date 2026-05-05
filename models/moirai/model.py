@@ -62,7 +62,8 @@ class MoiraiModel(fev.ForecastingModel):
         import torch
         from uni2ts.model.moirai2 import Moirai2Forecast, Moirai2Module
 
-        module = Moirai2Module.from_pretrained(self.model_path)
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
+        module = Moirai2Module.from_pretrained(model_path)
 
         gts_dataset, _ = fev.convert_input_data(task.get_window(0), "gluonts", as_univariate=self.as_univariate)
         if self.as_univariate:

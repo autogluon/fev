@@ -38,8 +38,9 @@ class SundialModel(fev.ForecastingModel):
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
+            model_path,
             device_map=self.device,
             trust_remote_code=True,
         )

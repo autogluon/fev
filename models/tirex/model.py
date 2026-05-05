@@ -34,7 +34,8 @@ class TiRexModel(fev.ForecastingModel):
 
         from tirex import ForecastModel, load_model
 
-        model: ForecastModel = load_model(self.model_path, device=self.device)
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
+        model: ForecastModel = load_model(model_path, device=self.device)
         predictions_per_window = []
         for window in task.iter_windows():
             past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)

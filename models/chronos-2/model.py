@@ -28,9 +28,8 @@ class Chronos2Model(fev.ForecastingModel):
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        pipeline = BaseChronosPipeline.from_pretrained(
-            self.model_path, device_map=self.device, torch_dtype=torch.float32
-        )
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
+        pipeline = BaseChronosPipeline.from_pretrained(model_path, device_map=self.device, torch_dtype=torch.float32)
 
         predictions_per_window, self.inference_time = pipeline.predict_fev(
             task, batch_size=self.batch_size, cross_learning=self.cross_learning

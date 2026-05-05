@@ -50,7 +50,8 @@ class TimesFM25Model(fev.ForecastingModel):
         )
         print(f"Setting context_length={context_length}")
 
-        model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(self.model_path)
+        model_path = fev.utils.maybe_cache_from_s3(self.model_path)
+        model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(model_path)
         model.compile(
             timesfm.ForecastConfig(
                 max_context=context_length,
