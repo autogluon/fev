@@ -91,5 +91,5 @@ def test_when_model_wrapper_imported_then_folder_name_matches_model_name():
         content = model_file.read_text()
         matches = re.findall(r'model_name\s*=\s*"([^"]+)"', content)
         assert matches == [folder.name], (
-            f"Expected exactly model_name = \"{folder.name}\" in {model_file}, got: {matches}"
+            f'Expected exactly model_name = "{folder.name}" in {model_file}, got: {matches}'
         )
