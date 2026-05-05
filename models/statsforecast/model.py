@@ -5,14 +5,9 @@ import pandas as pd
 
 import fev
 
-AVAILABLE_MODELS = ["naive", "seasonalnaive", "autoarima", "autoets", "autotheta", "statensemble"]
-
 
 class StatsForecastModel(fev.ForecastingModel):
-    """Model wrapper for the StatsForecast library.
-
-    Available models: naive, seasonalnaive, autoarima, autoets, autotheta, statensemble.
-    """
+    """Model wrapper for the StatsForecast library."""
 
     model_name = "statsforecast"
 
@@ -23,10 +18,7 @@ class StatsForecastModel(fev.ForecastingModel):
         max_season_length: int | None = None,
     ):
         super().__init__()
-        model = model.lower().replace("-", "").replace("_", "").replace(" ", "")
-        if model not in AVAILABLE_MODELS:
-            raise ValueError(f"Unknown model '{model}'. Available: {AVAILABLE_MODELS}")
-        self.model = model
+        self.model = model.lower().replace("-", "").replace("_", "").replace(" ", "")
         self.max_context_length = max_context_length
         self.max_season_length = max_season_length
 
@@ -38,23 +30,27 @@ class StatsForecastModel(fev.ForecastingModel):
             AutoTheta,
             DynamicOptimizedTheta,
             Naive,
+            RandomWalkWithDrift,
             SeasonalNaive,
         )
 
         models = {
-            "naive": lambda: [Naive()],
-            "seasonalnaive": lambda: [SeasonalNaive(season_length=seasonality)],
-            "autoarima": lambda: [AutoARIMA(season_length=seasonality)],
-            "autoets": lambda: [AutoETS(season_length=seasonality)],
-            "autotheta": lambda: [AutoTheta(season_length=seasonality)],
-            "statensemble": lambda: [
+            "naive": [Naive()],
+            "drift": [RandomWalkWithDrift()],
+            "seasonalnaive": [SeasonalNaive(season_length=seasonality)],
+            "autoarima": [AutoARIMA(season_length=seasonality)],
+            "autoets": [AutoETS(season_length=seasonality)],
+            "autotheta": [AutoTheta(season_length=seasonality)],
+            "statensemble": [
                 AutoETS(season_length=seasonality),
                 AutoARIMA(season_length=seasonality),
                 DynamicOptimizedTheta(season_length=seasonality),
                 AutoCES(season_length=seasonality),
             ],
         }
-        return models[self.model]()
+        if self.model not in models:
+            raise ValueError(f"Unknown model '{self.model}'. Available: {list(models)}")
+        return models[self.model]
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         from autogluon.timeseries.utils.datetime import get_seasonality

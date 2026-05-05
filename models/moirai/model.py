@@ -15,11 +15,11 @@ class MoiraiModel(fev.ForecastingModel):
     def __init__(
         self,
         model_path: str = "Salesforce/moirai-2.0-R-small",
-        batch_size: int = 32,
-        max_context_length: int = 1680,
+        batch_size: int = 128,
+        max_context_length: int = 4000,
         device: str = "auto",
         ignore_covariates: bool = True,
-        as_univariate: bool = False,
+        as_univariate: bool = True,
     ):
         super().__init__()
         self.model_path = model_path

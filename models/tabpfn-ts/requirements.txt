@@ -1,1 +1,1 @@
-tabpfn-time-series==1.0.3
+tabpfn-time-series==1.0.10

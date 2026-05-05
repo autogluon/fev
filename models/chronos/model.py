@@ -15,7 +15,7 @@ class ChronosModel(fev.ForecastingModel):
         model_path: str = "amazon/chronos-bolt-base",
         device_map: str = "cuda",
         torch_dtype: torch.dtype = torch.bfloat16,
-        batch_size: int = 32,
+        batch_size: int = 256,
     ):
         super().__init__()
         self.model_path = model_path

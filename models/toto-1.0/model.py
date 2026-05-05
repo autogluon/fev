@@ -16,7 +16,7 @@ class TotoModel(fev.ForecastingModel):
         model_path: str = "Datadog/Toto-Open-Base-1.0",
         max_batch_variate_size: int = 24,
         num_samples: int = 256,
-        samples_per_batch: int = 32,
+        samples_per_batch: int = 8,
         max_context_length: int = 4096,
         as_univariate: bool = False,
         compile_model: bool = False,
