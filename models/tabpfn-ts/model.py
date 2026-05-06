@@ -21,20 +21,38 @@ def _disable_tqdm():
             os.environ["TQDM_DISABLE"] = old_value
 
 
+def _handle_missing_values(tsdf):
+    """Fill NaN targets with 0 for series with <=1 valid values, drop NaN rows for others."""
+    valid_counts = tsdf["target"].notna().groupby(level="item_id").sum()
+    invalid_items = valid_counts[valid_counts <= 1].index
+
+    result = tsdf.copy()
+
+    if len(invalid_items) > 0:
+        mask_to_fill = result.index.get_level_values("item_id").isin(invalid_items) & result["target"].isna()
+        result.loc[mask_to_fill, "target"] = 0
+
+    result = result[result["target"].notna()]
+    return result
+
+
 class TabPFNTSModel(fev.ForecastingModel):
     """TabPFN-TS model from https://github.com/PriorLabs/tabpfn-time-series."""
 
     model_name = "tabpfn-ts"
 
-    def __init__(self, max_context_length: int = 5000):
+    def __init__(self, max_context_length: int = 4096, model_path: str = "tabpfn-v2.6-regressor-v2.6_default.ckpt"):
         super().__init__()
         self.max_context_length = max_context_length
+        self.model_path = model_path
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         from tabpfn_time_series import FeatureTransformer, TabPFNMode, TabPFNTimeSeriesPredictor, TimeSeriesDataFrame
         from tabpfn_time_series.features import AutoSeasonalFeature, CalendarFeature, RunningIndexFeature
 
-        predictor = TabPFNTimeSeriesPredictor(tabpfn_mode=TabPFNMode.LOCAL)
+        predictor = TabPFNTimeSeriesPredictor(
+            tabpfn_mode=TabPFNMode.LOCAL, tabpfn_config={"model_path": self.model_path}
+        )
         selected_features = [RunningIndexFeature(), CalendarFeature(), AutoSeasonalFeature()]
         feature_transformer = FeatureTransformer(selected_features)
 
@@ -46,10 +64,11 @@ class TabPFNTSModel(fev.ForecastingModel):
                 for col in df.columns:
                     if not pd.api.types.is_numeric_dtype(df[col]):
                         df[col] = df[col].astype(str).replace("nan", "None")
-            train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id").fill_missing_values().fillna(0.0)
+            train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id")
+            train_tsdf = _handle_missing_values(train_tsdf)
             train_tsdf = train_tsdf.slice_by_timestep(-self.max_context_length, None)
             train_tsdf = train_tsdf.drop(columns=task.past_dynamic_columns)
-            test_tsdf = TimeSeriesDataFrame(test_tsdf, id_column="id").fill_missing_values().fillna(0.0)
+            test_tsdf = TimeSeriesDataFrame(test_tsdf, id_column="id")
             test_tsdf = test_tsdf.assign(target=float("nan"))
             train_tsdf, test_tsdf = feature_transformer.transform(train_tsdf, test_tsdf)
             with _disable_tqdm():
