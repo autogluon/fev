@@ -16,7 +16,6 @@ class MLForecastModel(fev.ForecastingModel):
     def __init__(
         self,
         regressor: Literal["lightgbm", "catboost"] = "lightgbm",
-        num_samples: int = 20,
         n_windows: int = 3,
         hpo_time_limit: float | None = 1800,
         fit_time_limit: float | None = 600,
@@ -25,7 +24,6 @@ class MLForecastModel(fev.ForecastingModel):
     ):
         super().__init__()
         self.regressor = regressor
-        self.num_samples = num_samples
         self.n_windows = n_windows
         self.hpo_time_limit = hpo_time_limit
         self.fit_time_limit = fit_time_limit
@@ -188,9 +186,14 @@ class MLForecastModel(fev.ForecastingModel):
         if seasonality > 1:
             candidate_lag_transforms.append({seasonality: [RollingMean(window_size=seasonality, min_samples=1)]})
 
+        search_space = {
+            "target_transforms_idx": list(range(len(candidate_transforms))),
+            "lag_transforms_idx": list(range(len(candidate_lag_transforms))),
+        }
+
         def config(trial):
-            tfm_idx = trial.suggest_categorical("target_transforms_idx", range(len(candidate_transforms)))
-            lag_tfm_idx = trial.suggest_categorical("lag_transforms_idx", range(len(candidate_lag_transforms)))
+            tfm_idx = trial.suggest_categorical("target_transforms_idx", search_space["target_transforms_idx"])
+            lag_tfm_idx = trial.suggest_categorical("lag_transforms_idx", search_space["lag_transforms_idx"])
             return {
                 "target_transforms": candidate_transforms[tfm_idx],
                 "lags": default_lags,
@@ -198,21 +201,28 @@ class MLForecastModel(fev.ForecastingModel):
                 "date_features": default_date_features,
             }
 
-        return config
+        return config, search_space
 
     def _run_hpo(
         self, train_df: pd.DataFrame, task: fev.Task, lags: list[int], date_features: list, min_series_len: int
     ) -> dict:
+        import math
+
         import optuna
         from mlforecast.auto import AutoMLForecast, AutoModel
 
         optuna.logging.set_verbosity(optuna.logging.ERROR)
 
+        config_fn, search_space = self._get_preprocessing_search_space(
+            task.seasonality, lags, date_features, min_series_len
+        )
+        num_samples = math.prod(len(v) for v in search_space.values())
+
         # Only tune preprocessing; model hyperparams fixed to keep runtime manageable.
         forecaster = AutoMLForecast(
             models={self.regressor: AutoModel(model=self._create_model(), config=lambda t: {})},
             freq=task.freq,
-            init_config=self._get_preprocessing_search_space(task.seasonality, lags, date_features, min_series_len),
+            init_config=config_fn,
             fit_config=lambda t: {"static_features": []},
         )
 
@@ -222,11 +232,15 @@ class MLForecastModel(fev.ForecastingModel):
         if self.hpo_time_limit is not None:
             optimize_kwargs["timeout"] = self.hpo_time_limit
 
+        # Exhaustive grid search over the small preprocessing space
+        sampler = optuna.samplers.GridSampler(search_space, seed=42)
+
         forecaster.fit(
             train_df,
             n_windows=self.n_windows,
             h=task.horizon,
-            num_samples=self.num_samples,
+            num_samples=num_samples,
+            study_kwargs={"sampler": sampler},
             optimize_kwargs=optimize_kwargs or None,
         )
 
