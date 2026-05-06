@@ -30,6 +30,7 @@ class TotoModel(fev.ForecastingModel):
         as_univariate: bool = False,
         compile_model: bool = False,
         device: str = "auto",
+        seed: int = 42,
     ):
         super().__init__()
         self.model_path = model_path
@@ -40,11 +41,14 @@ class TotoModel(fev.ForecastingModel):
         self.as_univariate = as_univariate
         self.compile_model = compile_model
         self.device = device
+        self.seed = seed
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         import torch
         from toto.inference.forecaster import TotoForecaster
         from toto.model.toto import Toto
+
+        torch.manual_seed(self.seed)
 
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
