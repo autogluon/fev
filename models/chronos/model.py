@@ -13,11 +13,13 @@ class ChronosModel(fev.ForecastingModel):
         self,
         model_path: str = "amazon/chronos-bolt-base",
         device: str = "cuda",
+        torch_dtype: str = "bfloat16",
         batch_size: int = 256,
     ):
         super().__init__()
         self.model_path = model_path
         self.device = device
+        self.torch_dtype = torch_dtype
         self.batch_size = batch_size
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
@@ -28,7 +30,9 @@ class ChronosModel(fev.ForecastingModel):
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         model_path = fev.utils.maybe_cache_from_s3(self.model_path)
-        pipeline = BaseChronosPipeline.from_pretrained(model_path, device_map=self.device, torch_dtype=torch.float32)
+        pipeline = BaseChronosPipeline.from_pretrained(
+            model_path, device_map=self.device, torch_dtype=self.torch_dtype
+        )
 
         quantile_levels = task.quantile_levels.copy()
         if 0.5 not in quantile_levels:
