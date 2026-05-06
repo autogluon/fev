@@ -21,21 +21,6 @@ def _disable_tqdm():
             os.environ["TQDM_DISABLE"] = old_value
 
 
-def _handle_missing_values(tsdf):
-    """Fill NaN targets with 0 for series with <=1 valid values, drop NaN rows for others."""
-    valid_counts = tsdf["target"].notna().groupby(level="item_id").sum()
-    invalid_items = valid_counts[valid_counts <= 1].index
-
-    result = tsdf.copy()
-
-    if len(invalid_items) > 0:
-        mask_to_fill = result.index.get_level_values("item_id").isin(invalid_items) & result["target"].isna()
-        result.loc[mask_to_fill, "target"] = 0
-
-    result = result[result["target"].notna()]
-    return result
-
-
 class TabPFNTSModel(fev.ForecastingModel):
     """TabPFN-TS model from https://github.com/PriorLabs/tabpfn-time-series."""
 
@@ -43,7 +28,7 @@ class TabPFNTSModel(fev.ForecastingModel):
 
     def __init__(
         self,
-        max_context_length: int = 4096,
+        max_context_length: int = 5000,
         model_path: str = "tabpfn-v2-regressor-2noar4o2.ckpt",
         use_covariates: bool = True,
     ):
@@ -70,10 +55,10 @@ class TabPFNTSModel(fev.ForecastingModel):
                 for col in df.columns:
                     if not pd.api.types.is_numeric_dtype(df[col]):
                         df[col] = df[col].astype(str).replace("nan", "None")
-            train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id")
-            train_tsdf = _handle_missing_values(train_tsdf)
+            train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id").fill_missing_values().fillna(0.0)
             train_tsdf = train_tsdf.slice_by_timestep(-self.max_context_length, None)
-            test_tsdf = TimeSeriesDataFrame(test_tsdf, id_column="id")
+            train_tsdf = train_tsdf.drop(columns=task.past_dynamic_columns)
+            test_tsdf = TimeSeriesDataFrame(test_tsdf, id_column="id").fill_missing_values().fillna(0.0)
             if not self.use_covariates and task.known_dynamic_columns:
                 train_tsdf = train_tsdf.drop(columns=task.known_dynamic_columns)
                 test_tsdf = test_tsdf.drop(columns=task.known_dynamic_columns)
