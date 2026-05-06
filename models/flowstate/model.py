@@ -10,6 +10,16 @@ class FlowStateModel(fev.ForecastingModel):
     """FlowState model from https://github.com/ibm-granite/granite-tsfm."""
 
     model_name = "flowstate"
+    # Datasets from GiftEvalPretrain
+    trained_on_datasets = [
+        "favorita_transactions_1D",
+        "fred_md_2025",
+        "kdd_cup_2022_10T",
+        "m5_1D",
+        "proenfo_gfc12",
+        "proenfo_gfc14",
+        "proenfo_gfc17",
+    ]
 
     def __init__(
         self,
