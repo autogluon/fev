@@ -1,3 +1,6 @@
+"""MLForecast with LightGBM or CatBoost, tuning preprocessing via exhaustive grid search."""
+
+import math
 import time
 import warnings
 from typing import Literal
@@ -9,7 +12,7 @@ import fev
 
 
 class MLForecastModel(fev.ForecastingModel):
-    """MLForecast with LightGBM or CatBoost, tuning preprocessing via Optuna."""
+    """MLForecast with LightGBM or CatBoost, tuning preprocessing via Optuna grid search."""
 
     model_name = "mlforecast"
 
@@ -37,20 +40,16 @@ class MLForecastModel(fev.ForecastingModel):
             return _create_catboost(self.fit_time_limit, **self.model_kwargs)
         raise ValueError(f"Unknown regressor: {self.regressor}")
 
-    def _get_lags(
-        self, freq: str, median_series_len: int, seasonality: int = 1, differences: list[int] | None = None
-    ) -> list[int]:
+    def _get_lags(self, freq: str, median_series_len: int, seasonality: int = 1) -> list[int]:
         from autogluon.timeseries.utils.datetime import get_lags_for_frequency
 
         # Cap lags so short series still have enough rows for training after differencing
-        diff_cost = max(differences) if differences else seasonality
+        diff_cost = seasonality
         effective_len = median_series_len - diff_cost
         max_lag = min(effective_len - 1, max(1, effective_len - 10))
         lags = [lag for lag in get_lags_for_frequency(freq) if lag <= max_lag]
-
         if effective_len < 30 and len(lags) > 5:
             lags = lags[:5]
-
         return lags if lags else [1]
 
     def _get_date_features(self, freq: str) -> list:
@@ -62,9 +61,8 @@ class MLForecastModel(fev.ForecastingModel):
         from mlforecast.target_transforms import Differences, LocalStandardScaler
 
         transforms = []
-        differences = [seasonality]
-        if differences and (min_series_len is None or min_series_len > max(differences)):
-            transforms.append(Differences(differences))
+        if min_series_len is None or min_series_len > seasonality:
+            transforms.append(Differences([seasonality]))
         transforms.append(LocalStandardScaler())
         return transforms
 
@@ -101,34 +99,11 @@ class MLForecastModel(fev.ForecastingModel):
 
         return train_df, future_df
 
-    def _create_mlforecast(self, freq: str, lags: list[int], date_features: list, target_transforms: list):
-        from mlforecast import MLForecast
-
-        return MLForecast(
-            models={self.regressor: self._create_model()},
-            freq=freq,
-            lags=lags,
-            date_features=date_features,
-            target_transforms=target_transforms,
-        )
-
-    def _format_predictions(
-        self, preds_df: pd.DataFrame, window: fev.EvaluationWindow, quantile_levels: list[float]
-    ) -> datasets.DatasetDict:
-        preds_df["predictions"] = preds_df[self.regressor]
-        for q in quantile_levels:
-            preds_df[str(q)] = preds_df[self.regressor]
-
-        return fev.utils.convert_forecast_df_to_predictions(
-            preds_df,
-            horizon=window.horizon,
-            quantile_levels=quantile_levels,
-            target_columns=window.target_columns,
-        )
-
     def _predict_window(
         self, window: fev.EvaluationWindow, task: fev.Task, tuned_config: dict | None = None
     ) -> datasets.DatasetDict:
+        from mlforecast import MLForecast
+
         train_df, future_df = self._prepare_data(window, task)
 
         if tuned_config is not None:
@@ -143,34 +118,116 @@ class MLForecastModel(fev.ForecastingModel):
             date_features = self._get_date_features(task.freq)
             target_transforms = self._get_target_transforms(task.seasonality, min_series_len)
 
-        forecaster = self._create_mlforecast(task.freq, lags, date_features, target_transforms)
+        forecaster = MLForecast(
+            models={self.regressor: self._create_model()},
+            freq=task.freq,
+            lags=lags,
+            date_features=date_features,
+            target_transforms=target_transforms,
+        )
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-
             with self._record_training_time():
                 forecaster.fit(train_df, static_features=[])
-
             with self._record_inference_time():
                 preds_df = forecaster.predict(window.horizon, X_df=future_df)
 
-        return self._format_predictions(preds_df, window, task.quantile_levels)
+        preds_df["predictions"] = preds_df[self.regressor]
+        for q in task.quantile_levels:
+            preds_df[str(q)] = preds_df[self.regressor]
+
+        return fev.utils.convert_forecast_df_to_predictions(
+            preds_df,
+            horizon=window.horizon,
+            quantile_levels=task.quantile_levels,
+            target_columns=window.target_columns,
+        )
+
+    def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
+        task.load_full_dataset()
+
+        min_series_len = self._compute_global_min_series_len(task)
+        first_window = task.get_window(0)
+        train_df, _ = self._prepare_data(first_window, task)
+        hpo_train_df = self._filter_series_for_hpo(train_df, task.horizon)
+
+        # Falls back to heuristics if series are too short for cross-validation or HPO fails
+        tuned_config = None
+        if hpo_train_df is not None:
+            series_lengths = hpo_train_df.groupby("unique_id").size()
+            effective_series_len = int(series_lengths.median()) - self.n_windows * task.horizon
+            lags = self._get_lags(task.freq, effective_series_len, task.seasonality)
+            date_features = self._get_date_features(task.freq)
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    with self._record_training_time():
+                        tuned_config = self._run_hpo(hpo_train_df, task, lags, date_features, min_series_len)
+            except Exception:
+                pass
+
+        return [self._predict_window(window, task, tuned_config) for window in task.iter_windows()]
+
+    def _compute_global_min_series_len(self, task: fev.Task) -> int:
+        min_len = float("inf")
+        for window in task.iter_windows():
+            train_df, _ = self._prepare_data(window, task)
+            min_len = min(min_len, int(train_df.groupby("unique_id").size().min()))
+        return int(min_len)
 
     def _filter_series_for_hpo(self, train_df: pd.DataFrame, horizon: int) -> pd.DataFrame | None:
         min_required = (self.n_windows + 1) * horizon + 1
         series_lengths = train_df.groupby("unique_id").size()
         valid_series = series_lengths[series_lengths >= min_required].index
-
         # HPO cross-validation is unreliable with too few qualifying series
         min_series_count = min(10, max(1, len(series_lengths) // 10))
         if len(valid_series) < min_series_count:
             return None
-
         return train_df[train_df["unique_id"].isin(valid_series)]
 
-    def _get_preprocessing_search_space(
-        self, seasonality: int, default_lags: list[int], default_date_features: list, min_series_len: int
-    ):
+    def _run_hpo(
+        self, train_df: pd.DataFrame, task: fev.Task, lags: list[int], date_features: list, min_series_len: int
+    ) -> dict:
+        import optuna
+        from mlforecast.auto import AutoMLForecast, AutoModel
+
+        optuna.logging.set_verbosity(optuna.logging.ERROR)
+
+        config_fn, search_space = self._build_search_space(task.seasonality, lags, date_features, min_series_len)
+        num_trials = math.prod(len(v) for v in search_space.values())
+        sampler = optuna.samplers.GridSampler(search_space, seed=42)
+
+        forecaster = AutoMLForecast(
+            models={self.regressor: AutoModel(model=self._create_model(), config=lambda t: {})},
+            freq=task.freq,
+            init_config=config_fn,
+            fit_config=lambda t: {"static_features": []},
+        )
+
+        optimize_kwargs = {}
+        if self.n_jobs != 1:
+            optimize_kwargs["n_jobs"] = self.n_jobs
+        if self.hpo_time_limit is not None:
+            optimize_kwargs["timeout"] = self.hpo_time_limit
+
+        forecaster.fit(
+            train_df,
+            n_windows=self.n_windows,
+            h=task.horizon,
+            num_samples=num_trials,
+            study_kwargs={"sampler": sampler},
+            optimize_kwargs=optimize_kwargs or None,
+        )
+
+        best_mlf = forecaster.models_[self.regressor]
+        return {
+            "lags": list(best_mlf.ts.lags) if best_mlf.ts.lags is not None else [],
+            "date_features": best_mlf.ts.date_features if best_mlf.ts.date_features else [],
+            "target_transforms": best_mlf.ts.target_transforms if best_mlf.ts.target_transforms else [],
+        }
+
+    def _build_search_space(self, seasonality: int, lags: list[int], date_features: list, min_series_len: int):
         from mlforecast.lag_transforms import ExponentiallyWeightedMean, RollingMean
         from mlforecast.target_transforms import Differences, LocalStandardScaler
 
@@ -196,124 +253,16 @@ class MLForecastModel(fev.ForecastingModel):
             lag_tfm_idx = trial.suggest_categorical("lag_transforms_idx", search_space["lag_transforms_idx"])
             return {
                 "target_transforms": candidate_transforms[tfm_idx],
-                "lags": default_lags,
+                "lags": lags,
                 "lag_transforms": candidate_lag_transforms[lag_tfm_idx],
-                "date_features": default_date_features,
+                "date_features": date_features,
             }
 
         return config, search_space
 
-    def _run_hpo(
-        self, train_df: pd.DataFrame, task: fev.Task, lags: list[int], date_features: list, min_series_len: int
-    ) -> dict:
-        import math
 
-        import optuna
-        from mlforecast.auto import AutoMLForecast, AutoModel
-
-        optuna.logging.set_verbosity(optuna.logging.ERROR)
-
-        config_fn, search_space = self._get_preprocessing_search_space(
-            task.seasonality, lags, date_features, min_series_len
-        )
-        num_samples = math.prod(len(v) for v in search_space.values())
-
-        # Only tune preprocessing; model hyperparams fixed to keep runtime manageable.
-        forecaster = AutoMLForecast(
-            models={self.regressor: AutoModel(model=self._create_model(), config=lambda t: {})},
-            freq=task.freq,
-            init_config=config_fn,
-            fit_config=lambda t: {"static_features": []},
-        )
-
-        optimize_kwargs = {}
-        if self.n_jobs != 1:
-            optimize_kwargs["n_jobs"] = self.n_jobs
-        if self.hpo_time_limit is not None:
-            optimize_kwargs["timeout"] = self.hpo_time_limit
-
-        # Exhaustive grid search over the small preprocessing space
-        sampler = optuna.samplers.GridSampler(search_space, seed=42)
-
-        forecaster.fit(
-            train_df,
-            n_windows=self.n_windows,
-            h=task.horizon,
-            num_samples=num_samples,
-            study_kwargs={"sampler": sampler},
-            optimize_kwargs=optimize_kwargs or None,
-        )
-
-        best_mlf = forecaster.models_[self.regressor]
-        return {
-            "lags": list(best_mlf.ts.lags) if best_mlf.ts.lags is not None else [],
-            "date_features": best_mlf.ts.date_features if best_mlf.ts.date_features else [],
-            "target_transforms": best_mlf.ts.target_transforms if best_mlf.ts.target_transforms else [],
-        }
-
-    def _compute_global_min_series_len(self, task: fev.Task) -> int:
-        min_len = float("inf")
-        for window in task.iter_windows():
-            train_df, _ = self._prepare_data(window, task)
-            min_len = min(min_len, int(train_df.groupby("unique_id").size().min()))
-        return int(min_len)
-
-    def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
-        task.load_full_dataset()
-
-        min_series_len = self._compute_global_min_series_len(task)
-
-        first_window = task.get_window(0)
-        train_df, _ = self._prepare_data(first_window, task)
-        hpo_train_df = self._filter_series_for_hpo(train_df, task.horizon)
-
-        # Falls back to heuristics if series are too short for cross-validation or HPO fails
-        tuned_config = None
-
-        if hpo_train_df is not None:
-            series_lengths = hpo_train_df.groupby("unique_id").size()
-            effective_series_len = int(series_lengths.median()) - self.n_windows * task.horizon
-            lags = self._get_lags(task.freq, effective_series_len, task.seasonality)
-            date_features = self._get_date_features(task.freq)
-
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    with self._record_training_time():
-                        tuned_config = self._run_hpo(hpo_train_df, task, lags, date_features, min_series_len)
-            except Exception:
-                pass
-
-        predictions = []
-        for window in task.iter_windows():
-            preds = self._predict_window(window, task, tuned_config)
-            predictions.append(preds)
-
-        return predictions
-
-
-# Custom regressor subclasses inject time-limit callbacks into fit() since
-# MLForecast doesn't expose a way to pass kwargs through to the underlying model.
-_LGBM_DEFAULTS = {
-    "objective": "mae",
-    # "n_estimators": 200,
-    # "max_depth": 8,
-    # "learning_rate": 0.1,
-    "random_state": 42,
-    "verbose": -1,
-}
-
-_CATBOOST_DEFAULTS = {
-    "loss_function": "MAE",
-    # "iterations": 200,
-    # "depth": 6,
-    # "learning_rate": 0.1,
-    "random_seed": 42,
-    "verbose": False,
-    "allow_writing_files": False,
-}
-
-
+# Custom regressor subclasses that inject time-limit callbacks into fit(),
+# since MLForecast doesn't expose a way to pass kwargs to the underlying model.
 def _create_lgbm(fit_time_limit: float | None, **model_kwargs):
     from lightgbm import LGBMRegressor
     from lightgbm.callback import EarlyStopException
@@ -332,7 +281,8 @@ def _create_lgbm(fit_time_limit: float | None, **model_kwargs):
                 kwargs["callbacks"] = callbacks + [_time_callback]
             return super().fit(X, y, **kwargs)
 
-    return _LGBMRegressor(**{**_LGBM_DEFAULTS, **model_kwargs})
+    defaults = {"objective": "mae", "random_state": 42, "verbose": -1}
+    return _LGBMRegressor(**{**defaults, **model_kwargs})
 
 
 def _create_catboost(fit_time_limit: float | None, **model_kwargs):
@@ -362,4 +312,5 @@ def _create_catboost(fit_time_limit: float | None, **model_kwargs):
 
             return super().fit(X, y, **kwargs)
 
-    return _CatBoostRegressor(**{**_CATBOOST_DEFAULTS, **model_kwargs})
+    defaults = {"loss_function": "MAE", "random_seed": 42, "verbose": False, "allow_writing_files": False}
+    return _CatBoostRegressor(**{**defaults, **model_kwargs})
