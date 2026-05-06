@@ -83,7 +83,7 @@ class FlowStateModel(fev.ForecastingModel):
         quantile_forecasts = {str(q): [] for q in quantile_levels}
 
         with self._record_inference_time():
-            for batch_contexts in _batchify(all_contexts, self.batch_size):
+            for batch_contexts in _dynamic_batchify(all_contexts, self.batch_size, model.config.context_length):
                 batch_tensor = _prepare_batch(batch_contexts, max_context, self.device)
 
                 with torch.no_grad():
@@ -123,9 +123,14 @@ class FlowStateModel(fev.ForecastingModel):
         )
 
 
-def _batchify(lst: list, batch_size: int):
-    for i in range(0, len(lst), batch_size):
-        yield lst[i : i + batch_size]
+def _dynamic_batchify(contexts: list[np.ndarray], base_batch_size: int, pretrain_context: int):
+    """Yield batches with dynamic size — reduce batch size for long contexts."""
+    i = 0
+    while i < len(contexts):
+        ctx_len = len(contexts[i])
+        batch_size = max(1, int(base_batch_size * pretrain_context / ctx_len))
+        yield contexts[i : i + batch_size]
+        i += batch_size
 
 
 def _prepare_batch(contexts: list[np.ndarray], max_context: int, device: str):
