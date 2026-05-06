@@ -51,7 +51,7 @@ class ChronosModel(fev.ForecastingModel):
             with self._record_inference_time():
                 for batch in self._batchify(past_data["target"]):
                     quantiles, mean = pipeline.predict_quantiles(
-                        context=batch,
+                        batch,
                         prediction_length=task.horizon,
                         limit_prediction_length=False,
                         quantile_levels=quantile_levels,

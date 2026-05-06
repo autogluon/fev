@@ -1,1 +1,1 @@
-chronos-forecasting==2.2.2
+chronos-forecasting==1.5.3
