@@ -296,18 +296,18 @@ class MLForecastModel(fev.ForecastingModel):
 # MLForecast doesn't expose a way to pass kwargs through to the underlying model.
 _LGBM_DEFAULTS = {
     "objective": "mae",
-    "n_estimators": 200,
-    "max_depth": 8,
-    "learning_rate": 0.1,
+    # "n_estimators": 200,
+    # "max_depth": 8,
+    # "learning_rate": 0.1,
     "random_state": 42,
     "verbose": -1,
 }
 
 _CATBOOST_DEFAULTS = {
     "loss_function": "MAE",
-    "iterations": 200,
-    "depth": 6,
-    "learning_rate": 0.1,
+    # "iterations": 200,
+    # "depth": 6,
+    # "learning_rate": 0.1,
     "random_seed": 42,
     "verbose": False,
     "allow_writing_files": False,
