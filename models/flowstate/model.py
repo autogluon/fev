@@ -124,11 +124,11 @@ class FlowStateModel(fev.ForecastingModel):
 
 
 def _dynamic_batchify(contexts: list[np.ndarray], base_batch_size: int, pretrain_context: int):
-    """Yield batches with dynamic size — reduce batch size for long contexts."""
+    """Yield batches with dynamic size — reduce batch size for long contexts, never exceed base."""
     i = 0
     while i < len(contexts):
         ctx_len = len(contexts[i])
-        batch_size = max(1, int(base_batch_size * pretrain_context / ctx_len))
+        batch_size = min(base_batch_size, max(1, int(base_batch_size * pretrain_context / ctx_len)))
         yield contexts[i : i + batch_size]
         i += batch_size
 
