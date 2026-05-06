@@ -77,7 +77,7 @@ class FlowStateModel(fev.ForecastingModel):
         past_data, _ = fev.convert_input_data(window, adapter="datasets", as_univariate=True)
         past_data = past_data.with_format("numpy")
 
-        all_contexts = [np.array(row["target"], dtype=np.float32) for row in past_data]
+        all_contexts = [np.array(row["target"][-max_context:], dtype=np.float32) for row in past_data]
 
         point_forecasts = []
         quantile_forecasts = {str(q): [] for q in quantile_levels}
