@@ -41,7 +41,11 @@ class TabPFNTSModel(fev.ForecastingModel):
 
     model_name = "tabpfn-ts"
 
-    def __init__(self, max_context_length: int = 4096, model_path: str = "tabpfn-v2.6-regressor-v2.6_default.ckpt"):
+    def __init__(
+        self,
+        max_context_length: int = 4096,
+        model_path: str = "tabpfn-v2-regressor-2noar4o2.ckpt",
+    ):
         super().__init__()
         self.max_context_length = max_context_length
         self.model_path = model_path
