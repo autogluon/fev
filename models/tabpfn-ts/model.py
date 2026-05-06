@@ -45,10 +45,12 @@ class TabPFNTSModel(fev.ForecastingModel):
         self,
         max_context_length: int = 4096,
         model_path: str = "tabpfn-v2-regressor-2noar4o2.ckpt",
+        use_covariates: bool = True,
     ):
         super().__init__()
         self.max_context_length = max_context_length
         self.model_path = model_path
+        self.use_covariates = use_covariates
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         from tabpfn_time_series import FeatureTransformer, TabPFNMode, TabPFNTimeSeriesPredictor, TimeSeriesDataFrame
@@ -71,8 +73,10 @@ class TabPFNTSModel(fev.ForecastingModel):
             train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id")
             train_tsdf = _handle_missing_values(train_tsdf)
             train_tsdf = train_tsdf.slice_by_timestep(-self.max_context_length, None)
-            train_tsdf = train_tsdf.drop(columns=task.past_dynamic_columns)
             test_tsdf = TimeSeriesDataFrame(test_tsdf, id_column="id")
+            if not self.use_covariates and task.known_dynamic_columns:
+                train_tsdf = train_tsdf.drop(columns=task.known_dynamic_columns)
+                test_tsdf = test_tsdf.drop(columns=task.known_dynamic_columns)
             test_tsdf = test_tsdf.assign(target=float("nan"))
             train_tsdf, test_tsdf = feature_transformer.transform(train_tsdf, test_tsdf)
             with _disable_tqdm():
