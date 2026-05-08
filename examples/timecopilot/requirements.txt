@@ -258,7 +258,7 @@ fugue==0.9.1
     # via statsforecast
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.45
+gitpython==3.1.49
     # via wandb
 gluonts==0.16.2
     # via
