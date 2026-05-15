@@ -146,23 +146,42 @@ class EvaluationWindow:
                     f"match the length of test data ({len(test_data)})"
                 )
 
+        # y_true [N, D, H], y_pred [N, D, H]
+        y_true = np.stack([test_data[col] for col in self.target_columns], axis=1, dtype=np.float64)
+        y_pred = np.stack([predictions[col][PREDICTIONS] for col in self.target_columns], axis=1, dtype=np.float64)
+
+        # q_pred [N, D, H, Q]
+        if quantile_levels:
+            q_pred = np.stack(
+                [
+                    np.stack([predictions[col][str(q)] for q in quantile_levels], axis=-1)
+                    for col in self.target_columns
+                ],
+                axis=1,
+                dtype=np.float64,
+            )
+        else:
+            q_pred = np.empty((*y_true.shape, 0), dtype=np.float64)
+
+        # y_past [total_T, D] + indptr [N+1] — CSR-style ragged layout
+        past_per_dim = [np.concatenate(past_data[col]) for col in self.target_columns]
+        y_past_flat = np.column_stack(past_per_dim).astype(np.float64)
+        indptr = np.zeros(len(past_data) + 1, dtype=np.int64)
+        np.cumsum([len(ts) for ts in past_data[self.target_columns[0]]], out=indptr[1:])
+
         test_scores: dict[str, float] = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for metric in metrics:
-                scores = []
-                for col in self.target_columns:
-                    scores.append(
-                        metric.compute(
-                            test_data=test_data,
-                            predictions=predictions[col],
-                            past_data=past_data,
-                            seasonality=seasonality,
-                            quantile_levels=quantile_levels,
-                            target_column=col,
-                        )
-                    )
-                test_scores[metric.name] = float(np.mean(scores))
+                test_scores[metric.name] = metric.compute(
+                    y_true=y_true,
+                    y_pred=y_pred,
+                    y_past=y_past_flat,
+                    y_past_indptr=indptr,
+                    q_pred=q_pred,
+                    seasonality=seasonality,
+                    quantile_levels=quantile_levels,
+                )
         return test_scores
 
 
