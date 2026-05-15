@@ -137,7 +137,9 @@ class MASE(Metric):
         seasonality: int,
         quantile_levels: list[float],
     ) -> float:
-        seasonal_error = _abs_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
+        seasonal_error = _abs_seasonal_error_per_item(
+            y_past=y_past, lengths=y_past_lengths, seasonality=seasonality
+        )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = np.abs(y_true - y_pred) / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(self._safemean(scaled, axis=(0, 1))))
@@ -183,7 +185,9 @@ class RMSSE(Metric):
         seasonality: int,
         quantile_levels: list[float],
     ) -> float:
-        seasonal_error = _squared_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
+        seasonal_error = _squared_seasonal_error_per_item(
+            y_past=y_past, lengths=y_past_lengths, seasonality=seasonality
+        )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = (y_true - y_pred) ** 2 / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(np.sqrt(self._safemean(scaled, axis=(0, 1)))))
@@ -310,7 +314,9 @@ class SQL(Metric):
     ) -> float:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
         ql_avg_q = np.nanmean(ql, axis=3)  # [N, H, D]
-        seasonal_error = _abs_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
+        seasonal_error = _abs_seasonal_error_per_item(
+            y_past=y_past, lengths=y_past_lengths, seasonality=seasonality
+        )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = ql_avg_q / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(self._safemean(scaled, axis=(0, 1))))

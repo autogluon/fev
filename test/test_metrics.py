@@ -96,7 +96,9 @@ def test_seasonal_error_per_item(aggregate_fn):
     seasonality = 2
 
     flat, lengths = _arrays_to_flat(arrays)
-    result = _seasonal_error_per_item(y_past=flat, lengths=lengths, seasonality=seasonality, aggregate_fn=aggregate_fn)[:, 0]
+    result = _seasonal_error_per_item(
+        y_past=flat, lengths=lengths, seasonality=seasonality, aggregate_fn=aggregate_fn
+    )[:, 0]
     expected = _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn)
 
     np.testing.assert_allclose(result, expected)
