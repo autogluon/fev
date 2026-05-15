@@ -58,21 +58,21 @@ class PandasAdapter(DatasetAdapter):
 
     @staticmethod
     def _to_long_df(dataset: datasets.Dataset, id_column: str) -> pd.DataFrame:
-        """Convert time series dataset into long DataFrame format.
+        """Convert time series dataset into long DataFrame format via pyarrow."""
+        import pyarrow as pa
+        import pyarrow.compute as pc
 
-        Parameters
-        ----------
-        dataset
-            Dataset that must be converted.
-        """
-        df: pd.DataFrame = dataset.to_pandas()
-        # Equivalent to df.explode() but much faster
-        length_per_item = df[df.columns.drop(id_column)[0]].apply(len).to_numpy()
-        df_dict = {id_column: np.repeat(df[id_column].to_numpy(), length_per_item)}
-        for col in df.columns:
-            if col != id_column:
-                df_dict[col] = np.concatenate(df[col])
-        return pd.DataFrame(df_dict).astype({id_column: str})
+        if getattr(dataset, "_indices", None) is not None:
+            dataset = dataset.flatten_indices()
+        table = dataset.data.table
+        seq_cols = [col for col in table.column_names if col != id_column]
+        lengths = pc.list_value_length(table.column(seq_cols[0])).to_numpy()
+
+        repeat_indices = np.repeat(np.arange(table.num_rows), lengths)
+        flat_data = {id_column: table.column(id_column).take(repeat_indices)}
+        for col in seq_cols:
+            flat_data[col] = pc.list_flatten(table.column(col))
+        return pa.table(flat_data).to_pandas()
 
     @classmethod
     def convert_input_data(

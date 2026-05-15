@@ -1,6 +1,5 @@
 import reprlib
 import warnings
-from collections import defaultdict
 
 import datasets
 import multiprocess as mp
@@ -229,27 +228,6 @@ def generate_fingerprint(dataset: datasets.Dataset, num_rows_to_check: int = 3) 
         return None
 
 
-def _expand_target_columns(
-    batch: dict, id_column: str, target_column: str, generate_univariate_targets_from: list[str]
-) -> dict:
-    """Create a separate record for each column listed in generate_univariate_targets_from.
-
-    It is required to set batched=True when using method in `dataset.map`.
-    """
-    expanded_batch = defaultdict(list)
-    batch_size = len(batch[id_column])
-    for i in range(batch_size):
-        for target_col in generate_univariate_targets_from:
-            for key in batch.keys():
-                if key not in generate_univariate_targets_from:
-                    value = batch[key][i]
-                    if key == id_column:
-                        value = value + "_" + target_col
-                    expanded_batch[key].append(value)
-            expanded_batch[target_column].append(batch[target_col][i])
-    return dict(expanded_batch)
-
-
 def generate_univariate_targets_from_multivariate(
     dataset: datasets.Dataset,
     id_column: str,
@@ -264,7 +242,7 @@ def generate_univariate_targets_from_multivariate(
 
     Parameters
     ----------
-    ds
+    dataset
         Input multivariate time series dataset.
     id_column
         Column containing unique time series identifiers.
@@ -275,17 +253,33 @@ def generate_univariate_targets_from_multivariate(
     num_proc
         Number of processes for parallel processing.
     """
-    return dataset.map(
-        _expand_target_columns,
-        batched=True,
-        fn_kwargs=dict(
-            id_column=id_column,
-            target_column=new_target_column,
-            generate_univariate_targets_from=generate_univariate_targets_from,
-        ),
-        remove_columns=generate_univariate_targets_from,
-        num_proc=min(num_proc, len(dataset)),
-    )
+    if getattr(dataset, "_indices", None) is not None:
+        dataset = dataset.flatten_indices()
+
+    table = dataset.data.table
+    N = table.num_rows
+    D = len(generate_univariate_targets_from)
+
+    # Each original row becomes D rows (one per target column)
+    row_indices = np.arange(N).repeat(D)
+
+    # Build new ID column: "{original_id}_{target_col_name}"
+    ids = table.column(id_column).to_pylist()
+    new_ids = [f"{ids[i]}_{col}" for i in range(N) for col in generate_univariate_targets_from]
+
+    # Copy non-target columns (repeated D times per row)
+    new_columns = {id_column: pa.array(new_ids)}
+    for col in table.column_names:
+        if col != id_column and col not in generate_univariate_targets_from:
+            new_columns[col] = table.column(col).take(row_indices)
+
+    # Interleave target columns: for row i we want [target_0[i], target_1[i], ..., target_D[i]]
+    # Stack as [D, N] then transpose+flatten to get [N*D] in interleaved order
+    stacked = pa.concat_arrays([table.column(col).combine_chunks() for col in generate_univariate_targets_from])
+    interleave_idx = np.arange(D * N).reshape(D, N).T.ravel()
+    new_columns[new_target_column] = stacked.take(interleave_idx)
+
+    return datasets.Dataset(pa.table(new_columns))
 
 
 def convert_forecast_df_to_predictions(
@@ -361,9 +355,11 @@ def combine_univariate_predictions_to_multivariate(
     assert len(predictions) % len(target_columns) == 0, (
         "Number of predictions must be divisible by the number of target columns"
     )
+    table = predictions.data.table
     prediction_dict = {}
     for i, col in enumerate(target_columns):
-        prediction_dict[col] = predictions.select(range(i, len(predictions), len(target_columns)))
+        indices = list(range(i, len(predictions), len(target_columns)))
+        prediction_dict[col] = datasets.Dataset(table.take(indices))
     return datasets.DatasetDict(prediction_dict)
 
 
