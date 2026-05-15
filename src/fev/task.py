@@ -9,6 +9,7 @@ from typing import Any, Iterable, Literal
 import datasets
 import numpy as np
 import pandas as pd
+import pyarrow.compute as pc
 import pydantic
 from pydantic_core import ArgsKwargs
 
@@ -136,8 +137,6 @@ class EvaluationWindow:
         This is a convenience method that exists for debugging and additional evaluation.
         """
         past_data, _, test_data = self._get_past_future_test_data()
-        past_data.set_format("numpy")
-        test_data.set_format("numpy")
 
         for target_column, predictions_for_column in predictions.items():
             if len(predictions_for_column) != len(test_data):
@@ -146,28 +145,45 @@ class EvaluationWindow:
                     f"match the length of test data ({len(test_data)})"
                 )
 
-        # y_true [N, D, H], y_pred [N, D, H]
-        y_true = np.stack([test_data[col] for col in self.target_columns], axis=1, dtype=np.float64)
-        y_pred = np.stack([predictions[col][PREDICTIONS] for col in self.target_columns], axis=1, dtype=np.float64)
+        N = len(test_data)
+        D = len(self.target_columns)
+        H = self.horizon
+        Q = len(quantile_levels)
+
+        # y_true [N, D, H] — via pyarrow for fast column access
+        test_table = test_data.data.table
+        y_true = np.stack(
+            [pc.list_flatten(test_table.column(col)).to_numpy(zero_copy_only=False) for col in self.target_columns],
+            axis=1,
+            dtype=np.float64,
+        ).reshape(N, H, D).transpose(0, 2, 1)
+
+        # y_pred [N, D, H]
+        pred_arrs = []
+        for col in self.target_columns:
+            pred_arrs.append(pc.list_flatten(predictions[col].data.table.column(PREDICTIONS)).to_numpy(zero_copy_only=False))
+        y_pred = np.stack(pred_arrs, axis=1, dtype=np.float64).reshape(N, H, D).transpose(0, 2, 1)
 
         # q_pred [N, D, H, Q]
-        if quantile_levels:
-            q_pred = np.stack(
-                [
-                    np.stack([predictions[col][str(q)] for q in quantile_levels], axis=-1)
-                    for col in self.target_columns
-                ],
-                axis=1,
-                dtype=np.float64,
-            )
+        if Q > 0:
+            q_arrs = []
+            for col in self.target_columns:
+                col_table = predictions[col].data.table
+                for q in quantile_levels:
+                    q_arrs.append(pc.list_flatten(col_table.column(str(q))).to_numpy(zero_copy_only=False))
+            q_pred = np.stack(q_arrs, axis=1, dtype=np.float64).reshape(N, H, D, Q).transpose(0, 2, 1, 3)
         else:
-            q_pred = np.empty((*y_true.shape, 0), dtype=np.float64)
+            q_pred = np.empty((N, D, H, 0), dtype=np.float64)
 
         # y_past [total_T, D] + indptr [N+1] — CSR-style ragged layout
-        past_per_dim = [np.concatenate(past_data[col]) for col in self.target_columns]
-        y_past_flat = np.column_stack(past_per_dim).astype(np.float64)
-        indptr = np.zeros(len(past_data) + 1, dtype=np.int64)
-        np.cumsum([len(ts) for ts in past_data[self.target_columns[0]]], out=indptr[1:])
+        past_table = past_data.data.table
+        y_past_flat = np.stack(
+            [pc.list_flatten(past_table.column(col)).to_numpy(zero_copy_only=False) for col in self.target_columns],
+            axis=1,
+            dtype=np.float64,
+        )
+        indptr = np.zeros(N + 1, dtype=np.int64)
+        np.cumsum(pc.list_value_length(past_table.column(self.target_columns[0])).to_numpy(), out=indptr[1:])
 
         test_scores: dict[str, float] = {}
         with warnings.catch_warnings():
@@ -765,21 +781,33 @@ class Task:
             )
         if missing_columns := set(self.target_columns) - set(predictions.keys()):
             raise ValueError(f"Missing predictions for columns {missing_columns} (got {sorted(predictions.keys())})")
-        predictions = predictions.cast(self.predictions_schema).with_format("numpy")
-        for target_column, predictions_for_column in predictions.items():
-            self._assert_all_columns_finite(predictions_for_column)
-        return predictions
 
-    @staticmethod
-    def _assert_all_columns_finite(predictions: datasets.Dataset) -> None:
-        for col in predictions.column_names:
-            nan_row_idx, _ = np.where(~np.isfinite(np.array(predictions[col])))
-            if len(nan_row_idx) > 0:
+        expected_columns = set(self.predictions_schema.keys())
+        for target_col, pred_ds in predictions.items():
+            table = pred_ds.data.table
+            if missing := expected_columns - set(table.column_names):
                 raise ValueError(
-                    "Predictions contain NaN or Inf values. "
-                    f"First invalid value encountered in column {col} for item {nan_row_idx[0]}:\n"
-                    f"{predictions[int(nan_row_idx[0])]}"
+                    f"Predictions for '{target_col}' are missing columns {sorted(missing)}. "
+                    f"Expected: {sorted(expected_columns)}"
                 )
+            lengths = pc.list_value_length(table.column(PREDICTIONS)).to_numpy()
+            if not np.all(lengths == self.horizon):
+                bad_idx = int(np.argmax(lengths != self.horizon))
+                raise ValueError(
+                    f"Predictions for '{target_col}' have wrong length at item {bad_idx}: "
+                    f"got {lengths[bad_idx]}, expected {self.horizon}"
+                )
+            for col in expected_columns:
+                flat = pc.list_flatten(table.column(col))
+                if not pc.all(pc.is_finite(flat)).as_py():
+                    flat_np = flat.to_numpy(zero_copy_only=False)
+                    bad_flat_idx = int(np.argmax(~np.isfinite(flat_np)))
+                    bad_item = bad_flat_idx // self.horizon
+                    raise ValueError(
+                        f"Predictions contain NaN or Inf values. "
+                        f"First invalid value in column '{col}' for target '{target_col}' at item {bad_item}."
+                    )
+        return predictions
 
     def evaluation_summary(
         self,
