@@ -150,30 +150,31 @@ class EvaluationWindow:
         H = self.horizon
         Q = len(quantile_levels)
 
-        # y_true [N, D, H] — via pyarrow for fast column access
+        # y_true [N, H, D] — via pyarrow for fast column access
         test_table = test_data.data.table
         y_true = np.stack(
             [pc.list_flatten(test_table.column(col)).to_numpy(zero_copy_only=False) for col in self.target_columns],
             axis=1,
             dtype=np.float64,
-        ).reshape(N, H, D).transpose(0, 2, 1)
+        ).reshape(N, H, D)
 
-        # y_pred [N, D, H]
+        # y_pred [N, H, D]
         pred_arrs = []
+        pred_tables = {}
         for col in self.target_columns:
-            pred_arrs.append(pc.list_flatten(predictions[col].data.table.column(PREDICTIONS)).to_numpy(zero_copy_only=False))
-        y_pred = np.stack(pred_arrs, axis=1, dtype=np.float64).reshape(N, H, D).transpose(0, 2, 1)
+            pred_tables[col] = predictions[col].data.table
+            pred_arrs.append(pc.list_flatten(pred_tables[col].column(PREDICTIONS)).to_numpy(zero_copy_only=False))
+        y_pred = np.stack(pred_arrs, axis=1, dtype=np.float64).reshape(N, H, D)
 
-        # q_pred [N, D, H, Q]
+        # q_pred [N, H, D, Q]
         if Q > 0:
             q_arrs = []
             for col in self.target_columns:
-                col_table = predictions[col].data.table
                 for q in quantile_levels:
-                    q_arrs.append(pc.list_flatten(col_table.column(str(q))).to_numpy(zero_copy_only=False))
-            q_pred = np.stack(q_arrs, axis=1, dtype=np.float64).reshape(N, H, D, Q).transpose(0, 2, 1, 3)
+                    q_arrs.append(pc.list_flatten(pred_tables[col].column(str(q))).to_numpy(zero_copy_only=False))
+            q_pred = np.stack(q_arrs, axis=1, dtype=np.float64).reshape(N, H, D, Q)
         else:
-            q_pred = np.empty((N, D, H, 0), dtype=np.float64)
+            q_pred = np.empty((N, H, D, 0), dtype=np.float64)
 
         # y_past [total_T, D] + indptr [N+1] — CSR-style ragged layout
         past_table = past_data.data.table
