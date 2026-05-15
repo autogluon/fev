@@ -29,7 +29,7 @@ class Metric:
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -44,9 +44,8 @@ class Metric:
             Point forecast predictions, same shape as y_true.
         y_past : np.ndarray [total_T, D]
             Concatenated historical observations for all items (ragged time axis).
-            Item i spans rows y_past[y_past_indptr[i] : y_past_indptr[i+1]].
-        y_past_indptr : np.ndarray [N+1]
-            Row boundaries into y_past (CSR-style). Length N+1, starts at 0.
+        y_past_lengths : np.ndarray [N]
+            Number of past observations per item. sum(y_past_lengths) == total_T.
         q_pred : np.ndarray [N, H, D, Q]
             Quantile predictions. Q=len(quantile_levels), or Q=0 if none requested.
         seasonality : int
@@ -84,7 +83,7 @@ class MAE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -105,7 +104,7 @@ class WAPE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -133,12 +132,12 @@ class MASE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
     ) -> float:
-        seasonal_error = _abs_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
+        seasonal_error = _abs_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = np.abs(y_true - y_pred) / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(self._safemean(scaled, axis=(0, 1))))
@@ -153,7 +152,7 @@ class RMSE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -179,12 +178,12 @@ class RMSSE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
     ) -> float:
-        seasonal_error = _squared_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
+        seasonal_error = _squared_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = (y_true - y_pred) ** 2 / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(np.sqrt(self._safemean(scaled, axis=(0, 1)))))
@@ -199,7 +198,7 @@ class MSE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -217,7 +216,7 @@ class RMSLE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -235,7 +234,7 @@ class MAPE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -253,7 +252,7 @@ class SMAPE(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -273,7 +272,7 @@ class MQL(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -304,14 +303,14 @@ class SQL(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
     ) -> float:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
         ql_avg_q = np.nanmean(ql, axis=3)  # [N, H, D]
-        seasonal_error = _abs_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
+        seasonal_error = _abs_seasonal_error_per_item(y_past=y_past, lengths=y_past_lengths, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = ql_avg_q / seasonal_error[:, None, :]  # [N, H, D]
         return float(np.mean(self._safemean(scaled, axis=(0, 1))))
@@ -331,7 +330,7 @@ class WQL(Metric):
         y_true: np.ndarray,
         y_pred: np.ndarray,
         y_past: np.ndarray,
-        y_past_indptr: np.ndarray,
+        y_past_lengths: np.ndarray,
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
@@ -360,10 +359,10 @@ def _quantile_loss(
     return 2 * np.abs((y_true_expanded - q_pred) * ((y_true_expanded <= q_pred) - q_arr))
 
 
-def _seasonal_error(
+def _seasonal_error_per_item(
     *,
     y_past: np.ndarray,
-    indptr: np.ndarray,
+    lengths: np.ndarray,
     seasonality: int,
     aggregate_fn: Callable,
 ) -> np.ndarray:
@@ -373,8 +372,8 @@ def _seasonal_error(
     ----------
     y_past : np.ndarray [total_T, D]
         Concatenated past observations.
-    indptr : np.ndarray [N+1]
-        CSR-style index pointer. Item i has y_past[indptr[i]:indptr[i+1], :].
+    lengths : np.ndarray [N]
+        Number of observations per item.
     seasonality : int
         Seasonal period.
     aggregate_fn : Callable
@@ -384,13 +383,12 @@ def _seasonal_error(
     -------
     np.ndarray [N, D]
     """
-    num_series = len(indptr) - 1
+    num_series = len(lengths)
     num_dims = y_past.shape[1]
 
     if num_series == 0:
         return np.array([], dtype="float64").reshape(0, 0)
 
-    lengths = np.diff(indptr)
     num_diffs_per_series = np.maximum(lengths - seasonality, 0)
 
     if num_diffs_per_series.sum() == 0:
@@ -402,7 +400,10 @@ def _seasonal_error(
         np.cumsum(num_diffs_per_series) - num_diffs_per_series, num_diffs_per_series
     )
 
-    idx_current = indptr[series_ids] + seasonality + diff_offsets
+    offsets = np.empty(num_series + 1, dtype=np.int64)
+    offsets[0] = 0
+    np.cumsum(lengths, out=offsets[1:])
+    idx_current = offsets[series_ids] + seasonality + diff_offsets
     idx_lagged = idx_current - seasonality
 
     diffs = y_past[idx_current] - y_past[idx_lagged]  # [total_diffs, D]
@@ -419,14 +420,14 @@ def _seasonal_error(
     return result
 
 
-def _abs_seasonal_error(*, y_past: np.ndarray, indptr: np.ndarray, seasonality: int) -> np.ndarray:
+def _abs_seasonal_error_per_item(*, y_past: np.ndarray, lengths: np.ndarray, seasonality: int) -> np.ndarray:
     """Compute mean absolute seasonal error. Returns [N, D]."""
-    return _seasonal_error(y_past=y_past, indptr=indptr, seasonality=seasonality, aggregate_fn=np.abs)
+    return _seasonal_error_per_item(y_past=y_past, lengths=lengths, seasonality=seasonality, aggregate_fn=np.abs)
 
 
-def _squared_seasonal_error(*, y_past: np.ndarray, indptr: np.ndarray, seasonality: int) -> np.ndarray:
+def _squared_seasonal_error_per_item(*, y_past: np.ndarray, lengths: np.ndarray, seasonality: int) -> np.ndarray:
     """Compute mean squared seasonal error. Returns [N, D]."""
-    return _seasonal_error(y_past=y_past, indptr=indptr, seasonality=seasonality, aggregate_fn=np.square)
+    return _seasonal_error_per_item(y_past=y_past, lengths=lengths, seasonality=seasonality, aggregate_fn=np.square)
 
 
 AVAILABLE_METRICS: dict[str, Type[Metric]] = {

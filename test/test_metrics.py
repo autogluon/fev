@@ -5,7 +5,7 @@ import pytest
 from autogluon.timeseries import TimeSeriesPredictor
 
 import fev
-from fev.metrics import AVAILABLE_METRICS, _seasonal_error
+from fev.metrics import AVAILABLE_METRICS, _seasonal_error_per_item
 
 
 # Include datasets with NaN values (nn5) and all-zero history values (covid deaths)
@@ -75,13 +75,11 @@ def _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn):
     return np.array(result, dtype="float64")
 
 
-def _arrays_to_indptr(arrays):
-    """Helper to convert list of 1D arrays to flat [total_T, 1] + indptr."""
+def _arrays_to_flat(arrays):
+    """Helper to convert list of 1D arrays to flat [total_T, 1] + lengths [N]."""
     lengths = np.array([len(a) for a in arrays], dtype=np.int64)
-    indptr = np.zeros(len(arrays) + 1, dtype=np.int64)
-    np.cumsum(lengths, out=indptr[1:])
     flat = np.concatenate(arrays).astype(np.float64).reshape(-1, 1) if arrays else np.empty((0, 1), dtype=np.float64)
-    return flat, indptr
+    return flat, lengths
 
 
 @pytest.mark.parametrize("aggregate_fn", [np.abs, np.square])
@@ -97,8 +95,8 @@ def test_seasonal_error_per_item(aggregate_fn):
     ]
     seasonality = 2
 
-    flat, indptr = _arrays_to_indptr(arrays)
-    result = _seasonal_error(y_past=flat, indptr=indptr, seasonality=seasonality, aggregate_fn=aggregate_fn)[:, 0]
+    flat, lengths = _arrays_to_flat(arrays)
+    result = _seasonal_error_per_item(y_past=flat, lengths=lengths, seasonality=seasonality, aggregate_fn=aggregate_fn)[:, 0]
     expected = _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn)
 
     np.testing.assert_allclose(result, expected)
@@ -106,7 +104,7 @@ def test_seasonal_error_per_item(aggregate_fn):
 
 def test_seasonal_error_per_item_empty():
     """Test with empty input."""
-    flat, indptr = _arrays_to_indptr([])
-    result = _seasonal_error(y_past=flat, indptr=indptr, seasonality=2, aggregate_fn=np.abs)
+    flat, lengths = _arrays_to_flat([])
+    result = _seasonal_error_per_item(y_past=flat, lengths=lengths, seasonality=2, aggregate_fn=np.abs)
     assert result.size == 0
     assert result.dtype == np.float64

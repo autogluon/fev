@@ -176,15 +176,14 @@ class EvaluationWindow:
         else:
             q_pred = np.empty((N, H, D, 0), dtype=np.float64)
 
-        # y_past [total_T, D] + indptr [N+1] — CSR-style ragged layout
+        # y_past [total_T, D] + lengths [N]
         past_table = past_data.data.table
         y_past_flat = np.stack(
             [pc.list_flatten(past_table.column(col)).to_numpy(zero_copy_only=False) for col in self.target_columns],
             axis=1,
             dtype=np.float64,
         )
-        indptr = np.zeros(N + 1, dtype=np.int64)
-        np.cumsum(pc.list_value_length(past_table.column(self.target_columns[0])).to_numpy(), out=indptr[1:])
+        y_past_lengths = pc.list_value_length(past_table.column(self.target_columns[0])).to_numpy()
 
         test_scores: dict[str, float] = {}
         with warnings.catch_warnings():
@@ -194,7 +193,7 @@ class EvaluationWindow:
                     y_true=y_true,
                     y_pred=y_pred,
                     y_past=y_past_flat,
-                    y_past_indptr=indptr,
+                    y_past_lengths=y_past_lengths,
                     q_pred=q_pred,
                     seasonality=seasonality,
                     quantile_levels=quantile_levels,
