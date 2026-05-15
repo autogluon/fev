@@ -400,6 +400,13 @@ def _seasonal_error_per_item(
     if num_diffs_per_series.sum() == 0:
         return np.full((num_series, num_dims), np.nan, dtype="float64")
 
+    # Fast path: all items have equal length — reshape + slice instead of fancy indexing
+    if np.all(lengths == lengths[0]):
+        T = int(lengths[0])
+        y_reshaped = y_past.reshape(num_series, T, num_dims)
+        diffs = y_reshaped[:, seasonality:, :] - y_reshaped[:, :-seasonality, :]
+        return np.nanmean(aggregate_fn(diffs), axis=1)
+
     total_diffs = int(num_diffs_per_series.sum())
     series_ids = np.repeat(np.arange(num_series, dtype=np.int64), num_diffs_per_series)
     diff_offsets = np.arange(total_diffs) - np.repeat(
