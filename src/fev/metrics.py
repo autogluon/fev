@@ -16,9 +16,12 @@ class Metric:
         return self.__class__.__name__
 
     @staticmethod
-    def _safemean(arr: np.ndarray) -> float:
-        """Compute mean of an array, ignoring NaN, Inf, and -Inf values."""
-        return float(np.mean(arr[np.isfinite(arr)]))
+    def _safemean(arr: np.ndarray, axis=None) -> float | np.ndarray:
+        """Compute mean ignoring NaN, Inf, and -Inf values."""
+        mask = ~np.isfinite(arr)
+        if mask.any():
+            arr = np.where(mask, np.nan, arr)
+        return np.nanmean(arr, axis=axis)
 
     def compute(
         self,
@@ -138,8 +141,7 @@ class MASE(Metric):
         seasonal_error = _abs_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = np.abs(y_true - y_pred) / seasonal_error[:, None, :]  # [N, H, D]
-        per_dim = np.array([self._safemean(scaled[:, :, d]) for d in range(y_true.shape[2])])
-        return float(np.mean(per_dim))
+        return float(np.mean(self._safemean(scaled, axis=(0, 1))))
 
 
 class RMSE(Metric):
@@ -185,8 +187,7 @@ class RMSSE(Metric):
         seasonal_error = _squared_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = (y_true - y_pred) ** 2 / seasonal_error[:, None, :]  # [N, H, D]
-        per_dim = np.array([np.sqrt(self._safemean(scaled[:, :, d])) for d in range(y_true.shape[2])])
-        return float(np.mean(per_dim))
+        return float(np.mean(np.sqrt(self._safemean(scaled, axis=(0, 1)))))
 
 
 class MSE(Metric):
@@ -240,8 +241,7 @@ class MAPE(Metric):
         quantile_levels: list[float],
     ) -> float:
         ratio = np.abs(y_true - y_pred) / np.abs(y_true)  # [N, H, D]
-        per_dim = np.array([self._safemean(ratio[:, :, d]) for d in range(y_true.shape[2])])
-        return float(np.mean(per_dim))
+        return float(np.mean(self._safemean(ratio, axis=(0, 1))))
 
 
 class SMAPE(Metric):
@@ -259,8 +259,7 @@ class SMAPE(Metric):
         quantile_levels: list[float],
     ) -> float:
         val = 2 * np.abs(y_true - y_pred) / (np.abs(y_true) + np.abs(y_pred))  # [N, H, D]
-        per_dim = np.array([self._safemean(val[:, :, d]) for d in range(y_true.shape[2])])
-        return float(np.mean(per_dim))
+        return float(np.mean(self._safemean(val, axis=(0, 1))))
 
 
 class MQL(Metric):
@@ -315,8 +314,7 @@ class SQL(Metric):
         seasonal_error = _abs_seasonal_error(y_past=y_past, indptr=y_past_indptr, seasonality=seasonality)  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = ql_avg_q / seasonal_error[:, None, :]  # [N, H, D]
-        per_dim = np.array([self._safemean(scaled[:, :, d]) for d in range(y_true.shape[2])])
-        return float(np.mean(per_dim))
+        return float(np.mean(self._safemean(scaled, axis=(0, 1))))
 
 
 class WQL(Metric):
