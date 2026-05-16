@@ -5,7 +5,7 @@ import pytest
 from datasets import Dataset
 
 import fev
-from fev.utils import past_future_split
+from fev.utils import generate_univariate_targets_from_multivariate, past_future_split
 
 
 def test_when_dataset_info_is_changed_then_dataset_fingerprint_doesnt_change():
@@ -285,3 +285,93 @@ def test_when_dataset_has_numpy_format_then_output_preserves_format():
     assert past.format["type"] == "numpy"
     assert future.format["type"] == "numpy"
     assert isinstance(past[0]["target"], np.ndarray)
+
+
+# generate_univariate_targets_from_multivariate tests
+
+
+def _make_multivariate_dataset(ids, lengths, target_cols, extra_cols=None):
+    """Helper to build a multivariate time series dataset."""
+    records = []
+    for id_, length in zip(ids, lengths):
+        record = {
+            "id": id_,
+            "timestamp": pd.date_range("2020", freq="D", periods=length),
+        }
+        for col in target_cols:
+            record[col] = [float(hash((id_, col, t)) % 100) for t in range(length)]
+        if extra_cols:
+            for col, val in extra_cols.items():
+                record[col] = val if not isinstance(val, list) else [val[0]] * length
+        records.append(record)
+    return Dataset.from_list(records)
+
+
+def test_when_single_item_two_targets_then_expanded_correctly():
+    ds = _make_multivariate_dataset(["A"], [5], ["X", "Y"])
+    result = generate_univariate_targets_from_multivariate(
+        ds, id_column="id", new_target_column="target", generate_univariate_targets_from=["X", "Y"]
+    )
+    assert len(result) == 2
+    assert result[0]["id"] == "A_X"
+    assert result[1]["id"] == "A_Y"
+    assert list(result[0]["target"]) == list(ds[0]["X"])
+    assert list(result[1]["target"]) == list(ds[0]["Y"])
+
+
+def test_when_multiple_items_then_interleaved_correctly():
+    ds = _make_multivariate_dataset(["A", "B"], [3, 3], ["X", "Y"])
+    result = generate_univariate_targets_from_multivariate(
+        ds, id_column="id", new_target_column="target", generate_univariate_targets_from=["X", "Y"]
+    )
+    assert len(result) == 4
+    assert [result[i]["id"] for i in range(4)] == ["A_X", "A_Y", "B_X", "B_Y"]
+    assert list(result[0]["target"]) == list(ds[0]["X"])
+    assert list(result[1]["target"]) == list(ds[0]["Y"])
+    assert list(result[2]["target"]) == list(ds[1]["X"])
+    assert list(result[3]["target"]) == list(ds[1]["Y"])
+
+
+def test_when_non_target_columns_present_then_they_are_repeated():
+    ds = Dataset.from_list(
+        [
+            {
+                "id": "A",
+                "timestamp": pd.date_range("2020", freq="D", periods=3),
+                "X": [1.0, 2.0, 3.0],
+                "Y": [10.0, 20.0, 30.0],
+                "covariate": [100.0, 200.0, 300.0],
+            }
+        ]
+    )
+    result = generate_univariate_targets_from_multivariate(
+        ds, id_column="id", new_target_column="target", generate_univariate_targets_from=["X", "Y"]
+    )
+    assert len(result) == 2
+    assert list(result[0]["covariate"]) == [100.0, 200.0, 300.0]
+    assert list(result[1]["covariate"]) == [100.0, 200.0, 300.0]
+    assert list(result[0]["timestamp"]) == list(result[1]["timestamp"])
+
+
+def test_when_items_have_different_lengths_then_expanded_correctly():
+    ds = _make_multivariate_dataset(["A", "B"], [3, 5], ["X", "Y"])
+    result = generate_univariate_targets_from_multivariate(
+        ds, id_column="id", new_target_column="target", generate_univariate_targets_from=["X", "Y"]
+    )
+    assert len(result) == 4
+    assert len(result[0]["target"]) == 3  # A_X
+    assert len(result[1]["target"]) == 3  # A_Y
+    assert len(result[2]["target"]) == 5  # B_X
+    assert len(result[3]["target"]) == 5  # B_Y
+
+
+def test_when_dataset_has_indices_then_flattened_before_expansion():
+    ds = _make_multivariate_dataset(["A", "B", "C"], [3, 3, 3], ["X", "Y"])
+    ds_filtered = ds.select([0, 2])  # creates lazy _indices
+    assert ds_filtered._indices is not None
+    result = generate_univariate_targets_from_multivariate(
+        ds_filtered, id_column="id", new_target_column="target", generate_univariate_targets_from=["X", "Y"]
+    )
+    assert len(result) == 4
+    assert result[0]["id"] == "A_X"
+    assert result[2]["id"] == "C_X"
