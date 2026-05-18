@@ -435,12 +435,18 @@ def _seasonal_error_per_item(
 
 def _abs_seasonal_error_per_item(*, y_past: np.ndarray, y_past_lengths: np.ndarray, seasonality: int) -> np.ndarray:
     """Compute mean absolute seasonal error. Returns [N, D]."""
-    return _seasonal_error_per_item(y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality, aggregate_fn=np.abs)
+    return _seasonal_error_per_item(
+        y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality, aggregate_fn=np.abs
+    )
 
 
-def _squared_seasonal_error_per_item(*, y_past: np.ndarray, y_past_lengths: np.ndarray, seasonality: int) -> np.ndarray:
+def _squared_seasonal_error_per_item(
+    *, y_past: np.ndarray, y_past_lengths: np.ndarray, seasonality: int
+) -> np.ndarray:
     """Compute mean squared seasonal error. Returns [N, D]."""
-    return _seasonal_error_per_item(y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality, aggregate_fn=np.square)
+    return _seasonal_error_per_item(
+        y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality, aggregate_fn=np.square
+    )
 
 
 AVAILABLE_METRICS: dict[str, Type[Metric]] = {
