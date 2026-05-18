@@ -97,7 +97,7 @@ def test_seasonal_error_per_item(aggregate_fn):
 
     flat, lengths = _arrays_to_flat(arrays)
     result = _seasonal_error_per_item(
-        y_past=flat, lengths=lengths, seasonality=seasonality, aggregate_fn=aggregate_fn
+        y_past=flat, y_past_lengths=lengths, seasonality=seasonality, aggregate_fn=aggregate_fn
     )[:, 0]
     expected = _reference_seasonal_error_per_item(arrays, seasonality, aggregate_fn)
 
@@ -107,6 +107,6 @@ def test_seasonal_error_per_item(aggregate_fn):
 def test_seasonal_error_per_item_empty():
     """Test with empty input."""
     flat, lengths = _arrays_to_flat([])
-    result = _seasonal_error_per_item(y_past=flat, lengths=lengths, seasonality=2, aggregate_fn=np.abs)
+    result = _seasonal_error_per_item(y_past=flat, y_past_lengths=lengths, seasonality=2, aggregate_fn=np.abs)
     assert result.size == 0
     assert result.dtype == np.float64
