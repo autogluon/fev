@@ -1,2 +1,0 @@
-chronos-forecasting==1.5.3
-torch==2.6.0

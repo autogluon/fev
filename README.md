@@ -26,9 +26,6 @@ Existing forecasting benchmarks usually fall into one of two categories:
 
 `fev` aims for the middle ground - it provides the core benchmarking functionality without introducing unnecessary constraints or bloated dependencies. The library supports point & probabilistic forecasting, different types of covariates, as well as all popular forecasting metrics.
 
-## 📝 Updates
-- **2025-09-16**: The new version `0.6.0` contains major new functionality, [updated documentation](https://autogluon.github.io/fev/latest/), as well as some breaking changes to the `Task` API. Please check the [release notes](https://github.com/autogluon/fev/releases) for more details.
-
 ## ⚙️ Installation
 ```
 pip install fev
@@ -123,7 +120,7 @@ fev.leaderboard(summaries)
     - [Models](https://autogluon.github.io/fev/latest/tutorials/05-add-your-model/): Evaluate your models and submit results to the leaderboard.
 - [API reference](https://autogluon.github.io/fev/latest/api/task/)
 
-Examples of model implementations compatible with `fev` are available in [`examples/`](./examples/).
+Model wrappers and instructions for contributing models are available in [`models/`](./models/).
 
 
 ## 🏅 Leaderboards
