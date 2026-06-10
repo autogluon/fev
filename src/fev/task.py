@@ -662,8 +662,6 @@ class Task:
                 static_columns=self.static_columns,
             )
 
-        ds.set_format("numpy")
-
         required_columns = self.known_dynamic_columns + self.past_dynamic_columns + self.static_columns
         if self.generate_univariate_targets_from is None:
             required_columns += self.target_columns
@@ -705,7 +703,7 @@ class Task:
         if ds.features[self.id_column].dtype != "string":
             ds = ds.cast_column(self.id_column, datasets.Value("string"))
         sorted_table = ds.data.table.sort_by([(self.id_column, "ascending")])
-        ds = datasets.Dataset(sorted_table, info=ds.info, split=ds.split)
+        ds = datasets.Dataset(sorted_table, info=ds.info, split=ds.split).with_format("numpy")
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
