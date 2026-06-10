@@ -647,14 +647,17 @@ class Task:
         # Since we loaded with split=TRAIN and streaming=False, ds is a datasets.Dataset object
         assert isinstance(ds, datasets.Dataset)
 
-        timestamp_feat = ds.features.get(self.timestamp_column)
         is_long_format = (
             self.id_column in ds.features
-            and isinstance(timestamp_feat, datasets.Value)
-            and timestamp_feat.dtype.startswith("timestamp")
+            and self.timestamp_column in ds.features
             and all(isinstance(feat, datasets.Value) for feat in ds.features.values())
         )
         if is_long_format:
+            if not ds.features[self.timestamp_column].dtype.startswith("timestamp"):
+                raise ValueError(
+                    f"timestamp_column {self.timestamp_column!r} must have a timestamp dtype, "
+                    f"got {ds.features[self.timestamp_column].dtype}"
+                )
             logger.debug(
                 f"Loaded dataset is in long format - converting to fev format with "
                 f"id_column={self.id_column!r}, timestamp_column={self.timestamp_column!r}, "
