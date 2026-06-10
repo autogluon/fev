@@ -1,5 +1,6 @@
 import datasets
 import numpy as np
+import pandas as pd
 import pydantic
 import pytest
 
@@ -317,3 +318,39 @@ def test_when_covariate_columns_are_provided_then_only_correct_columns_are_loade
         past, future = window.get_input_data()
         assert set(past.column_names) == set(["id", "timestamp"] + task.target_columns + past_cols + known_cols)
         assert set(future.column_names) == set(["id", "timestamp"] + known_cols)
+
+
+def test_when_dataset_is_long_format_parquet_then_task_loads_it(tmp_path):
+    rows = []
+    for i in range(3):
+        for t in range(20):
+            rows.append(
+                {
+                    "item_id": f"id_{i}",
+                    "timestamp": pd.Timestamp("2020-01-01") + pd.Timedelta(days=t),
+                    "target": float(i * 100 + t),
+                    "category": ["A", "B", "C"][i],
+                }
+            )
+    df = pd.DataFrame(rows)
+    parquet_path = tmp_path / "long.parquet"
+    df.to_parquet(parquet_path)
+
+    task = fev.Task(
+        dataset_path=str(parquet_path),
+        id_column="item_id",
+        horizon=4,
+        static_columns=["category"],
+    )
+    ds = task.load_full_dataset()
+    assert len(ds) == 3
+    assert isinstance(ds.features["item_id"], datasets.Value)
+    assert isinstance(ds.features["category"], datasets.Value)
+    assert isinstance(ds.features["timestamp"], datasets.Sequence)
+    assert isinstance(ds.features["target"], datasets.Sequence)
+
+    past, future = task.get_window(0).get_input_data()
+    assert len(past) == 3
+    assert len(future) == 3
+    assert len(past[0]["target"]) == 16
+    assert len(future[0]["timestamp"]) == 4

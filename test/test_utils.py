@@ -375,3 +375,59 @@ def test_when_dataset_has_indices_then_flattened_before_expansion():
     assert len(result) == 4
     assert result[0]["id"] == "A_X"
     assert result[2]["id"] == "C_X"
+
+
+# convert_long_df_to_hf_dataset tests
+
+
+def _make_long_df(num_ids: int = 3, length: int = 5) -> pd.DataFrame:
+    rows = []
+    for i in range(num_ids):
+        for t in range(length):
+            rows.append(
+                {
+                    "item_id": f"id_{i}",
+                    "timestamp": pd.Timestamp("2020-01-01") + pd.Timedelta(days=t),
+                    "target": float(i * 100 + t),
+                    "category": ["A", "B", "C"][i % 3],
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_when_long_df_provided_then_dynamic_and_static_columns_are_inferred():
+    df = _make_long_df(num_ids=3, length=4)
+    ds = fev.utils.convert_long_df_to_hf_dataset(df, id_column="item_id", static_columns=["category"])
+
+    assert len(ds) == 3
+    assert isinstance(ds.features["item_id"], datasets.Value)
+    assert isinstance(ds.features["category"], datasets.Value)
+    assert isinstance(ds.features["timestamp"], datasets.Sequence)
+    assert isinstance(ds.features["target"], datasets.Sequence)
+    assert ds[0]["item_id"] == "id_0"
+    assert list(ds[0]["target"]) == [0.0, 1.0, 2.0, 3.0]
+    assert ds[1]["item_id"] == "id_1"
+    assert list(ds[1]["target"]) == [100.0, 101.0, 102.0, 103.0]
+
+
+def test_when_long_df_is_unsorted_then_output_is_sorted_by_id_and_timestamp():
+    df = _make_long_df(num_ids=2, length=3)
+    df_shuffled = df.sample(frac=1.0, random_state=0).reset_index(drop=True)
+    ds = fev.utils.convert_long_df_to_hf_dataset(df_shuffled, id_column="item_id")
+    assert list(ds[0]["target"]) == [0.0, 1.0, 2.0]
+    assert list(ds[1]["target"]) == [100.0, 101.0, 102.0]
+
+
+def test_when_long_df_is_provided_then_validate_time_series_dataset_passes():
+    df = _make_long_df(num_ids=3, length=10)
+    ds = fev.utils.convert_long_df_to_hf_dataset(df, id_column="item_id", static_columns=["category"])
+    fev.utils.validate_time_series_dataset(ds, id_column="item_id", timestamp_column="timestamp")
+
+
+def test_when_long_df_provided_then_pyarrow_path_matches_old_groupby_output():
+    # Sanity check: independently constructed reference matches the new pyarrow path.
+    df = _make_long_df(num_ids=4, length=6)
+    ds = fev.utils.convert_long_df_to_hf_dataset(df, id_column="item_id", static_columns=["category"])
+    expected_per_id = {f"id_{i}": [float(i * 100 + t) for t in range(6)] for i in range(4)}
+    for row in ds:
+        assert list(row["target"]) == expected_per_id[row["item_id"]]

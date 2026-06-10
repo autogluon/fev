@@ -2,7 +2,6 @@ import reprlib
 import warnings
 
 import datasets
-import multiprocess as mp
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -13,6 +12,7 @@ from .constants import DEFAULT_NUM_PROC
 __all__ = [
     "maybe_cache_from_s3",
     "convert_long_df_to_hf_dataset",
+    "convert_long_table_to_hf_dataset",
     "infer_column_types",
     "validate_time_series_dataset",
     "generate_univariate_targets_from_multivariate",
@@ -159,9 +159,12 @@ def convert_long_df_to_hf_dataset(
     id_column: str = "id",
     timestamp_column: str = "timestamp",
     static_columns: list[str] | None = None,
-    num_proc: int = DEFAULT_NUM_PROC,
 ) -> datasets.Dataset:
     """Convert a long-format pandas DataFrame to a Hugging Face datasets.Dataset object.
+
+    Each unique value in `id_column` becomes a single row in the resulting dataset. Columns listed in
+    `static_columns` (plus `id_column`) become static features (`Value` type), and all remaining columns
+    become dynamic features (`Sequence` type) with one entry per timestamp.
 
     Parameters
     ----------
@@ -173,25 +176,72 @@ def convert_long_df_to_hf_dataset(
         Name of the column containing the timestamp of time series observations.
     static_columns
         Names of columns that contain static (time-independent) features.
-    num_proc
-        Number of processes used to parallelize the computation.
     """
     df[id_column] = df[id_column].astype(str)
     df[timestamp_column] = pd.to_datetime(df[timestamp_column])
-    df = df.sort_values(by=[id_column, timestamp_column])
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    return convert_long_table_to_hf_dataset(
+        table,
+        id_column=id_column,
+        timestamp_column=timestamp_column,
+        static_columns=static_columns,
+    )
 
+
+def convert_long_table_to_hf_dataset(
+    table: pa.Table,
+    id_column: str = "id",
+    timestamp_column: str = "timestamp",
+    static_columns: list[str] | None = None,
+) -> datasets.Dataset:
+    """Convert a long-format pyarrow Table to an fev-compatible `datasets.Dataset`.
+
+    Each unique value in `id_column` becomes a single row. Columns listed in `static_columns`
+    (plus `id_column`) become static features (`Value` type), and all remaining columns become
+    dynamic features (`Sequence` type) with one entry per timestamp.
+
+    Sorts the table by `(id_column, timestamp_column)`, then directly constructs `pa.ListArray` for
+    dynamic columns and indexes the first row of each group for static columns -- avoiding an
+    expensive Python-level groupby.
+
+    Parameters
+    ----------
+    table
+        Long-format pyarrow Table containing the data.
+    id_column
+        Name of the column containing the unique ID of each time series.
+    timestamp_column
+        Name of the column containing the timestamp of time series observations.
+    static_columns
+        Names of columns that contain static (time-independent) features.
+    """
     if static_columns is None:
         static_columns = []
-    static_columns = [id_column] + static_columns
+    static_columns = list(static_columns)
 
-    def process_entry(group: pd.DataFrame) -> dict:
-        static = group[static_columns].iloc[0].to_dict()
-        dynamic = group.drop(columns=static_columns).to_dict("list")
-        return {**static, **dynamic}
+    table = table.sort_by([(id_column, "ascending"), (timestamp_column, "ascending")])
 
-    with mp.Pool(processes=num_proc) as pool:
-        entries = pool.map(process_entry, [group for _, group in df.groupby(id_column, sort=False)])
-    return datasets.Dataset.from_list(entries)
+    id_arr = table[id_column].combine_chunks().to_numpy(zero_copy_only=False)
+    n = len(id_arr)
+    if n == 0:
+        change_points = np.array([], dtype=np.int64)
+    else:
+        change_points = np.where(id_arr[:-1] != id_arr[1:])[0] + 1
+    offsets_np = np.concatenate([[0], change_points, [n]]).astype(np.int32)
+    first_row_per_group = pa.array(offsets_np[:-1].astype(np.int64))
+    offsets_arr = pa.array(offsets_np)
+
+    static_set = {id_column, *static_columns}
+    new_columns: dict[str, pa.Array] = {}
+    for col in [id_column] + static_columns:
+        new_columns[col] = pc.take(table[col], first_row_per_group)
+    for col in table.column_names:
+        if col in static_set:
+            continue
+        values = table[col].combine_chunks()
+        new_columns[col] = pa.ListArray.from_arrays(offsets_arr, values)
+
+    return datasets.Dataset(pa.table(new_columns))
 
 
 def generate_fingerprint(dataset: datasets.Dataset, num_rows_to_check: int = 3) -> str | None:

@@ -646,6 +646,22 @@ class Task:
             )
         # Since we loaded with split=TRAIN and streaming=False, ds is a datasets.Dataset object
         assert isinstance(ds, datasets.Dataset)
+
+        # If the dataset is in long format (every column is a Value), convert it to fev's
+        # standard format (one row per time series, dynamic columns of type Sequence).
+        if all(isinstance(feat, datasets.Value) for feat in ds.features.values()):
+            logger.debug(
+                f"Loaded dataset is in long format - converting to fev format with "
+                f"id_column={self.id_column!r}, timestamp_column={self.timestamp_column!r}, "
+                f"static_columns={self.static_columns!r}"
+            )
+            ds = utils.convert_long_table_to_hf_dataset(
+                ds.data.table,
+                id_column=self.id_column,
+                timestamp_column=self.timestamp_column,
+                static_columns=self.static_columns,
+            )
+
         ds.set_format("numpy")
 
         required_columns = self.known_dynamic_columns + self.past_dynamic_columns + self.static_columns
@@ -683,10 +699,13 @@ class Task:
                 num_proc=num_proc,
             )
 
-        # Ensure that IDs are sorted alphabetically for consistent ordering
+        # Ensure that IDs are sorted alphabetically for consistent ordering.
+        # Sort directly on the underlying pyarrow Table to avoid `Dataset.sort` materializing
+        # an indices column that would later need a flatten_indices pass.
         if ds.features[self.id_column].dtype != "string":
             ds = ds.cast_column(self.id_column, datasets.Value("string"))
-        ds = ds.sort(self.id_column)
+        sorted_table = ds.data.table.sort_by([(self.id_column, "ascending")])
+        ds = datasets.Dataset(sorted_table, info=ds.info, split=ds.split)
         self._freq = pd.infer_freq(ds[0][self.timestamp_column])
         if self._freq is None:
             raise ValueError("Dataset contains irregular timestamps")
