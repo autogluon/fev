@@ -71,7 +71,7 @@ def main():
         summaries.append(summary)
 
     df = pd.DataFrame(summaries)
-    print(df.to_string())
+    print(df[["model_name", "task_name", "test_error", "inference_time_s"]].to_string())
     output_path = f"{display_name}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to {output_path}")

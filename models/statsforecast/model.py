@@ -89,6 +89,7 @@ class StatsForecastModel(fev.ForecastingModel):
 
         if (train_df["ds"] > pd.Timestamp.max).any():
             train_df["ds"] = train_df.groupby("unique_id", sort=False).cumcount()
+            predictor.freq = 1
 
         if self.max_context_length is not None:
             train_df = (
