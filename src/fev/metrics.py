@@ -67,15 +67,7 @@ class Metric:
         quantile_levels: list[float],
         per_quantile_scores: bool = False,
     ) -> dict[str, float]:
-        """Compute all named scores reported for this metric.
-
-        Returns a mapping from score name to value. The base implementation returns a single entry
-        `{self.name: self.compute(...)}`. Quantile metrics override this to optionally report
-        additional per-quantile-level scores (e.g. `SQL[0.1]`) when ``per_quantile_scores=True``.
-
-        Accepts the same keyword arguments as [`compute`][fev.metrics.Metric.compute], plus
-        ``per_quantile_scores``. Non-quantile metrics ignore ``per_quantile_scores``.
-        """
+        """Named scores reported for this metric. Returns `{self.name: self.compute(...)}`."""
         return {
             self.name: self.compute(
                 y_true=y_true,
@@ -301,12 +293,8 @@ class SMAPE(Metric):
 class QuantileMetric(Metric):
     """Base class for quantile loss metrics (MQL, WQL, SQL).
 
-    Subclasses implement `_per_quantile_level`, returning the score at each quantile level ([Q]).
-    The overall score is defined as the mean over quantile levels, so e.g. `SQL` always equals the
-    mean of `SQL[0.1], SQL[0.5], ...` by construction (they share a single code path and cannot drift).
-
-    When `per_quantile_scores=True`, `compute_scores` reports both the overall score and the
-    per-quantile-level breakdown (`SQL[0.1]`, `SQL[0.5]`, ...).
+    Subclasses implement `_per_quantile_level`. The overall score is the mean over quantile levels,
+    so `SQL` always equals the mean of `SQL[0.1], SQL[0.5], ...` (single code path, cannot drift).
     """
 
     needs_quantiles: bool = True
@@ -372,6 +360,7 @@ class QuantileMetric(Metric):
             seasonality=seasonality,
             quantile_levels=quantile_levels,
         )  # [Q]
+        assert len(per_level) == len(quantile_levels)
         scores = {self.name: float(np.mean(per_level))}
         if per_quantile_scores:
             scores.update({f"{self.name}[{q}]": float(v) for q, v in zip(quantile_levels, per_level)})
