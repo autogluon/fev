@@ -73,7 +73,9 @@ class Toto2Model(fev.ForecastingModel):
         forecasts: list[np.ndarray] = []  # each entry: (num_quantiles, batch, num_variates, horizon)
         with self._record_inference_time():
             for batch in _batchify(series, batch_size):
-                target, mask = _left_pad_and_stack(batch, self.max_context_length, self.device)
+                target, mask = _left_pad_and_stack(
+                    batch, self.max_context_length, model.config.patch_size, self.device
+                )
                 series_ids = torch.zeros(len(batch), num_variates, dtype=torch.long, device=self.device)
 
                 quantiles = model.forecast(
@@ -106,12 +108,17 @@ def _batchify(items: list, batch_size: int):
         yield items[i : i + batch_size]
 
 
-def _left_pad_and_stack(series: list, max_context_length: int, device: str):
-    """Left-pad a batch of (num_variates, time) tensors to a common length and return (target, mask)."""
+def _left_pad_and_stack(series: list, max_context_length: int, patch_size: int, device: str):
+    """Left-pad a batch of (num_variates, time) tensors to a common length and return (target, mask).
+
+    The context length is rounded up to a multiple of ``patch_size`` (required by Toto's patch embedding);
+    the extra positions are masked out.
+    """
     import torch
 
     series = [s[..., -max_context_length:] for s in series]
-    context_length = max(s.shape[-1] for s in series)
+    longest = max(s.shape[-1] for s in series)
+    context_length = -(-longest // patch_size) * patch_size  # round up to a multiple of patch_size
     targets, masks = [], []
     for s in series:
         pad = context_length - s.shape[-1]
