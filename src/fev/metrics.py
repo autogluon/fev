@@ -55,6 +55,39 @@ class Metric:
         """
         raise NotImplementedError
 
+    def compute_scores(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+        per_quantile_scores: bool = False,
+    ) -> dict[str, float]:
+        """Compute all named scores reported for this metric.
+
+        Returns a mapping from score name to value. The base implementation returns a single entry
+        `{self.name: self.compute(...)}`. Quantile metrics override this to optionally report
+        additional per-quantile-level scores (e.g. `SQL[0.1]`) when ``per_quantile_scores=True``.
+
+        Accepts the same keyword arguments as [`compute`][fev.metrics.Metric.compute], plus
+        ``per_quantile_scores``. Non-quantile metrics ignore ``per_quantile_scores``.
+        """
+        return {
+            self.name: self.compute(
+                y_true=y_true,
+                y_pred=y_pred,
+                y_past=y_past,
+                y_past_lengths=y_past_lengths,
+                q_pred=q_pred,
+                seasonality=seasonality,
+                quantile_levels=quantile_levels,
+            )
+        }
+
 
 def get_metric(metric: MetricConfig) -> Metric:
     """Get a metric class by name or configuration."""
@@ -265,10 +298,32 @@ class SMAPE(Metric):
         return float(np.mean(self._safemean(val, axis=(0, 1))))
 
 
-class MQL(Metric):
-    """Mean quantile loss."""
+class QuantileMetric(Metric):
+    """Base class for quantile loss metrics (MQL, WQL, SQL).
+
+    Subclasses implement `_per_quantile_level`, returning the score at each quantile level ([Q]).
+    The overall score is defined as the mean over quantile levels, so e.g. `SQL` always equals the
+    mean of `SQL[0.1], SQL[0.5], ...` by construction (they share a single code path and cannot drift).
+
+    When `per_quantile_scores=True`, `compute_scores` reports both the overall score and the
+    per-quantile-level breakdown (`SQL[0.1]`, `SQL[0.5]`, ...).
+    """
 
     needs_quantiles: bool = True
+
+    def _per_quantile_level(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> np.ndarray:
+        """Compute the metric at each quantile level. Returns [Q]."""
+        raise NotImplementedError
 
     def compute(
         self,
@@ -282,13 +337,67 @@ class MQL(Metric):
         quantile_levels: list[float],
     ) -> float:
         if len(quantile_levels) == 0:
-            raise ValueError(f"{self.__class__.__name__} cannot be computed without quantile_levels")
+            raise ValueError(f"{self.name} cannot be computed without quantile_levels")
+        per_level = self._per_quantile_level(
+            y_true=y_true,
+            y_pred=y_pred,
+            y_past=y_past,
+            y_past_lengths=y_past_lengths,
+            q_pred=q_pred,
+            seasonality=seasonality,
+            quantile_levels=quantile_levels,
+        )  # [Q]
+        return float(np.mean(per_level))
+
+    def compute_scores(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+        per_quantile_scores: bool = False,
+    ) -> dict[str, float]:
+        if len(quantile_levels) == 0:
+            raise ValueError(f"{self.name} cannot be computed without quantile_levels")
+        per_level = self._per_quantile_level(
+            y_true=y_true,
+            y_pred=y_pred,
+            y_past=y_past,
+            y_past_lengths=y_past_lengths,
+            q_pred=q_pred,
+            seasonality=seasonality,
+            quantile_levels=quantile_levels,
+        )  # [Q]
+        scores = {self.name: float(np.mean(per_level))}
+        if per_quantile_scores:
+            scores.update({f"{self.name}[{q}]": float(v) for q, v in zip(quantile_levels, per_level)})
+        return scores
+
+
+class MQL(QuantileMetric):
+    """Mean quantile loss."""
+
+    def _per_quantile_level(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
-        per_dim = np.nanmean(ql, axis=(0, 1, 3))  # [D]
-        return float(np.mean(per_dim))
+        per_dim = np.nanmean(ql, axis=(0, 1))  # [D, Q]
+        return np.mean(per_dim, axis=0)  # [Q]
 
 
-class SQL(Metric):
+class SQL(QuantileMetric):
     """Scaled quantile loss.
 
     Warning:
@@ -296,12 +405,10 @@ class SQL(Metric):
         all-NaN history, or zero seasonal error) are excluded from aggregation.
     """
 
-    needs_quantiles: bool = True
-
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
 
-    def compute(
+    def _per_quantile_level(
         self,
         *,
         y_true: np.ndarray,
@@ -311,26 +418,24 @@ class SQL(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+    ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
-        ql_avg_q = np.nanmean(ql, axis=3)  # [N, H, D]
         seasonal_error = _abs_seasonal_error_per_item(
             y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality
         )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
-        scaled = ql_avg_q / seasonal_error[:, None, :]  # [N, H, D]
-        return float(np.mean(self._safemean(scaled, axis=(0, 1))))
+        scaled = ql / seasonal_error[:, None, :, None]  # [N, H, D, Q]
+        per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
+        return np.mean(per_dim, axis=0)  # [Q]
 
 
-class WQL(Metric):
+class WQL(QuantileMetric):
     """Weighted quantile loss."""
-
-    needs_quantiles: bool = True
 
     def __init__(self, epsilon: float = 0.0) -> None:
         self.epsilon = epsilon
 
-    def compute(
+    def _per_quantile_level(
         self,
         *,
         y_true: np.ndarray,
@@ -340,12 +445,12 @@ class WQL(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+    ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
-        ql_per_dim = np.nanmean(ql, axis=(0, 1, 3))  # [D]
+        ql_per_dim = np.nanmean(ql, axis=(0, 1))  # [D, Q]
         abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
-        per_dim = ql_per_dim / np.maximum(abs_true_per_dim, self.epsilon)
-        return float(np.mean(per_dim))
+        per_dim = ql_per_dim / np.maximum(abs_true_per_dim, self.epsilon)[:, None]  # [D, Q]
+        return np.mean(per_dim, axis=0)  # [Q]
 
 
 def _quantile_loss(

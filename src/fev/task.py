@@ -1,3 +1,4 @@
+import collections
 import copy
 import dataclasses
 import logging
@@ -129,12 +130,16 @@ class EvaluationWindow:
         metrics: list[Metric],
         seasonality: int,
         quantile_levels: list[float],
+        per_quantile_scores: bool = False,
     ) -> dict[str, float]:
         """Compute accuracy metrics on the predictions made for this window.
 
         To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
 
         This is a convenience method that exists for debugging and additional evaluation.
+
+        If `per_quantile_scores=True`, quantile metrics additionally report a breakdown per quantile level
+        (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) alongside the overall score.
         """
         past_data, _, test_data = self._get_past_future_test_data()
 
@@ -189,14 +194,17 @@ class EvaluationWindow:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for metric in metrics:
-                test_scores[metric.name] = metric.compute(
-                    y_true=y_true,
-                    y_pred=y_pred,
-                    y_past=y_past_flat,
-                    y_past_lengths=y_past_lengths,
-                    q_pred=q_pred,
-                    seasonality=seasonality,
-                    quantile_levels=quantile_levels,
+                test_scores.update(
+                    metric.compute_scores(
+                        y_true=y_true,
+                        y_pred=y_pred,
+                        y_past=y_past_flat,
+                        y_past_lengths=y_past_lengths,
+                        q_pred=q_pred,
+                        seasonality=seasonality,
+                        quantile_levels=quantile_levels,
+                        per_quantile_scores=per_quantile_scores,
+                    )
                 )
         return test_scores
 
@@ -842,6 +850,7 @@ class Task:
         inference_time_s: float | None = None,
         trained_on_this_dataset: bool = False,
         extra_info: dict | None = None,
+        per_quantile_scores: bool = False,
     ) -> dict[str, Any]:
         """Get a summary of the model performance for the given forecasting task.
 
@@ -864,6 +873,10 @@ class Task:
             zero-shot mode.
         extra_info : dict | None
             Optional dictionary with additional information that will be appended to the evaluation summary.
+        per_quantile_scores : bool, default False
+            If True, quantile metrics (MQL, WQL, SQL) additionally report a breakdown per quantile level
+            (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) alongside the overall score. Non-quantile metrics
+            are unaffected.
 
         Returns
         -------
@@ -884,7 +897,8 @@ class Task:
         metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
         eval_metric = metrics[0]
 
-        metrics_per_window = {metric.name: [] for metric in metrics}
+        # Use defaultdict since per-quantile breakdown adds score keys (e.g. SQL[0.1]) not known up front
+        metrics_per_window: dict[str, list[float]] = collections.defaultdict(list)
         if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
             raise ValueError(
                 f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
@@ -900,6 +914,7 @@ class Task:
                 metrics=metrics,
                 seasonality=self.seasonality,
                 quantile_levels=self.quantile_levels,
+                per_quantile_scores=per_quantile_scores,
             )
             for metric, value in metric_scores.items():
                 metrics_per_window[metric].append(value)

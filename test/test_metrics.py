@@ -38,6 +38,12 @@ def model_setup(tmp_path_factory, request):
     return task, train_df, test_df, predictor
 
 
+def _fev_predictions(predictor, train_df):
+    """Build fev-formatted predictions (one dict per item) from an AutoGluon predictor."""
+    ag_predictions = predictor.predict(train_df).rename(columns={"mean": "predictions"})
+    return [pred.to_dict("list") for _, pred in ag_predictions.groupby("item_id", as_index=False)]
+
+
 @pytest.mark.parametrize("eval_metric", list(AVAILABLE_METRICS))
 def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_metric):
     task, train_df, test_df, predictor = model_setup
@@ -51,12 +57,7 @@ def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_me
     else:
         ag_score = predictor.evaluate(full_df, metrics=[task.eval_metric])[task.eval_metric] * -1
 
-    ag_predictions = predictor.predict(train_df).rename(columns={"mean": "predictions"})
-    fev_predictions = []
-    for _, pred in ag_predictions.groupby("item_id", as_index=False):
-        fev_predictions.append(pred.to_dict("list"))
-
-    fev_score = task.evaluation_summary([fev_predictions], model_name="")[eval_metric]
+    fev_score = task.evaluation_summary([_fev_predictions(predictor, train_df)], model_name="")[eval_metric]
 
     assert np.isclose(ag_score, fev_score)
 
@@ -110,3 +111,38 @@ def test_seasonal_error_per_item_empty():
     result = _seasonal_error_per_item(y_past=flat, y_past_lengths=lengths, seasonality=2, aggregate_fn=np.abs)
     assert result.size == 0
     assert result.dtype == np.float64
+
+
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL"])
+def test_when_per_quantile_scores_then_overall_equals_mean_of_per_level(model_setup, metric_name):
+    task, train_df, _, predictor = model_setup
+    task.eval_metric = metric_name
+
+    summary = task.evaluation_summary([_fev_predictions(predictor, train_df)], model_name="", per_quantile_scores=True)
+
+    per_level = [summary[f"{metric_name}[{q}]"] for q in task.quantile_levels]
+    assert np.isclose(summary[metric_name], np.mean(per_level))
+
+
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL"])
+def test_when_per_quantile_scores_disabled_then_no_per_level_keys(model_setup, metric_name):
+    task, train_df, _, predictor = model_setup
+    task.eval_metric = metric_name
+
+    summary = task.evaluation_summary([_fev_predictions(predictor, train_df)], model_name="")
+
+    assert metric_name in summary
+    assert not any(key.startswith(f"{metric_name}[") for key in summary)
+
+
+def test_when_per_quantile_scores_then_non_quantile_metrics_have_no_breakdown(model_setup):
+    task, train_df, _, predictor = model_setup
+    task.eval_metric = "MASE"
+    task.extra_metrics = ["MAE", "SQL"]
+
+    summary = task.evaluation_summary([_fev_predictions(predictor, train_df)], model_name="", per_quantile_scores=True)
+
+    # Quantile metric is broken down per level
+    assert all(f"SQL[{q}]" in summary for q in task.quantile_levels)
+    # Non-quantile metrics emit only their overall score
+    assert not any(key.startswith("MAE[") or key.startswith("MASE[") for key in summary)
