@@ -76,12 +76,15 @@ class Toto2Model(fev.ForecastingModel):
             )
             return fev.utils.combine_univariate_predictions_to_multivariate(flat, target_columns=task.target_columns)
         else:
-            # One multivariate forecast per item; `f.quantile(q)` is (horizon, n_variates).
+            # One forecast per item, reshaped to (num_items, horizon, n_variates). The model squeezes the
+            # variate axis for single-target tasks, so `f.quantile(q)` is (horizon,) there and (horizon, n_var) else.
+            quantiles = {
+                key: np.stack([f.quantile(q).reshape(task.horizon, -1) for f in forecasts])
+                for key, q in forecast_keys.items()
+            }
             return datasets.DatasetDict(
                 {
-                    col: datasets.Dataset.from_dict(
-                        {key: np.stack([f.quantile(q)[:, i] for f in forecasts]) for key, q in forecast_keys.items()}
-                    )
+                    col: datasets.Dataset.from_dict({key: arr[..., i] for key, arr in quantiles.items()})
                     for i, col in enumerate(task.target_columns)
                 }
             )
