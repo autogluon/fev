@@ -16,7 +16,7 @@ class Toto2Model(fev.ForecastingModel):
     def __init__(
         self,
         model_path: str = "Datadog/Toto-2.0-22m",
-        batch_size: int = 128,
+        batch_size: int = 512,
         context_length: int = 4096,
         decode_block_size: int | None = None,
         as_univariate: bool = False,
@@ -51,6 +51,10 @@ class Toto2Model(fev.ForecastingModel):
         gts_model = Toto2GluonTSModel(model.to(self.device).eval(), config)
         predictor = gts_model.create_predictor(batch_size=self.batch_size, device=self.device)
 
+        logging.getLogger("gluonts").setLevel(100)
+        # The 0.5 quantile is used as the point forecast (Toto 2.0 is quantile-based and has no mean prediction).
+        forecast_keys = {"predictions": 0.5, **{str(q): q for q in task.quantile_levels}}
+
         predictions_per_window = []
         for window in task.iter_windows():
             _, prediction_dataset = fev.convert_input_data(window, adapter="gluonts", as_univariate=self.as_univariate)
@@ -58,32 +62,26 @@ class Toto2Model(fev.ForecastingModel):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", RuntimeWarning)
                     forecasts = list(predictor.predict(prediction_dataset))
-
-            flat_predictions = self._flatten_forecasts(forecasts, quantile_levels=task.quantile_levels)
-            predictions_per_window.append(
-                fev.utils.combine_univariate_predictions_to_multivariate(
-                    flat_predictions, target_columns=task.target_columns
-                )
-            )
+            predictions_per_window.append(self._format_predictions(forecasts, task, forecast_keys))
         return predictions_per_window
 
-    @staticmethod
-    def _flatten_forecasts(forecasts: list, quantile_levels: list[float]) -> datasets.Dataset:
-        """Flatten GluonTS forecasts into per-variate univariate predictions, interleaved by variate.
-
-        Each (possibly multivariate) forecast is split into one univariate prediction per variate, so the
-        result is ordered as ``[item0_var0, item0_var1, ..., item1_var0, ...]`` -- the layout expected by
-        `combine_univariate_predictions_to_multivariate`.
-        """
-        logging.getLogger("gluonts").setLevel(100)
-
-        # The 0.5 quantile is used as the point forecast (Toto 2.0 is quantile-based and has no mean prediction).
-        forecast_keys = {"predictions": 0.5, **{str(q): q for q in quantile_levels}}
-        columns = {key: [] for key in forecast_keys}
-        for f in forecasts:
-            for key, q in forecast_keys.items():
-                arr = np.asarray(f.quantile(q))  # (horizon,) univariate or (horizon, n_variates) multivariate
-                if arr.ndim == 1:
-                    arr = arr[:, None]
-                columns[key].extend(arr.T)
-        return datasets.Dataset.from_dict({key: np.stack(values) for key, values in columns.items()})
+    def _format_predictions(
+        self, forecasts: list, task: fev.Task, forecast_keys: dict[str, float]
+    ) -> datasets.DatasetDict:
+        """Format GluonTS forecasts into a `DatasetDict` keyed by target column, as expected by fev."""
+        if self.as_univariate:
+            # One univariate forecast per (item, variate), interleaved by variate; `f.quantile(q)` is (horizon,).
+            flat = datasets.Dataset.from_dict(
+                {key: np.stack([f.quantile(q) for f in forecasts]) for key, q in forecast_keys.items()}
+            )
+            return fev.utils.combine_univariate_predictions_to_multivariate(flat, target_columns=task.target_columns)
+        else:
+            # One multivariate forecast per item; `f.quantile(q)` is (horizon, n_variates).
+            return datasets.DatasetDict(
+                {
+                    col: datasets.Dataset.from_dict(
+                        {key: np.stack([f.quantile(q)[:, i] for f in forecasts]) for key, q in forecast_keys.items()}
+                    )
+                    for i, col in enumerate(task.target_columns)
+                }
+            )
