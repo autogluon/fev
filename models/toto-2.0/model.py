@@ -32,14 +32,15 @@ class Toto2Model(fev.ForecastingModel):
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         import torch
-        from toto2 import Toto2GluonTSModel, Toto2GluonTSModelConfig, Toto2Model
+        from toto2 import Toto2GluonTSModel, Toto2GluonTSModelConfig
+        from toto2 import Toto2Model as PretrainedToto2
 
         if self.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         target_columns = ["target"] if self.as_univariate else task.target_columns
 
-        model = Toto2Model.from_pretrained(fev.utils.maybe_cache_from_s3(self.model_path))
+        model = PretrainedToto2.from_pretrained(fev.utils.maybe_cache_from_s3(self.model_path))
         config = Toto2GluonTSModelConfig(
             prediction_length=task.horizon,
             context_length=self.context_length,
