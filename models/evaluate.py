@@ -57,6 +57,7 @@ def main():
     benchmark = fev.Benchmark.from_yaml(args.benchmark)
     tasks = benchmark.tasks[: args.num_tasks]
 
+    extra_info = {"model_class": args.model, "model_kwargs": args.model_kwargs}
     summaries = []
     for task in tqdm(tasks):
         tqdm.write(f"Evaluating {task.task_name}")
@@ -67,6 +68,7 @@ def main():
             training_time_s=model.training_time,
             inference_time_s=model.inference_time,
             trained_on_this_dataset=task.dataset_config in model.trained_on_datasets,
+            extra_info=extra_info,
         )
         summaries.append(summary)
 
