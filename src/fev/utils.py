@@ -570,7 +570,13 @@ def past_future_split(
 
 
 def maybe_cache_from_s3(path: str, cache_dir: str | None = None) -> str:
-    """If path is an S3 URI, download and cache locally. Otherwise return as-is."""
+    """If path is an S3 URI, download and cache locally; otherwise return it as-is.
+
+    Single objects are cached as files; prefixes are downloaded recursively into a
+    directory. The cache key encodes the full S3 path, so distinct URIs never collide.
+    Returns the local path. Re-uses any existing cache entry without re-downloading
+    (no integrity check — clear the cache entry if a prior download was truncated).
+    """
     import os
 
     if not path.startswith("s3://"):
@@ -587,8 +593,12 @@ def maybe_cache_from_s3(path: str, cache_dir: str | None = None) -> str:
     if os.path.exists(local_path):
         return local_path
 
-    os.makedirs(local_path, exist_ok=True)
-    print(f"Downloading {path} to {local_path}")
     fs = s3fs.S3FileSystem()
-    fs.get(path, local_path, recursive=True)
+    print(f"Downloading {path} to {local_path}")
+    if fs.isfile(path):
+        os.makedirs(cache_dir, exist_ok=True)
+        fs.get(path, local_path)
+    else:
+        os.makedirs(local_path, exist_ok=True)
+        fs.get(path, local_path, recursive=True)
     return local_path

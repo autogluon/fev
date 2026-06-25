@@ -42,7 +42,8 @@ class TabPFNTSModel(fev.ForecastingModel):
         from tabpfn_time_series.features import AutoSeasonalFeature, CalendarFeature, RunningIndexFeature
 
         predictor = TabPFNTimeSeriesPredictor(
-            tabpfn_mode=TabPFNMode.LOCAL, tabpfn_config={"model_path": self.model_path}
+            tabpfn_mode=TabPFNMode.LOCAL,
+            tabpfn_config={"model_path": fev.utils.maybe_cache_from_s3(self.model_path)},
         )
         selected_features = [RunningIndexFeature(), CalendarFeature(), AutoSeasonalFeature()]
         feature_transformer = FeatureTransformer(selected_features)
@@ -68,7 +69,7 @@ class TabPFNTSModel(fev.ForecastingModel):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     with self._record_inference_time():
-                        forecast_df = predictor.predict(train_tsdf, test_tsdf)
+                        forecast_df = predictor.predict(train_tsdf, test_tsdf, quantiles=list(task.quantile_levels))
             forecast_df = forecast_df.rename(
                 columns={"target": "predictions"} | {q: str(q) for q in task.quantile_levels}
             )[selected_columns]
