@@ -29,6 +29,16 @@ Options:
 
 Model dependencies are installed automatically in an ephemeral environment. Your project environment is not modified.
 
+## Reproducibility
+
+Each results CSV records the metadata needed to reproduce a run:
+
+- `model_class` — the wrapper used (the `models/<name>/` folder). Several models can share one wrapper (e.g. `CatBoost` and `LightGBM` both use `mlforecast`).
+- `model_kwargs` — the JSON kwargs passed to the model constructor (`-k`). Reproduce the run by passing the same dict.
+- `fev_commit` — the fev commit the run was produced with. Check out this commit to get the exact `models/<model_class>/` wrapper code and its `requirements.txt`.
+
+To reproduce a published result, check out its `fev_commit`, then run `evaluate.py` for its `model_class` with its `model_kwargs`.
+
 ## Add a custom model
 
 1. Create a folder `models/<name>/` where `<name>` is how you'll refer to the model with `-m`.
