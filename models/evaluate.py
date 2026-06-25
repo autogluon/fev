@@ -17,6 +17,18 @@ def list_available_models() -> list[str]:
     return sorted(d.name for d in _MODELS_DIR.iterdir() if (d / "model.py").exists())
 
 
+def get_fev_commit() -> str | None:
+    """Read the current commit from .git directly (no git binary needed). None if unavailable."""
+    try:
+        git_dir = Path(__file__).resolve().parents[1] / ".git"
+        head = (git_dir / "HEAD").read_text().strip()
+        if head.startswith("ref:"):
+            head = (git_dir / head[5:].strip()).read_text().strip()
+        return head
+    except Exception:
+        return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate a model on a benchmark.")
     parser.add_argument("-m", "--model", required=True, help="Model name (must match a folder in models/)")
@@ -57,6 +69,7 @@ def main():
     benchmark = fev.Benchmark.from_yaml(args.benchmark)
     tasks = benchmark.tasks[: args.num_tasks]
 
+    extra_info = {"model_class": args.model, "model_kwargs": args.model_kwargs, "fev_commit": get_fev_commit()}
     summaries = []
     for task in tqdm(tasks):
         tqdm.write(f"Evaluating {task.task_name}")
@@ -67,6 +80,7 @@ def main():
             training_time_s=model.training_time,
             inference_time_s=model.inference_time,
             trained_on_this_dataset=task.dataset_config in model.trained_on_datasets,
+            extra_info=extra_info,
         )
         summaries.append(summary)
 
