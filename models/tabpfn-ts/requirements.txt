@@ -1,2 +1,2 @@
-tabpfn==8.0.0
-tabpfn-time-series==1.2.0
+tabpfn==7.1.1
+tabpfn-time-series==1.0.10
