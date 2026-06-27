@@ -1,0 +1,2 @@
+tabpfn==8.0.0
+tabpfn-time-series==1.1.0
