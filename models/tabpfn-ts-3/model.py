@@ -20,10 +20,11 @@ class TabPFNTS3Model(fev.ForecastingModel):
         self.use_covariates = use_covariates
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
-        from tabpfn_time_series import TabPFNTSPipeline
+        from tabpfn_time_series import TabPFNMode, TabPFNTSPipeline
 
         pipeline = TabPFNTSPipeline(
-            tabpfn_config={"model_path": fev.utils.maybe_cache_from_s3(self.model_path)},
+            tabpfn_mode=TabPFNMode.LOCAL,
+            tabpfn_model_config={"model_path": fev.utils.maybe_cache_from_s3(self.model_path)},
         )
         predictions_per_window, self.inference_time = pipeline.predict_fev(task, use_covariates=self.use_covariates)
         return predictions_per_window
