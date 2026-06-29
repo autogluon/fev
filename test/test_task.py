@@ -40,7 +40,7 @@ def test_when_list_of_config_provided_then_benchmark_can_be_loaded():
         },
         {
             "dataset_path": "autogluon/chronos_datasets",
-            "dataset_config": "ercot",
+            "dataset_config": "monash_m1_yearly",
             "horizon": 48,
             "seasonality": 24,
         },
@@ -52,14 +52,14 @@ def test_when_list_of_config_provided_then_benchmark_can_be_loaded():
 
 @pytest.mark.parametrize(
     "generate_univariate_targets_from",
-    [["price_mean"], ["price_mean", "distance_max", "distance_min"]],
+    [["OT"], ["OT", "LULL", "HULL"]],
 )
 def test_when_generate_univariate_targets_from_used_then_one_instance_created_per_column(
     generate_univariate_targets_from,
 ):
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets",
-        dataset_config="monash_rideshare",
+        dataset_path="autogluon/fev_datasets",
+        dataset_config="ETT_1H",
         generate_univariate_targets_from=generate_univariate_targets_from,
     )
     original_ds = datasets.load_dataset(task.dataset_path, task.dataset_config, split="train")
@@ -71,8 +71,8 @@ def test_when_generate_univariate_targets_from_used_then_one_instance_created_pe
 
 def test_when_multiple_target_columns_set_to_all_used_then_all_columns_are_exploded():
     task = fev.Task(
-        dataset_path="autogluon/chronos_datasets",
-        dataset_config="monash_rideshare",
+        dataset_path="autogluon/fev_datasets",
+        dataset_config="ETT_1H",
         generate_univariate_targets_from=fev.task.ALL_AVAILABLE_COLUMNS,
     )
     original_ds = datasets.load_dataset(task.dataset_path, task.dataset_config, split="train")
