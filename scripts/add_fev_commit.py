@@ -91,9 +91,7 @@ def main(argv: list[str] | None = None) -> int:
 
         df = pd.read_csv(path)
         if "fev_commit" in df.columns and df["fev_commit"].notna().any() and not args.overwrite:
-            raise SystemExit(
-                f"Error: {path} already has a fev_commit column. Pass --overwrite to replace it."
-            )
+            raise SystemExit(f"Error: {path} already has a fev_commit column. Pass --overwrite to replace it.")
 
         df["fev_commit"] = commit
         df.to_csv(path, index=False)

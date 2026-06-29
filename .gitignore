@@ -137,6 +137,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# generated leaderboard figures (scripts/generate_fev_bench_figures.py)
+/figures/
+
 # pycharm
 .idea
 
