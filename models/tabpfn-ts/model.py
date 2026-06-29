@@ -3,6 +3,7 @@ import warnings
 from contextlib import contextmanager
 
 import datasets
+import numpy as np
 import pandas as pd
 
 import fev
@@ -56,6 +57,8 @@ class TabPFNTSModel(fev.ForecastingModel):
                 for col in df.columns:
                     if not pd.api.types.is_numeric_dtype(df[col]):
                         df[col] = df[col].astype(str).replace("nan", "None")
+                # Use np instead of pd.to_datetime to avoid OverflowError error on invalid timestamps
+                df["timestamp"] = np.array(df["timestamp"], dtype="datetime64[s]")
             train_tsdf = TimeSeriesDataFrame(train_tsdf, id_column="id").fill_missing_values().fillna(0.0)
             train_tsdf = train_tsdf.slice_by_timestep(-self.max_context_length, None)
             train_tsdf = train_tsdf.drop(columns=task.past_dynamic_columns)
