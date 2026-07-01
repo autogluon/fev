@@ -1,4 +1,4 @@
-mkdocs-material
-mkdocs-jupyter
-mkdocstrings[python]
-mike
+mkdocs-material==9.7.6
+mkdocs-jupyter==0.26.3
+mkdocstrings[python]==1.0.4
+mike==2.2.0
