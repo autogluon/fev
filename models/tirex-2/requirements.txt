@@ -1,0 +1,4 @@
+tirex-2
+fev
+datasets==3.6.0
+pyarrow>=21.0.0
