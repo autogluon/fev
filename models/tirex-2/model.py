@@ -1,3 +1,6 @@
+"""
+TiRex-2 was evaluated on a NVIDIA H100 GPU with CUDA version 12.6 installed. 
+"""
 import contextlib
 
 import datasets
