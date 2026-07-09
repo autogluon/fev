@@ -1,3 +1,0 @@
-# GM Modular — champion-challenger ensemble.
-# Pure stdlib, no external deps beyond what fev already requires.
-numpy>=1.21

@@ -1,12 +1,10 @@
-"""GM Modular — champion-challenger forecasting ensemble.
+"""Champion-challenger forecasting ensemble.
 
 A deterministic, pure-stdlib ensemble that segments each time series (stable,
 seasonal, lumpy, volatile, new) and runs four candidate models per series:
 SNAIVE (seasonal naive), AVG3 (trailing average), SIDX (seasonal index x trend),
 and HW (Holt-Winters additive). The champion is picked per series by WAPE on a
 held-out validation window, then retrained on the full history for the forecast.
-
-See: https://github.com/360Labs-ai/gm-modular
 """
 
 from __future__ import annotations
@@ -22,10 +20,10 @@ import pandas as pd
 import fev
 
 
-class GmModularModel(fev.ForecastingModel):
+class CCEnsembleModel(fev.ForecastingModel):
     """Champion-challenger ensemble forecaster — deterministic, pure stdlib."""
 
-    model_name = "gm-modular"
+    model_name = "cc-ensemble"
     trained_on_datasets: list[str] = []  # trains from scratch on each task
 
     def __init__(

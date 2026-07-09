@@ -1,0 +1,2 @@
+# Champion-challenger ensemble — pure stdlib, deterministic.
+numpy>=1.21
