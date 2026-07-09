@@ -20,10 +20,10 @@ import pandas as pd
 import fev
 
 
-class CCEnsembleModel(fev.ForecastingModel):
+class OmniScientModel(fev.ForecastingModel):
     """Champion-challenger ensemble forecaster — deterministic, pure stdlib."""
 
-    model_name = "cc-ensemble"
+    model_name = "omni-scient"
     trained_on_datasets: list[str] = []  # trains from scratch on each task
 
     def __init__(
