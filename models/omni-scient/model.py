@@ -23,7 +23,7 @@ import fev
 class OmniScientModel(fev.ForecastingModel):
     """Champion-challenger ensemble forecaster — deterministic, pure stdlib."""
 
-    model_name = "omni-scient"
+    model_name = "omni-scient-0.1.0"
     trained_on_datasets: list[str] = []  # trains from scratch on each task
 
     def __init__(
