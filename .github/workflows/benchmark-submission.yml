@@ -1,7 +1,6 @@
 name: Benchmark submission checks
 
-# Untrusted job: read-only token, no secrets. Validates the submission and uploads a rendered
-# leaderboard table for benchmark-submission-comment.yml to post as a PR comment.
+# Read-only, no secrets. Validates fev-bench submissions and prints the leaderboard to the logs.
 on:
   pull_request:
     paths:
@@ -28,31 +27,5 @@ jobs:
       - name: Validate submissions
         run: pytest test/test_fev_bench_submissions.py -q
 
-      - name: Collect changed result files
-        id: changed
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            -- 'benchmarks/fev_bench/results/*.csv' | xargs -n1 basename | tr '\n' ' ')
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
-
-      - name: Render leaderboard table
-        run: |
-          python scripts/render_fev_bench_leaderboard.py \
-            --output table.md --changed ${{ steps.changed.outputs.files }}
-          echo "${{ github.event.pull_request.number }}" > pr_number.txt
-
-      - name: Also show table in the run summary
-        run: cat table.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload comment payload
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-submission-comment
-          path: |
-            table.md
-            pr_number.txt
-          retention-days: 1
+      - name: Print leaderboard
+        run: python scripts/render_fev_bench_leaderboard.py
