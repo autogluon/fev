@@ -47,7 +47,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import altair as alt
 import pandas as pd
 
 import fev
@@ -117,6 +116,8 @@ def construct_pairwise_chart(
     show_legend
         Whether to draw the color legend.
     """
+    import altair as alt
+
     cbar_label, domain, domain_mid, text_condition_tmpl = PAIRWISE_CHART_CONFIG[col]
     text_condition = text_condition_tmpl.format(col=col)
 

@@ -1,9 +1,7 @@
 name: Benchmark submission comment
 
-# Trusted companion to benchmark-submission.yml. Triggered when that workflow completes, this runs
-# in the BASE repo context (not the fork), so it can hold pull-requests:write. It never checks out
-# or runs PR code: it only downloads the artifact the untrusted job produced and posts it as a
-# comment. That separation is what makes commenting on fork PRs safe.
+# Trusted job with pull-requests:write. Never runs PR code; only posts the artifact produced by
+# benchmark-submission.yml. This split is what keeps commenting on fork PRs safe.
 on:
   workflow_run:
     workflows: ["Benchmark submission checks"]

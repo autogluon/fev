@@ -1,9 +1,7 @@
 name: Benchmark submission checks
 
-# Runs on every PR that touches benchmarks/. This job runs UNTRUSTED submission code/data, so it
-# is deliberately powerless: default read-only token, no secrets, no write permissions. It only
-# validates the submission and renders a leaderboard table into an artifact. A separate trusted
-# workflow (benchmark-submission-comment.yml) posts that table as a PR comment.
+# Untrusted job: read-only token, no secrets. Validates the submission and uploads a rendered
+# leaderboard table for benchmark-submission-comment.yml to post as a PR comment.
 on:
   pull_request:
     paths:
