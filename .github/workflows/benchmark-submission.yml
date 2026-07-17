@@ -1,6 +1,8 @@
-name: Benchmark submission checks
+name: fev-bench leaderboard preview
 
-# Read-only, no secrets. Validates fev-bench submissions and prints the leaderboard to the logs.
+# Read-only, no secrets. Prints the leaderboard for benchmarks/ PRs so reviewers can eyeball a
+# submission. Submission *validation* lives in ci.yml (test/test_fev_bench_submissions.py, run on
+# every PR).
 on:
   pull_request:
     paths:
@@ -10,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  leaderboard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,9 +25,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install ".[test]"
-
-      - name: Validate submissions
-        run: pytest test/test_fev_bench_submissions.py -q
 
       - name: Print leaderboard
         run: python scripts/render_fev_bench_leaderboard.py
