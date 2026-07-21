@@ -18,16 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv pip install --system . pandas pyyaml
+        run: |
+          uv venv
+          uv pip install . pandas pyyaml
 
       - name: Print leaderboard
-        run: python scripts/render_fev_bench_leaderboard.py
+        run: uv run python scripts/render_fev_bench_leaderboard.py
