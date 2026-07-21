@@ -25,9 +25,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv venv
-          uv pip install . pandas pyyaml
+        run: uv pip install . pandas pyyaml
 
       - name: Print leaderboard
         run: uv run python scripts/render_fev_bench_leaderboard.py
