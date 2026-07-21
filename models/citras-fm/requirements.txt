@@ -1,0 +1,2 @@
+citras-fm @ git+https://github.com/hitachi-ais/citras-fm@v3.0.0
+gluonts==0.15
