@@ -1,4 +1,4 @@
-name: fev-bench leaderboard preview
+name: Leaderboard preview
 
 # Read-only, no secrets. Prints the leaderboard for benchmarks/ PRs so reviewers can eyeball a
 # submission. Submission *validation* lives in ci.yml (test/test_fev_bench_submissions.py, run on
@@ -18,13 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install ".[test]"
+        run: uv pip install . pandas pyyaml
 
       - name: Print leaderboard
-        run: python scripts/render_fev_bench_leaderboard.py
+        run: uv run python scripts/render_fev_bench_leaderboard.py

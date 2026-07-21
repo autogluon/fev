@@ -17,27 +17,29 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
-      - name: Install ruff
-        run: pip install ruff
+          enable-cache: true
       - name: Check formatting
-        run: ruff format --diff src test
+        run: uvx ruff format --check --diff src test
       - name: Check imports
-        run: ruff check --select I src test
+        run: uvx ruff check --select I src test
 
   test:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
+          enable-cache: true
       - name: Install dependencies
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install ".[test]"
+        run: |
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          uv pip install ".[test]"
       - name: Test with pytest
-        run: pytest test
+        run: uv run pytest test
