@@ -1,3 +1,6 @@
+"""
+TS-ICL was evaluated on a NVIDIA H100 GPU (92GB) with CUDA version 12.8 installed. 
+"""
 from pathlib import Path
 import sys
 from typing import cast, Dict

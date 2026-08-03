@@ -1,1 +1,1 @@
-tsicl @ git+https://github.com/EDF-Lab/ts-icl.git
+tsicl==0.2.1
