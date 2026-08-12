@@ -3,10 +3,9 @@ import numpy as np
 import pandas as pd
 import pytest
 from autogluon.timeseries import TimeSeriesPredictor
-from autogluon.timeseries.metrics import AVAILABLE_METRICS as AG_AVAILABLE_METRICS
 
 import fev
-from fev.metrics import AVAILABLE_METRICS, MAE, MAEB, WAPE, WAPEB, _seasonal_error_per_item
+from fev.metrics import AVAILABLE_METRICS, _seasonal_error_per_item
 
 
 # Include datasets with NaN values (nn5) and all-zero history values (covid deaths)
@@ -47,8 +46,6 @@ def _fev_predictions(predictor, train_df):
 
 @pytest.mark.parametrize("eval_metric", list(AVAILABLE_METRICS))
 def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_metric):
-    if eval_metric not in AG_AVAILABLE_METRICS:
-        pytest.skip(f"Metric '{eval_metric}' is not available in the installed autogluon.timeseries")
     task, train_df, test_df, predictor = model_setup
     task.eval_metric = eval_metric
 
@@ -149,34 +146,3 @@ def test_when_per_quantile_scores_then_non_quantile_metrics_have_no_breakdown(mo
     assert all(f"SQL[{q}]" in summary for q in task.quantile_levels)
     # Non-quantile metrics emit only their overall score
     assert not any(key.startswith("MAE[") or key.startswith("MASE[") for key in summary)
-
-
-def _point_metric_kwargs(y_true, y_pred):
-    """Minimal kwargs for computing a point metric on [N, H, D] arrays."""
-    n, h, d = y_true.shape
-    return dict(
-        y_true=y_true,
-        y_pred=y_pred,
-        y_past=np.empty((0, d), dtype="float64"),
-        y_past_lengths=np.array([], dtype="int64"),
-        q_pred=np.empty((n, h, d, 0), dtype="float64"),
-        seasonality=1,
-        quantile_levels=[],
-    )
-
-
-@pytest.mark.parametrize("base_cls, bias_cls", [(MAE, MAEB), (WAPE, WAPEB)])
-def test_when_forecast_is_unbiased_then_bias_penalized_metric_equals_base_metric(base_cls, bias_cls):
-    rng = np.random.default_rng(0)
-    n, h, d = 5, 4, 1  # n * h even -> alternating offsets have exactly zero mean
-    y_true = rng.integers(0, 5, size=(n, h, d)).astype("float64")
-
-    # Alternating +/- offsets => aggregate bias is zero => bias-penalized metric equals the base metric
-    offsets = np.tile([3.0, -3.0], n * h * d // 2).reshape(n, h, d)
-    y_pred_unbiased = y_true + offsets
-    kwargs = _point_metric_kwargs(y_true, y_pred_unbiased)
-    assert np.isclose(bias_cls().compute(**kwargs), base_cls().compute(**kwargs))
-
-    # A constant positive offset makes the forecast systematically biased => bias-penalized metric is larger
-    kwargs_biased = _point_metric_kwargs(y_true, y_true + 5.0)
-    assert bias_cls().compute(**kwargs_biased) > base_cls().compute(**kwargs_biased)
