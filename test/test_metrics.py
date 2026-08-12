@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import pytest
 from autogluon.timeseries import TimeSeriesPredictor
-
 from autogluon.timeseries.metrics import AVAILABLE_METRICS as AG_AVAILABLE_METRICS
 
 import fev
