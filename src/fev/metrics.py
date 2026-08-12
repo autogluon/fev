@@ -117,6 +117,26 @@ class MAE(Metric):
         return float(np.mean(per_dim))
 
 
+class MAEB(Metric):
+    """Mean absolute error plus an absolute mean bias penalty. Equals MAE when the forecast is unbiased."""
+
+    def compute(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> float:
+        abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
+        bias_per_dim = np.nanmean(y_pred - y_true, axis=(0, 1))  # [D]
+        per_dim = abs_err_per_dim + np.abs(bias_per_dim)
+        return float(np.mean(per_dim))
+
+
 class WAPE(Metric):
     """Weighted absolute percentage error."""
 
@@ -137,6 +157,33 @@ class WAPE(Metric):
         abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
         abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
         per_dim = abs_err_per_dim / np.maximum(abs_true_per_dim, self.epsilon)
+        return float(np.mean(per_dim))
+
+
+class WAPEB(Metric):
+    """Weighted absolute percentage error plus an absolute bias penalty (scale-free MAEB; VN1 challenge metric).
+
+    Equals WAPE when the forecast is unbiased.
+    """
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
+    def compute(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> float:
+        abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
+        bias_per_dim = np.nanmean(y_pred - y_true, axis=(0, 1))  # [D]
+        abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
+        per_dim = (abs_err_per_dim + np.abs(bias_per_dim)) / np.maximum(abs_true_per_dim, self.epsilon)
         return float(np.mean(per_dim))
 
 
@@ -552,6 +599,9 @@ AVAILABLE_METRICS: dict[str, Type[Metric]] = {
     "MSE": MSE,
     "RMSE": RMSE,
     "RMSSE": RMSSE,
+    # Bias-penalized errors
+    "MAEB": MAEB,
+    "WAPEB": WAPEB,
     # Logarithmic errors
     "RMSLE": RMSLE,
     # Percentage errors
