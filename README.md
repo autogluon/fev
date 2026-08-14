@@ -144,3 +144,6 @@ If you find this package useful for your research, please consider citing the as
   primaryClass={cs.LG}
 }
 ```
+
+## Research code
+This repository contains research code intended for academic research and experimentation. It is not production-ready and should be reviewed, tested, and secured before use in production.
