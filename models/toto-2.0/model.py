@@ -29,6 +29,7 @@ class Toto2Model(fev.ForecastingModel):
         self.decode_block_size = decode_block_size
         self.as_univariate = as_univariate
         self.device = device
+        self._model = None
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
         import torch
@@ -40,7 +41,10 @@ class Toto2Model(fev.ForecastingModel):
 
         target_columns = ["target"] if self.as_univariate else task.target_columns
 
-        model = PretrainedToto2.from_pretrained(fev.utils.maybe_cache_from_s3(self.model_path))
+        if self._model is None:  # load the large model once and reuse it across tasks
+            self._model = PretrainedToto2.from_pretrained(fev.utils.maybe_cache_from_s3(self.model_path))
+            self._model = self._model.to(self.device).eval()
+
         config = Toto2GluonTSModelConfig(
             prediction_length=task.horizon,
             context_length=self.context_length,
@@ -48,7 +52,7 @@ class Toto2Model(fev.ForecastingModel):
             decode_block_size=self.decode_block_size,
             quantiles=task.quantile_levels,
         )
-        gts_model = Toto2GluonTSModel(model.to(self.device).eval(), config)
+        gts_model = Toto2GluonTSModel(self._model, config)
         predictor = gts_model.create_predictor(batch_size=self.batch_size, device=self.device)
 
         logging.getLogger("gluonts").setLevel(100)

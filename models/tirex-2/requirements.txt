@@ -1,4 +1,3 @@
 tirex-2==0.1.0
 fev
-datasets==3.6.0
 pyarrow>=21.0.0
