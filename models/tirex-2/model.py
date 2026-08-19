@@ -32,7 +32,7 @@ class TiRex2Model(fev.ForecastingModel):
     def _load_model(self) -> ForecastModel:
         if self._model is None:
             load_device = "cuda" if self.device.startswith("cuda") else self.device
-            self._model = load_model(self.model_path, device=load_device)
+            self._model = load_model(fev.utils.maybe_cache_from_s3(self.model_path), device=load_device)
             self._model.model.to(self.device)
         return self._model
 
