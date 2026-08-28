@@ -1,0 +1,5 @@
+timesfm[torch] @ git+https://github.com/google-research/timesfm.git
+datasets
+huggingface-hub
+torch
+einops
