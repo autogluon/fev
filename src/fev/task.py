@@ -2,6 +2,7 @@ import collections
 import copy
 import dataclasses
 import logging
+import os
 import pprint
 import warnings
 from pathlib import Path
@@ -241,9 +242,12 @@ class Task:
         Path to the time series dataset stored locally, on S3, or on Hugging Face Hub. See the Examples section below
         for information on how to load datasets from different sources.
     dataset_config : str | None, default None
-        Name of the configuration used when loading datasets from Hugging Face Hub. If `dataset_config` is provided,
-        the datasets will be loaded from HF Hub. If `dataset_config=None`, the dataset will be loaded from a local or
-        S3 path.
+        Name of the dataset configuration. The dataset source is determined as follows:
+
+        - If `dataset_config=None`, data is loaded from `dataset_path`, which can be a local or S3 path.
+        - If `dataset_config` is provided and `FEV_DATASETS_PREFIX` is unset, data is loaded from Hugging Face Hub.
+        - If `dataset_config` is provided and `FEV_DATASETS_PREFIX` is set, data is loaded from
+          `<FEV_DATASETS_PREFIX>/<dataset_config>/*.parquet`.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
     num_windows : int, default 1
@@ -617,10 +621,17 @@ class Task:
     ) -> datasets.Dataset:
         """Load the raw dataset and apply initial preprocessing based on the Task definition."""
         if self.dataset_config is not None:
-            # Load dataset from HF Hub
-            path = self.dataset_path
-            name = self.dataset_config
-            data_files = None
+            datasets_prefix = os.environ.get("FEV_DATASETS_PREFIX")
+            if datasets_prefix:
+                path = "parquet"
+                name = None
+                data_files = f"{datasets_prefix.rstrip('/')}/{self.dataset_config}/*.parquet"
+                logger.info("Loading dataset %s from mirror %s", self.dataset_config, data_files)
+            else:
+                # Load dataset from HF Hub
+                path = self.dataset_path
+                name = self.dataset_config
+                data_files = None
         else:
             # Load dataset from a local or remote file
             dataset_format = Path(self.dataset_path).suffix.lstrip(".")
