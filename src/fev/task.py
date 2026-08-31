@@ -242,10 +242,12 @@ class Task:
         Path to the time series dataset stored locally, on S3, or on Hugging Face Hub. See the Examples section below
         for information on how to load datasets from different sources.
     dataset_config : str | None, default None
-        Name of the configuration used when loading datasets from Hugging Face Hub. If `dataset_config` is provided,
-        the datasets will be loaded from HF Hub, unless the `FEV_DATASETS_PREFIX` environment variable is set. In that
-        case, data is loaded from `<FEV_DATASETS_PREFIX>/<dataset_config>/*.parquet`. If `dataset_config=None`, the
-        dataset will be loaded from a local or S3 path.
+        Name of the dataset configuration. The dataset source is determined as follows:
+
+        - If `dataset_config=None`, data is loaded from `dataset_path`, which can be a local or S3 path.
+        - If `dataset_config` is provided and `FEV_DATASETS_PREFIX` is unset, data is loaded from Hugging Face Hub.
+        - If `dataset_config` is provided and `FEV_DATASETS_PREFIX` is set, data is loaded from
+          `<FEV_DATASETS_PREFIX>/<dataset_config>/*.parquet`.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
     num_windows : int, default 1
