@@ -2,6 +2,7 @@ import collections
 import copy
 import dataclasses
 import logging
+import os
 import pprint
 import warnings
 from pathlib import Path
@@ -242,8 +243,9 @@ class Task:
         for information on how to load datasets from different sources.
     dataset_config : str | None, default None
         Name of the configuration used when loading datasets from Hugging Face Hub. If `dataset_config` is provided,
-        the datasets will be loaded from HF Hub. If `dataset_config=None`, the dataset will be loaded from a local or
-        S3 path.
+        the datasets will be loaded from HF Hub, unless the `FEV_DATASETS_PREFIX` environment variable is set. In that
+        case, data is loaded from `<FEV_DATASETS_PREFIX>/<dataset_config>/*.parquet`. If `dataset_config=None`, the
+        dataset will be loaded from a local or S3 path.
     horizon : int, default 1
         Length of the forecast horizon (in time steps).
     num_windows : int, default 1
@@ -617,10 +619,17 @@ class Task:
     ) -> datasets.Dataset:
         """Load the raw dataset and apply initial preprocessing based on the Task definition."""
         if self.dataset_config is not None:
-            # Load dataset from HF Hub
-            path = self.dataset_path
-            name = self.dataset_config
-            data_files = None
+            datasets_prefix = os.environ.get("FEV_DATASETS_PREFIX")
+            if datasets_prefix:
+                path = "parquet"
+                name = None
+                data_files = f"{datasets_prefix.rstrip('/')}/{self.dataset_config}/*.parquet"
+                logger.info("Loading dataset %s from mirror %s", self.dataset_config, data_files)
+            else:
+                # Load dataset from HF Hub
+                path = self.dataset_path
+                name = self.dataset_config
+                data_files = None
         else:
             # Load dataset from a local or remote file
             dataset_format = Path(self.dataset_path).suffix.lstrip(".")

@@ -354,3 +354,31 @@ def test_when_dataset_is_long_format_parquet_then_task_loads_it(tmp_path):
     assert len(future) == 3
     assert len(past[0]["target"]) == 16
     assert len(future[0]["timestamp"]) == 4
+
+
+def test_when_datasets_prefix_is_set_then_config_dataset_is_loaded_from_mirror(tmp_path, monkeypatch):
+    dataset_config = "test_dataset"
+    mirror_dir = tmp_path / "mirror" / dataset_config
+    mirror_dir.mkdir(parents=True)
+    monkeypatch.setattr(datasets.config, "HF_DATASETS_CACHE", tmp_path / "cache")
+    mirror_dataset = datasets.Dataset.from_dict(
+        {
+            "id": ["series_0"],
+            "timestamp": [[pd.Timestamp("2020-01-01") + pd.Timedelta(days=t) for t in range(4)]],
+            "target": [[float(t) for t in range(4)]],
+        }
+    )
+    mirror_dataset.to_parquet(mirror_dir / "data.parquet")
+    monkeypatch.setenv("FEV_DATASETS_PREFIX", str(tmp_path / "mirror"))
+    monkeypatch.setattr(fev.task.utils, "validate_time_series_dataset", lambda *args, **kwargs: None)
+
+    task = fev.Task(
+        dataset_path="autogluon/fev_datasets",
+        dataset_config=dataset_config,
+        horizon=2,
+    )
+
+    loaded_dataset = task.load_full_dataset(num_proc=1)
+
+    assert len(loaded_dataset) == 1
+    assert loaded_dataset[0]["id"] == "series_0"
