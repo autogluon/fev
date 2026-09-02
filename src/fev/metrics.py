@@ -33,8 +33,12 @@ class Metric:
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        """Compute the metric score. Computed per target dim, then averaged across dims.
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        """Compute the metric per target dim, reducing over `reduce_axes`.
+
+        The target-dim axis is always kept; callers average over it (or keep it for per-target scores).
+        Because the same formula runs at every granularity, scores cannot drift between call sites.
 
         Parameters
         ----------
@@ -52,6 +56,14 @@ class Metric:
             Seasonal period for scaled error metrics (MASE, RMSSE, SQL).
         quantile_levels : list[float]
             Quantile levels in (0, 1) corresponding to q_pred's last axis.
+        reduce_axes : tuple[int, ...], default (0, 1)
+            Which of the item (axis 0) and horizon (axis 1) axes to aggregate over. `(0, 1)` yields an
+            overall per-dim score `[D]`; `(1,)` yields a per-item per-dim score `[N, D]`.
+
+        Returns
+        -------
+        np.ndarray
+            Per-dim scores. Shape `[D]` for `reduce_axes=(0, 1)`, `[N, D]` for `reduce_axes=(1,)`.
         """
         raise NotImplementedError
 
@@ -65,9 +77,10 @@ class Metric:
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...] = (0, 1),
         per_quantile_scores: bool = False,
-    ) -> dict[str, float]:
-        """Named scores reported for this metric. Returns `{self.name: self.compute(...)}`."""
+    ) -> dict[str, np.ndarray]:
+        """Named per-dim scores for this metric, reduced over `reduce_axes`. Returns `{self.name: self.compute(...)}`."""
         return {
             self.name: self.compute(
                 y_true=y_true,
@@ -77,6 +90,7 @@ class Metric:
                 q_pred=q_pred,
                 seasonality=seasonality,
                 quantile_levels=quantile_levels,
+                reduce_axes=reduce_axes,
             )
         }
 
@@ -112,9 +126,9 @@ class MAE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        return np.nanmean(np.abs(y_true - y_pred), axis=reduce_axes)
 
 
 class MAEB(Metric):
@@ -130,11 +144,11 @@ class MAEB(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
-        bias_per_dim = np.nanmean(y_pred - y_true, axis=(0, 1))  # [D]
-        per_dim = abs_err_per_dim + np.abs(bias_per_dim)
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        abs_err = np.nanmean(np.abs(y_true - y_pred), axis=reduce_axes)
+        bias = np.nanmean(y_pred - y_true, axis=reduce_axes)
+        return abs_err + np.abs(bias)
 
 
 class WAPE(Metric):
@@ -153,11 +167,11 @@ class WAPE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
-        abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
-        per_dim = abs_err_per_dim / np.maximum(abs_true_per_dim, self.epsilon)
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        abs_err = np.nanmean(np.abs(y_true - y_pred), axis=reduce_axes)
+        abs_true = np.nanmean(np.abs(y_true), axis=reduce_axes)
+        return abs_err / np.maximum(abs_true, self.epsilon)
 
 
 class WAPEB(Metric):
@@ -179,12 +193,12 @@ class WAPEB(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        abs_err_per_dim = np.nanmean(np.abs(y_true - y_pred), axis=(0, 1))  # [D]
-        bias_per_dim = np.nanmean(y_pred - y_true, axis=(0, 1))  # [D]
-        abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
-        per_dim = (abs_err_per_dim + np.abs(bias_per_dim)) / np.maximum(abs_true_per_dim, self.epsilon)
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        abs_err = np.nanmean(np.abs(y_true - y_pred), axis=reduce_axes)
+        bias = np.nanmean(y_pred - y_true, axis=reduce_axes)
+        abs_true = np.nanmean(np.abs(y_true), axis=reduce_axes)
+        return (abs_err + np.abs(bias)) / np.maximum(abs_true, self.epsilon)
 
 
 class MASE(Metric):
@@ -208,13 +222,14 @@ class MASE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
         seasonal_error = _abs_seasonal_error_per_item(
             y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality
         )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = np.abs(y_true - y_pred) / seasonal_error[:, None, :]  # [N, H, D]
-        return float(np.mean(self._safemean(scaled, axis=(0, 1))))
+        return self._safemean(scaled, axis=reduce_axes)
 
 
 class RMSE(Metric):
@@ -230,9 +245,9 @@ class RMSE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        per_dim = np.sqrt(np.nanmean((y_true - y_pred) ** 2, axis=(0, 1)))  # [D]
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        return np.sqrt(np.nanmean((y_true - y_pred) ** 2, axis=reduce_axes))
 
 
 class RMSSE(Metric):
@@ -256,13 +271,14 @@ class RMSSE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
         seasonal_error = _squared_seasonal_error_per_item(
             y_past=y_past, y_past_lengths=y_past_lengths, seasonality=seasonality
         )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = (y_true - y_pred) ** 2 / seasonal_error[:, None, :]  # [N, H, D]
-        return float(np.mean(np.sqrt(self._safemean(scaled, axis=(0, 1)))))
+        return np.sqrt(self._safemean(scaled, axis=reduce_axes))
 
 
 class MSE(Metric):
@@ -278,9 +294,9 @@ class MSE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        per_dim = np.nanmean((y_true - y_pred) ** 2, axis=(0, 1))  # [D]
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        return np.nanmean((y_true - y_pred) ** 2, axis=reduce_axes)
 
 
 class RMSLE(Metric):
@@ -296,9 +312,9 @@ class RMSLE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
-        per_dim = np.sqrt(np.nanmean((np.log1p(y_true) - np.log1p(y_pred)) ** 2, axis=(0, 1)))  # [D]
-        return float(np.mean(per_dim))
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
+        return np.sqrt(np.nanmean((np.log1p(y_true) - np.log1p(y_pred)) ** 2, axis=reduce_axes))
 
 
 class MAPE(Metric):
@@ -314,9 +330,10 @@ class MAPE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
         ratio = np.abs(y_true - y_pred) / np.abs(y_true)  # [N, H, D]
-        return float(np.mean(self._safemean(ratio, axis=(0, 1))))
+        return self._safemean(ratio, axis=reduce_axes)
 
 
 class SMAPE(Metric):
@@ -332,9 +349,10 @@ class SMAPE(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
         val = 2 * np.abs(y_true - y_pred) / (np.abs(y_true) + np.abs(y_pred))  # [N, H, D]
-        return float(np.mean(self._safemean(val, axis=(0, 1))))
+        return self._safemean(val, axis=reduce_axes)
 
 
 class QuantileMetric(Metric):
@@ -356,8 +374,12 @@ class QuantileMetric(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...],
     ) -> np.ndarray:
-        """Compute the metric at each quantile level. Returns [Q]."""
+        """Compute the metric per dim and quantile level, reduced over `reduce_axes`.
+
+        Returns `[D, Q]` for `reduce_axes=(0, 1)`, `[N, D, Q]` for `reduce_axes=(1,)`.
+        """
         raise NotImplementedError
 
     def compute(
@@ -370,7 +392,8 @@ class QuantileMetric(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
-    ) -> float:
+        reduce_axes: tuple[int, ...] = (0, 1),
+    ) -> np.ndarray:
         if len(quantile_levels) == 0:
             raise ValueError(f"{self.name} cannot be computed without quantile_levels")
         per_level = self._per_quantile_level(
@@ -381,8 +404,9 @@ class QuantileMetric(Metric):
             q_pred=q_pred,
             seasonality=seasonality,
             quantile_levels=quantile_levels,
-        )  # [Q]
-        return float(np.mean(per_level))
+            reduce_axes=reduce_axes,
+        )  # [..., D, Q]
+        return np.mean(per_level, axis=-1)  # mean over quantile levels -> [..., D]
 
     def compute_scores(
         self,
@@ -394,8 +418,9 @@ class QuantileMetric(Metric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...] = (0, 1),
         per_quantile_scores: bool = False,
-    ) -> dict[str, float]:
+    ) -> dict[str, np.ndarray]:
         if len(quantile_levels) == 0:
             raise ValueError(f"{self.name} cannot be computed without quantile_levels")
         per_level = self._per_quantile_level(
@@ -406,11 +431,12 @@ class QuantileMetric(Metric):
             q_pred=q_pred,
             seasonality=seasonality,
             quantile_levels=quantile_levels,
-        )  # [Q]
-        assert len(per_level) == len(quantile_levels)
-        scores = {self.name: float(np.mean(per_level))}
+            reduce_axes=reduce_axes,
+        )  # [..., D, Q]
+        assert per_level.shape[-1] == len(quantile_levels)
+        scores = {self.name: np.mean(per_level, axis=-1)}
         if per_quantile_scores:
-            scores.update({f"{self.name}[{q}]": float(v) for q, v in zip(quantile_levels, per_level)})
+            scores.update({f"{self.name}[{q}]": per_level[..., i] for i, q in enumerate(quantile_levels)})
         return scores
 
 
@@ -427,10 +453,10 @@ class MQL(QuantileMetric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...],
     ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
-        per_dim = np.nanmean(ql, axis=(0, 1))  # [D, Q]
-        return np.mean(per_dim, axis=0)  # [Q]
+        return np.nanmean(ql, axis=reduce_axes)  # [..., D, Q]
 
 
 class SQL(QuantileMetric):
@@ -454,6 +480,7 @@ class SQL(QuantileMetric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...],
     ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
         seasonal_error = _abs_seasonal_error_per_item(
@@ -461,8 +488,7 @@ class SQL(QuantileMetric):
         )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = ql / seasonal_error[:, None, :, None]  # [N, H, D, Q]
-        per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
-        return np.mean(per_dim, axis=0)  # [Q]
+        return self._safemean(scaled, axis=reduce_axes)  # [..., D, Q]
 
 
 class NZQL(QuantileMetric):
@@ -504,13 +530,13 @@ class NZQL(QuantileMetric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...],
     ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
         scale = self._mean_nonzero_abs_history_per_item(y_past, y_past_lengths)  # [N, D]
         scale = np.clip(scale, self.epsilon, None)
         scaled = ql / scale[:, None, :, None]  # [N, H, D, Q]
-        per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
-        return np.mean(per_dim, axis=0)  # [Q]
+        return self._safemean(scaled, axis=reduce_axes)  # [..., D, Q]
 
 
 class WQL(QuantileMetric):
@@ -529,12 +555,12 @@ class WQL(QuantileMetric):
         q_pred: np.ndarray,
         seasonality: int,
         quantile_levels: list[float],
+        reduce_axes: tuple[int, ...],
     ) -> np.ndarray:
         ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
-        ql_per_dim = np.nanmean(ql, axis=(0, 1))  # [D, Q]
-        abs_true_per_dim = np.nanmean(np.abs(y_true), axis=(0, 1))  # [D]
-        per_dim = ql_per_dim / np.maximum(abs_true_per_dim, self.epsilon)[:, None]  # [D, Q]
-        return np.mean(per_dim, axis=0)  # [Q]
+        ql_agg = np.nanmean(ql, axis=reduce_axes)  # [..., D, Q]
+        abs_true = np.nanmean(np.abs(y_true), axis=reduce_axes)  # [..., D]
+        return ql_agg / np.maximum(abs_true, self.epsilon)[..., None]  # [..., D, Q]
 
 
 def _quantile_loss(
