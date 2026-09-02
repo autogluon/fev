@@ -885,7 +885,7 @@ class Task:
         extra_info : dict | None
             Optional dictionary with additional information that will be appended to the evaluation summary.
         per_quantile_scores : bool, default False
-            If True, quantile metrics (MQL, WQL, SQL, NQL, NZQL) additionally report a breakdown per quantile level
+            If True, quantile metrics (MQL, WQL, SQL, NZQL) additionally report a breakdown per quantile level
             (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) alongside the overall score. Non-quantile metrics
             are unaffected.
 
