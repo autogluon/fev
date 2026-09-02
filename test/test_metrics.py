@@ -44,8 +44,8 @@ def _fev_predictions(predictor, train_df):
     return [pred.to_dict("list") for _, pred in ag_predictions.groupby("item_id", as_index=False)]
 
 
-# NZQL has no AutoGluon counterpart; it is checked separately in test_nzql_matches_reference.
-@pytest.mark.parametrize("eval_metric", [m for m in AVAILABLE_METRICS if m != "NZQL"])
+# NQL and NZQL have no AutoGluon counterparts; they are checked against hand-computed references.
+@pytest.mark.parametrize("eval_metric", [m for m in AVAILABLE_METRICS if m not in {"NQL", "NZQL"}])
 def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_metric):
     task, train_df, test_df, predictor = model_setup
     task.eval_metric = eval_metric
@@ -127,6 +127,32 @@ def _nzql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
     )
 
 
+def _nql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
+    """Convenience wrapper: compute NQL from explicit arrays (seasonality is unused by NQL)."""
+    return fev.metrics.NQL().compute(
+        y_true=y_true,
+        y_pred=q_pred[..., 0],
+        y_past=y_past,
+        y_past_lengths=y_past_lengths,
+        q_pred=q_pred,
+        seasonality=1,
+        quantile_levels=quantile_levels,
+    )
+
+
+def test_nql_matches_reference():
+    """Median-only NQL against a hand-computed reference."""
+    # Mean absolute history is (0+1+3)/3 = 4/3 for item 0 and (2+0+4)/3 = 2 for item 1.
+    y_past = np.array([[0.0], [1.0], [3.0], [2.0], [0.0], [4.0]])
+    y_past_lengths = np.array([3, 3])
+    y_true = np.array([[[2.0], [0.0]], [[0.0], [6.0]]])
+    q_pred = np.array([[[[1.0]], [[0.0]]], [[[0.0]], [[3.0]]]])
+
+    got = _nql(y_true, q_pred, y_past, y_past_lengths, [0.5])
+    expected = float(np.mean([1 / (4 / 3), 0.0, 0.0, 3 / 2.0]))
+    assert np.isclose(got, expected)
+
+
 def test_nzql_matches_reference():
     """Median-only NZQL against a hand-computed reference, including a zero-history exclusion."""
     # Two items, horizon 2. Item 0 mean non-zero abs history = (1+3)/2 = 2; item 1 = (2+4)/2 = 3.
@@ -136,7 +162,7 @@ def test_nzql_matches_reference():
     q_pred = np.array([[[[1.0]], [[0.0]]], [[[0.0]], [[3.0]]]])  # [N, H, D, Q=1] at q=0.5
 
     got = _nzql(y_true, q_pred, y_past, y_past_lengths, [0.5])
-    # pinball loss at q=0.5 is |y - q|; scaled by demand size, then meaned over all (item, step).
+    # Pinball loss at q=0.5 is |y - q|; normalize by each item's non-zero historical magnitude.
     expected = float(np.mean([1 / 2.0, 0.0, 0.0, 3 / 3.0]))
     assert np.isclose(got, expected)
 
@@ -152,8 +178,8 @@ def test_nzql_excludes_zero_history_item():
     assert np.isclose(got, 0.2)
 
 
-def test_nzql_mean_nonzero_abs_history_per_item():
-    """Average demand size is computed independently for ragged multi-dimensional histories."""
+def test_nql_and_nzql_history_scales():
+    """Historical scales are computed independently for ragged multi-dimensional histories."""
     y_past = np.array(
         [
             [0.0, np.nan],
@@ -166,13 +192,14 @@ def test_nzql_mean_nonzero_abs_history_per_item():
     )
     y_past_lengths = np.array([3, 0, 3])
 
-    result = fev.metrics.NZQL._mean_nonzero_abs_history_per_item(y_past, y_past_lengths)
+    nql_scale = fev.metrics.NQL._mean_abs_history_per_item(y_past, y_past_lengths)
+    nzql_scale = fev.metrics.NZQL._mean_nonzero_abs_history_per_item(y_past, y_past_lengths)
 
-    expected = np.array([[2.0, 3.0], [np.nan, np.nan], [1.0, 6.0]])
-    np.testing.assert_allclose(result, expected)
+    np.testing.assert_allclose(nql_scale, [[4 / 3, 3.0], [np.nan, np.nan], [0.5, 4.0]])
+    np.testing.assert_allclose(nzql_scale, [[2.0, 3.0], [np.nan, np.nan], [1.0, 6.0]])
 
 
-@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "NZQL"])
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "NQL", "NZQL"])
 def test_when_per_quantile_scores_then_overall_equals_mean_of_per_level(model_setup, metric_name):
     task, train_df, _, predictor = model_setup
     task.eval_metric = metric_name
@@ -183,7 +210,7 @@ def test_when_per_quantile_scores_then_overall_equals_mean_of_per_level(model_se
     assert np.isclose(summary[metric_name], np.mean(per_level))
 
 
-@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "NZQL"])
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "NQL", "NZQL"])
 def test_when_per_quantile_scores_disabled_then_no_per_level_keys(model_setup, metric_name):
     task, train_df, _, predictor = model_setup
     task.eval_metric = metric_name
