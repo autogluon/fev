@@ -338,7 +338,7 @@ class SMAPE(Metric):
 
 
 class QuantileMetric(Metric):
-    """Base class for quantile loss metrics (MQL, WQL, SQL).
+    """Base class for quantile loss metrics (MQL, WQL, SQL, NZQL).
 
     Subclasses implement `_per_quantile_level`. The overall score is the mean over quantile levels,
     so `SQL` always equals the mean of `SQL[0.1], SQL[0.5], ...` (single code path, cannot drift).
@@ -461,6 +461,54 @@ class SQL(QuantileMetric):
         )  # [N, D]
         seasonal_error = np.clip(seasonal_error, self.epsilon, None)
         scaled = ql / seasonal_error[:, None, :, None]  # [N, H, D, Q]
+        per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
+        return np.mean(per_dim, axis=0)  # [Q]
+
+
+class NZQL(QuantileMetric):
+    """Quantile loss normalized by each item's average non-zero historical magnitude.
+
+    Each quantile loss is divided by the mean absolute value of non-zero historical observations
+    for its item and target dimension. Items with no non-zero historical observations are excluded
+    from aggregation.
+    """
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
+    @staticmethod
+    def _mean_nonzero_abs_history_per_item(y_past: np.ndarray, y_past_lengths: np.ndarray) -> np.ndarray:
+        """Per-item mean absolute non-zero history value. Returns [N, D]; NaN where none exist."""
+        num_series = len(y_past_lengths)
+        num_dims = y_past.shape[1]
+        result = np.full((num_series, num_dims), np.nan, dtype="float64")
+
+        starts = np.concatenate(([0], np.cumsum(y_past_lengths)[:-1]))
+        valid_series = y_past_lengths > 0
+        if not valid_series.any():
+            return result
+
+        nonzero = ~np.isnan(y_past) & (y_past != 0)
+        sums = np.add.reduceat(np.where(nonzero, np.abs(y_past), 0.0), starts[valid_series], axis=0)
+        counts = np.add.reduceat(nonzero.astype(np.int64), starts[valid_series], axis=0)
+        result[valid_series] = np.divide(sums, counts, where=counts > 0, out=np.full_like(sums, np.nan))
+        return result
+
+    def _per_quantile_level(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> np.ndarray:
+        ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
+        scale = self._mean_nonzero_abs_history_per_item(y_past, y_past_lengths)  # [N, D]
+        scale = np.clip(scale, self.epsilon, None)
+        scaled = ql / scale[:, None, :, None]  # [N, H, D, Q]
         per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
         return np.mean(per_dim, axis=0)  # [Q]
 
@@ -611,4 +659,5 @@ AVAILABLE_METRICS: dict[str, Type[Metric]] = {
     "MQL": MQL,
     "WQL": WQL,
     "SQL": SQL,
+    "NZQL": NZQL,
 }
