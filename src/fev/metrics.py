@@ -465,6 +465,56 @@ class SQL(QuantileMetric):
         return np.mean(per_dim, axis=0)  # [Q]
 
 
+class ADSQL(QuantileMetric):
+    """Average-demand-size scaled quantile loss -- an intermittent-demand variant of SQL.
+
+    Like SQL, but scales each item's quantile loss by its average demand size (the mean of its
+    strictly-positive history).
+
+    Warning:
+        Items with no strictly-positive history have an undefined denominator and are excluded from
+        aggregation, as in SQL.
+    """
+
+    def __init__(self, epsilon: float = 0.0) -> None:
+        self.epsilon = epsilon
+
+    @staticmethod
+    def _mean_positive_history_per_item(y_past: np.ndarray, y_past_lengths: np.ndarray) -> np.ndarray:
+        """Per-item mean of strictly-positive history values. Returns [N, D]; NaN where none exist."""
+        num_series = len(y_past_lengths)
+        num_dims = y_past.shape[1]
+        result = np.full((num_series, num_dims), np.nan, dtype="float64")
+        if num_series == 0:
+            return result
+        segments = np.split(y_past, np.cumsum(y_past_lengths)[:-1], axis=0)
+        for i, segment in enumerate(segments):
+            mask = segment > 0  # strictly positive
+            count = mask.sum(axis=0)  # [D]
+            total = np.where(mask, segment, 0.0).sum(axis=0)  # [D]
+            nonzero = count > 0
+            result[i, nonzero] = total[nonzero] / count[nonzero]
+        return result
+
+    def _per_quantile_level(
+        self,
+        *,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_past: np.ndarray,
+        y_past_lengths: np.ndarray,
+        q_pred: np.ndarray,
+        seasonality: int,
+        quantile_levels: list[float],
+    ) -> np.ndarray:
+        ql = _quantile_loss(y_true=y_true, q_pred=q_pred, quantile_levels=quantile_levels)  # [N, H, D, Q]
+        demand_size = self._mean_positive_history_per_item(y_past, y_past_lengths)  # [N, D]
+        demand_size = np.clip(demand_size, self.epsilon, None)  # NaN stays NaN -> item excluded
+        scaled = ql / demand_size[:, None, :, None]  # [N, H, D, Q]
+        per_dim = self._safemean(scaled, axis=(0, 1))  # [D, Q]
+        return np.mean(per_dim, axis=0)  # [Q]
+
+
 class WQL(QuantileMetric):
     """Weighted quantile loss."""
 
@@ -611,4 +661,5 @@ AVAILABLE_METRICS: dict[str, Type[Metric]] = {
     "MQL": MQL,
     "WQL": WQL,
     "SQL": SQL,
+    "ADSQL": ADSQL,
 }

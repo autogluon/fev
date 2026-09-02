@@ -44,7 +44,8 @@ def _fev_predictions(predictor, train_df):
     return [pred.to_dict("list") for _, pred in ag_predictions.groupby("item_id", as_index=False)]
 
 
-@pytest.mark.parametrize("eval_metric", list(AVAILABLE_METRICS))
+# ADSQL has no AutoGluon counterpart; it is checked separately in test_adsql_matches_reference.
+@pytest.mark.parametrize("eval_metric", [m for m in AVAILABLE_METRICS if m != "ADSQL"])
 def test_when_metrics_computed_then_score_matches_autogluon(model_setup, eval_metric):
     task, train_df, test_df, predictor = model_setup
     task.eval_metric = eval_metric
@@ -113,7 +114,45 @@ def test_seasonal_error_per_item_empty():
     assert result.dtype == np.float64
 
 
-@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL"])
+def _adsql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
+    """Convenience wrapper: compute ADSQL from explicit arrays (seasonality is unused by ADSQL)."""
+    return fev.metrics.ADSQL().compute(
+        y_true=y_true,
+        y_pred=q_pred[..., 0],
+        y_past=y_past,
+        y_past_lengths=y_past_lengths,
+        q_pred=q_pred,
+        seasonality=1,
+        quantile_levels=quantile_levels,
+    )
+
+
+def test_adsql_matches_reference():
+    """Median-only ADSQL against a hand-computed reference, including a zero-history exclusion."""
+    # Two items, horizon 2. Item 0 history mean-positive = (1+3)/2 = 2; item 1 = (2+4)/2 = 3.
+    y_past = np.array([[0.0], [1.0], [3.0], [2.0], [0.0], [4.0]])  # concatenated, [total_T, D]
+    y_past_lengths = np.array([3, 3])
+    y_true = np.array([[[2.0], [0.0]], [[0.0], [6.0]]])  # [N, H, D]
+    q_pred = np.array([[[[1.0]], [[0.0]]], [[[0.0]], [[3.0]]]])  # [N, H, D, Q=1] at q=0.5
+
+    got = _adsql(y_true, q_pred, y_past, y_past_lengths, [0.5])
+    # pinball loss at q=0.5 is |y - q|; scaled by demand size, then meaned over all (item, step).
+    expected = float(np.mean([1 / 2.0, 0.0, 0.0, 3 / 3.0]))
+    assert np.isclose(got, expected)
+
+
+def test_adsql_excludes_zero_history_item():
+    """An item whose entire history is zero has an undefined denominator and is dropped."""
+    y_past = np.array([[0.0], [0.0], [5.0], [5.0]])  # item0 all-zero history, item1 mean-positive = 5
+    y_past_lengths = np.array([2, 2])
+    y_true = np.array([[[1.0]], [[1.0]]])  # [N, H=1, D]
+    q_pred = np.array([[[[0.0]]], [[[0.0]]]])  # only item1 counts: |1-0|/5 = 0.2
+
+    got = _adsql(y_true, q_pred, y_past, y_past_lengths, [0.5])
+    assert np.isclose(got, 0.2)
+
+
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "ADSQL"])
 def test_when_per_quantile_scores_then_overall_equals_mean_of_per_level(model_setup, metric_name):
     task, train_df, _, predictor = model_setup
     task.eval_metric = metric_name
@@ -124,7 +163,7 @@ def test_when_per_quantile_scores_then_overall_equals_mean_of_per_level(model_se
     assert np.isclose(summary[metric_name], np.mean(per_level))
 
 
-@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL"])
+@pytest.mark.parametrize("metric_name", ["MQL", "WQL", "SQL", "ADSQL"])
 def test_when_per_quantile_scores_disabled_then_no_per_level_keys(model_setup, metric_name):
     task, train_df, _, predictor = model_setup
     task.eval_metric = metric_name
