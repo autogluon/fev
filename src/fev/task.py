@@ -870,6 +870,31 @@ class Task:
                     )
         return predictions
 
+    @property
+    def metrics(self) -> list[Metric]:
+        """Metric objects for this task: `eval_metric` first, followed by `extra_metrics`."""
+        return [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+
+    @property
+    def metric_names(self) -> list[str]:
+        """Names of the task metrics (`eval_metric` first, then `extra_metrics`)."""
+        return [m.name for m in self.metrics]
+
+    def _iter_windows_and_predictions(
+        self,
+        predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
+    ) -> Iterable[tuple[int, EvaluationWindow, datasets.DatasetDict]]:
+        """Yield `(window_idx, window, cleaned_predictions)` for each window, validating the predictions."""
+        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
+            raise ValueError(
+                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
+            )
+        # strict=True raises if the number of predictions does not match num_windows
+        for window_idx, (predictions, window) in enumerate(
+            zip(predictions_per_window, self.iter_windows(), strict=True)
+        ):
+            yield window_idx, window, self.clean_and_validate_predictions(predictions)
+
     def evaluation_summary(
         self,
         predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
@@ -922,19 +947,13 @@ class Task:
         """
         summary: dict[str, Any] = {"model_name": model_name}
         summary.update(self.to_dict())
-        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+        metrics = self.metrics
         eval_metric = metrics[0]
 
         # Use defaultdict since per-quantile breakdown adds score keys (e.g. SQL[0.1]) not known up front
         metrics_per_window: dict[str, list[float]] = collections.defaultdict(list)
-        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
-            raise ValueError(
-                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
-            )
-        # Use strict=True to raise error if num_predictions does not match num_windows
         num_forecasts = 0
-        for predictions, window in zip(predictions_per_window, self.iter_windows(), strict=True):
-            cleaned_predictions = self.clean_and_validate_predictions(predictions)
+        for _, window, cleaned_predictions in self._iter_windows_and_predictions(predictions_per_window):
             # Count total forecasts: num_items * num_target_columns (per window)
             num_forecasts += len(cleaned_predictions) * len(next(iter(cleaned_predictions.values())))
             metric_scores = window.compute_metrics(
@@ -979,9 +998,10 @@ class Task:
         (e.g. `WAPE`, `WQL`, `RMSE`, `MAEB`, `WAPEB`) the per-window aggregate is **not** the mean of the
         per-item scores, so this DataFrame must not be re-aggregated to reproduce `evaluation_summary`.
 
-        The result may contain `NaN` where a per-item score is undefined: scaled metrics (`MASE`, `RMSSE`,
-        `SQL`, `NZQL`) for items with undefined in-sample seasonal error, and denominator metrics
-        (`WAPE`, `WQL`, `WAPEB`) for all-zero items (unless an `epsilon` is configured).
+        The result may contain non-finite values where a per-item score is undefined: `NaN` for scaled
+        metrics (`MASE`, `RMSSE`, `SQL`, `NZQL`) on items with undefined in-sample seasonal error, and
+        `NaN` or `inf` for denominator metrics (`WAPE`, `WQL`, `WAPEB`) on all-zero items (unless an
+        `epsilon` is configured).
 
         Parameters
         ----------
@@ -995,17 +1015,10 @@ class Task:
         pd.DataFrame
             Columns: `window`, `id_column`, `target`, and one column per metric.
         """
-        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
-        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
-            raise ValueError(
-                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
-            )
+        metrics = self.metrics
 
         frames = []
-        for window_idx, (predictions, window) in enumerate(
-            zip(predictions_per_window, self.iter_windows(), strict=True)
-        ):
-            cleaned_predictions = self.clean_and_validate_predictions(predictions)
+        for window_idx, window, cleaned_predictions in self._iter_windows_and_predictions(predictions_per_window):
             arrays, item_ids = window._prepare_arrays(cleaned_predictions, self.quantile_levels)
 
             df = pd.DataFrame(

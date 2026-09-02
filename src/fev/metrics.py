@@ -38,7 +38,6 @@ class Metric:
         """Compute the metric per target dim, reducing over `reduce_axes`.
 
         The target-dim axis is always kept; callers average over it (or keep it for per-target scores).
-        Because the same formula runs at every granularity, scores cannot drift between call sites.
 
         Parameters
         ----------
