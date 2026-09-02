@@ -218,16 +218,15 @@ def test_when_scores_per_item_called_then_returns_per_item_per_window_scores():
         predictions_per_window.append([{"predictions": [ts[target][-1]] * task.horizon} for ts in past_data])
 
     df = task.scores_per_item(predictions_per_window)
-    assert list(df.columns[:2]) == ["window", task.id_column]
+    assert list(df.columns[:3]) == ["window", task.id_column, "target"]
     assert {"MASE", "WAPE"}.issubset(df.columns)
-    assert "target" not in df.columns
     n_items = len(task.get_window(0).get_ground_truth())
-    assert len(df) == n_items * task.num_windows
+    assert len(df) == n_items * task.num_windows  # univariate -> one target per item
     assert set(df["window"]) == {0, 1}
     assert df["MASE"].notna().all()
 
 
-def test_when_scores_per_item_with_per_target_then_one_row_per_target():
+def test_when_scores_per_item_for_multivariate_task_then_one_row_per_target():
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
         dataset_config="ETT_1H",
@@ -238,12 +237,10 @@ def test_when_scores_per_item_with_per_target_then_one_row_per_target():
     )
     predictions = naive_forecast_multivariate(task, return_dict=False)
 
-    df_per_target = task.scores_per_item(predictions, per_target=True)
-    assert set(df_per_target["target"]) == set(task.target)
-
     df = task.scores_per_item(predictions)
-    assert "target" not in df.columns
-    assert len(df_per_target) == len(df) * len(task.target)
+    assert set(df["target"]) == set(task.target)
+    n_items = len(task.get_window(0).get_ground_truth())
+    assert len(df) == n_items * len(task.target)
 
 
 def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():

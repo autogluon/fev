@@ -966,14 +966,13 @@ class Task:
     def scores_per_item(
         self,
         predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
-        *,
-        per_target: bool = False,
     ) -> pd.DataFrame:
-        """Compute per-item scores for each metric, evaluation window, and (optionally) target.
+        """Compute per-item scores for each metric, evaluation window, and target.
 
         Unlike [`evaluation_summary`][fev.Task.evaluation_summary], which returns a single aggregated score
-        per metric, this returns the disaggregated per-item scores as a `pandas.DataFrame`. This is useful
-        for inspecting which items a model does well or poorly on.
+        per metric, this returns the disaggregated per-item scores as a `pandas.DataFrame` in long format
+        (one row per window, item, and target column). This is useful for inspecting which items a model
+        does well or poorly on. To average over targets, use `df.groupby(["window", id_column]).mean()`.
 
         Each score is computed with the same formula used by `evaluation_summary`, only reduced over the
         forecast horizon instead of over both items and horizon. As a result, for some metrics
@@ -990,14 +989,11 @@ class Task:
             Predictions for each evaluation window, formatted as in
             [`clean_and_validate_predictions`][fev.Task.clean_and_validate_predictions]. Must have length
             `task.num_windows`.
-        per_target : bool, default False
-            For multivariate tasks, if True the scores are reported separately for each target column
-            (one row per item, window, and target). If False, scores are averaged over target columns.
 
         Returns
         -------
         pd.DataFrame
-            Columns: `window`, `id_column`, `target` (only if `per_target=True`), and one column per metric.
+            Columns: `window`, `id_column`, `target`, and one column per metric.
         """
         metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
         if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
@@ -1012,44 +1008,27 @@ class Task:
             cleaned_predictions = self.clean_and_validate_predictions(predictions)
             arrays, item_ids = window._prepare_arrays(cleaned_predictions, self.quantile_levels)
 
-            per_metric: dict[str, np.ndarray] = {}
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=RuntimeWarning)
-                for metric in metrics:
-                    # reduce over horizon only, keeping the item axis -> per-item per-dim scores [N, D]
-                    per_metric.update(
-                        metric.compute_scores(
-                            **arrays,
-                            seasonality=self.seasonality,
-                            quantile_levels=self.quantile_levels,
-                            reduce_axes=(1,),
-                        )
-                    )
-            frames.append(self._scores_to_frame(window_idx, item_ids, per_metric, per_target))
-        return pd.concat(frames, ignore_index=True)
-
-    def _scores_to_frame(
-        self, window_idx: int, item_ids: list[str], per_metric: dict[str, np.ndarray], per_target: bool
-    ) -> pd.DataFrame:
-        """Assemble per-item per-dim score arrays `[N, D]` into a DataFrame for a single window."""
-        n = len(item_ids)
-        target_columns = self.target_columns
-        d = len(target_columns)
-        if per_target:
             df = pd.DataFrame(
                 {
                     "window": window_idx,
-                    self.id_column: np.repeat(item_ids, d),
-                    "target": np.tile(target_columns, n),
+                    self.id_column: np.repeat(item_ids, len(self.target_columns)),
+                    "target": np.tile(self.target_columns, len(item_ids)),
                 }
             )
-            for name, arr in per_metric.items():
-                df[name] = np.asarray(arr).reshape(-1)  # row-major [N*D] aligns with repeat/tile above
-        else:
-            df = pd.DataFrame({"window": window_idx, self.id_column: item_ids})
-            for name, arr in per_metric.items():
-                df[name] = np.mean(np.asarray(arr), axis=1)  # average over target dims -> [N]
-        return df
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                for metric in metrics:
+                    # reduce over horizon only, keeping item and target dims -> per-item per-dim scores [N, D]
+                    scores = metric.compute_scores(
+                        **arrays,
+                        seasonality=self.seasonality,
+                        quantile_levels=self.quantile_levels,
+                        reduce_axes=(1,),
+                    )
+                    for name, arr in scores.items():
+                        df[name] = np.asarray(arr).reshape(-1)  # row-major [N*D] aligns with repeat/tile above
+            frames.append(df)
+        return pd.concat(frames, ignore_index=True)
 
     @property
     def is_multivariate(self) -> bool:
