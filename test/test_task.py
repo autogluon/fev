@@ -277,6 +277,33 @@ def test_when_per_item_scores_averaged_then_matches_evaluation_summary_for_decom
         assert np.isclose(aggregate, summary[metric])
 
 
+def test_when_scores_per_item_with_per_quantile_scores_then_breakdown_columns_added():
+    quantile_levels = [0.1, 0.5, 0.9]
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="SQL",
+        quantile_levels=quantile_levels,
+        horizon=4,
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        target = window.target_columns[0]
+        preds = []
+        for ts in past_data:
+            forecast = [ts[target][-1]] * task.horizon
+            preds.append({"predictions": forecast, **{str(q): forecast for q in quantile_levels}})
+        predictions_per_window.append(preds)
+
+    df = task.scores_per_item(predictions_per_window, per_quantile_scores=True)
+    for q in quantile_levels:
+        assert f"SQL[{q}]" in df.columns
+    # overall SQL is the mean of the per-quantile-level scores
+    per_level = df[[f"SQL[{q}]" for q in quantile_levels]].mean(axis=1)
+    np.testing.assert_allclose(df["SQL"].to_numpy(), per_level.to_numpy())
+
+
 def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",

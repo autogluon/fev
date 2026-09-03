@@ -985,6 +985,7 @@ class Task:
     def scores_per_item(
         self,
         predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
+        per_quantile_scores: bool = False,
     ) -> pd.DataFrame:
         """Compute per-item scores for each metric, evaluation window, and target.
 
@@ -1009,6 +1010,9 @@ class Task:
             Predictions for each evaluation window, formatted as in
             [`clean_and_validate_predictions`][fev.Task.clean_and_validate_predictions]. Must have length
             `task.num_windows`.
+        per_quantile_scores : bool, default False
+            If True, quantile metrics (MQL, WQL, SQL, NZQL) additionally report a breakdown per quantile
+            level (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) as extra columns alongside the overall score.
 
         Returns
         -------
@@ -1037,6 +1041,7 @@ class Task:
                         seasonality=self.seasonality,
                         quantile_levels=self.quantile_levels,
                         reduce_axes=(1,),
+                        per_quantile_scores=per_quantile_scores,
                     )
                     for name, arr in scores.items():
                         df[name] = np.asarray(arr).reshape(-1)  # row-major [N*D] aligns with repeat/tile above
