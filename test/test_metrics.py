@@ -116,7 +116,7 @@ def test_seasonal_error_per_item_empty():
 
 def _nzql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
     """Convenience wrapper: compute NZQL from explicit arrays (seasonality is unused by NZQL)."""
-    return fev.metrics.NZQL().compute(
+    per_dim = fev.metrics.NZQL().compute(
         y_true=y_true,
         y_pred=q_pred[..., 0],
         y_past=y_past,
@@ -125,6 +125,7 @@ def _nzql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
         seasonality=1,
         quantile_levels=quantile_levels,
     )
+    return float(np.mean(per_dim))
 
 
 def test_nzql_matches_reference():

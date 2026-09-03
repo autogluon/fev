@@ -125,22 +125,18 @@ class EvaluationWindow:
         _, _, test_data = self._get_past_future_test_data()
         return test_data
 
-    def compute_metrics(
-        self,
-        predictions: datasets.DatasetDict,
-        metrics: list[Metric],
-        seasonality: int,
-        quantile_levels: list[float],
-        per_quantile_scores: bool = False,
-    ) -> dict[str, float]:
-        """Compute accuracy metrics on the predictions made for this window.
+    def _prepare_arrays(
+        self, predictions: datasets.DatasetDict, quantile_levels: list[float]
+    ) -> tuple[dict[str, np.ndarray], list[str]]:
+        """Build the numpy arrays consumed by `Metric.compute` from validated predictions.
 
-        To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
-
-        This is a convenience method that exists for debugging and additional evaluation.
-
-        If `per_quantile_scores=True`, quantile metrics additionally report a breakdown per quantile level
-        (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) alongside the overall score.
+        Returns
+        -------
+        arrays : dict[str, np.ndarray]
+            Keyword arguments for `Metric.compute`: `y_true` and `y_pred` `[N, H, D]`, `q_pred` `[N, H, D, Q]`,
+            `y_past` `[total_T, D]`, `y_past_lengths` `[N]`.
+        item_ids : list[str]
+            Item ids ordered along the item axis (length N) of the returned arrays.
         """
         past_data, _, test_data = self._get_past_future_test_data()
 
@@ -191,22 +187,43 @@ class EvaluationWindow:
         )
         y_past_lengths = pc.list_value_length(past_table.column(self.target_columns[0])).to_numpy()
 
+        arrays = dict(y_true=y_true, y_pred=y_pred, q_pred=q_pred, y_past=y_past_flat, y_past_lengths=y_past_lengths)
+        item_ids = test_table.column(self.id_column).to_pylist()
+        return arrays, item_ids
+
+    def compute_metrics(
+        self,
+        predictions: datasets.DatasetDict,
+        metrics: list[Metric],
+        seasonality: int,
+        quantile_levels: list[float],
+        per_quantile_scores: bool = False,
+    ) -> dict[str, float]:
+        """Compute accuracy metrics on the predictions made for this window.
+
+        To compute metrics on your predictions, use [`Task.evaluation_summary`][fev.Task.evaluation_summary] instead.
+
+        This is a convenience method that exists for debugging and additional evaluation.
+
+        If `per_quantile_scores=True`, quantile metrics additionally report a breakdown per quantile level
+        (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) alongside the overall score.
+        """
+        arrays, _ = self._prepare_arrays(predictions, quantile_levels)
+
         test_scores: dict[str, float] = {}
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             for metric in metrics:
-                test_scores.update(
-                    metric.compute_scores(
-                        y_true=y_true,
-                        y_pred=y_pred,
-                        y_past=y_past_flat,
-                        y_past_lengths=y_past_lengths,
-                        q_pred=q_pred,
-                        seasonality=seasonality,
-                        quantile_levels=quantile_levels,
-                        per_quantile_scores=per_quantile_scores,
-                    )
+                scores = metric.compute_scores(
+                    **arrays,
+                    seasonality=seasonality,
+                    quantile_levels=quantile_levels,
+                    reduce_axes=(0, 1),
+                    per_quantile_scores=per_quantile_scores,
                 )
+                # compute_scores returns per-dim arrays [D]; the overall score averages across target dims
+                for name, per_dim in scores.items():
+                    test_scores[name] = float(np.mean(per_dim))
         return test_scores
 
 
@@ -853,6 +870,31 @@ class Task:
                     )
         return predictions
 
+    @property
+    def metrics(self) -> list[Metric]:
+        """Metric objects for this task: `eval_metric` first, followed by `extra_metrics`."""
+        return [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+
+    @property
+    def metric_names(self) -> list[str]:
+        """Names of the task metrics (`eval_metric` first, then `extra_metrics`)."""
+        return [m.name for m in self.metrics]
+
+    def _iter_windows_and_predictions(
+        self,
+        predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
+    ) -> Iterable[tuple[int, EvaluationWindow, datasets.DatasetDict]]:
+        """Yield `(window_idx, window, cleaned_predictions)` for each window, validating the predictions."""
+        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
+            raise ValueError(
+                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
+            )
+        # strict=True raises if the number of predictions does not match num_windows
+        for window_idx, (predictions, window) in enumerate(
+            zip(predictions_per_window, self.iter_windows(), strict=True)
+        ):
+            yield window_idx, window, self.clean_and_validate_predictions(predictions)
+
     def evaluation_summary(
         self,
         predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
@@ -905,19 +947,13 @@ class Task:
         """
         summary: dict[str, Any] = {"model_name": model_name}
         summary.update(self.to_dict())
-        metrics = [get_metric(m) for m in [self.eval_metric] + self.extra_metrics]
+        metrics = self.metrics
         eval_metric = metrics[0]
 
         # Use defaultdict since per-quantile breakdown adds score keys (e.g. SQL[0.1]) not known up front
         metrics_per_window: dict[str, list[float]] = collections.defaultdict(list)
-        if isinstance(predictions_per_window, (datasets.Dataset, datasets.DatasetDict, dict)):
-            raise ValueError(
-                f"predictions_per_window must be iterable (e.g., a list) but got {type(predictions_per_window)}"
-            )
-        # Use strict=True to raise error if num_predictions does not match num_windows
         num_forecasts = 0
-        for predictions, window in zip(predictions_per_window, self.iter_windows(), strict=True):
-            cleaned_predictions = self.clean_and_validate_predictions(predictions)
+        for _, window, cleaned_predictions in self._iter_windows_and_predictions(predictions_per_window):
             # Count total forecasts: num_items * num_target_columns (per window)
             num_forecasts += len(cleaned_predictions) * len(next(iter(cleaned_predictions.values())))
             metric_scores = window.compute_metrics(
@@ -945,6 +981,72 @@ class Task:
         if extra_info is not None:
             summary.update(extra_info)
         return summary
+
+    def scores_per_item(
+        self,
+        predictions_per_window: Iterable[datasets.Dataset | list[dict] | datasets.DatasetDict | dict[str, list[dict]]],
+        per_quantile_scores: bool = False,
+    ) -> pd.DataFrame:
+        """Compute per-item scores for each metric, evaluation window, and target.
+
+        Unlike [`evaluation_summary`][fev.Task.evaluation_summary], which returns a single aggregated score
+        per metric, this returns the disaggregated per-item scores as a `pandas.DataFrame` in long format
+        (one row per window, item, and target column). This is useful for inspecting which items a model
+        does well or poorly on. To average over targets, use `df.groupby(["window", id_column]).mean()`.
+
+        Each score is computed with the same formula used by `evaluation_summary`, only reduced over the
+        forecast horizon instead of over both items and horizon. As a result, for some metrics
+        (e.g. `WAPE`, `WQL`, `RMSE`, `MAEB`, `WAPEB`) the per-window aggregate is **not** the mean of the
+        per-item scores, so this DataFrame must not be re-aggregated to reproduce `evaluation_summary`.
+
+        The result may contain non-finite values where a per-item score is undefined: `NaN` for scaled
+        metrics (`MASE`, `RMSSE`, `SQL`, `NZQL`) on items with undefined in-sample seasonal error, and
+        `NaN` or `inf` for denominator metrics (`WAPE`, `WQL`, `WAPEB`) on all-zero items (unless an
+        `epsilon` is configured).
+
+        Parameters
+        ----------
+        predictions_per_window : Iterable
+            Predictions for each evaluation window, formatted as in
+            [`clean_and_validate_predictions`][fev.Task.clean_and_validate_predictions]. Must have length
+            `task.num_windows`.
+        per_quantile_scores : bool, default False
+            If True, quantile metrics (MQL, WQL, SQL, NZQL) additionally report a breakdown per quantile
+            level (e.g. `SQL[0.1]`, `SQL[0.5]`, `SQL[0.9]`) as extra columns alongside the overall score.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: `id_column`, `window`, `target`, and one column per metric.
+        """
+        metrics = self.metrics
+
+        frames = []
+        for window_idx, window, cleaned_predictions in self._iter_windows_and_predictions(predictions_per_window):
+            arrays, item_ids = window._prepare_arrays(cleaned_predictions, self.quantile_levels)
+
+            df = pd.DataFrame(
+                {
+                    self.id_column: np.repeat(item_ids, len(self.target_columns)),
+                    "window": window_idx,
+                    "target": np.tile(self.target_columns, len(item_ids)),
+                }
+            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                for metric in metrics:
+                    # reduce over horizon only, keeping item and target dims -> per-item per-dim scores [N, D]
+                    scores = metric.compute_scores(
+                        **arrays,
+                        seasonality=self.seasonality,
+                        quantile_levels=self.quantile_levels,
+                        reduce_axes=(1,),
+                        per_quantile_scores=per_quantile_scores,
+                    )
+                    for name, arr in scores.items():
+                        df[name] = np.asarray(arr).reshape(-1)  # row-major [N*D] aligns with repeat/tile above
+            frames.append(df)
+        return pd.concat(frames, ignore_index=True)
 
     @property
     def is_multivariate(self) -> bool:

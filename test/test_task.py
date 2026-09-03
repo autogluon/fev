@@ -202,6 +202,108 @@ def test_when_multivariate_task_is_used_then_predictions_can_be_scored(target, r
         assert np.isfinite(summary[metric])
 
 
+def test_when_scores_per_item_called_then_returns_per_item_per_window_scores():
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="MASE",
+        extra_metrics=["WAPE"],
+        horizon=4,
+        num_windows=2,
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        target = window.target_columns[0]
+        predictions_per_window.append([{"predictions": [ts[target][-1]] * task.horizon} for ts in past_data])
+
+    df = task.scores_per_item(predictions_per_window)
+    assert list(df.columns[:3]) == [task.id_column, "window", "target"]
+    assert {"MASE", "WAPE"}.issubset(df.columns)
+    n_items = len(task.get_window(0).get_ground_truth())
+    assert len(df) == n_items * task.num_windows  # univariate -> one target per item
+    assert set(df["window"]) == {0, 1}
+    assert df["MASE"].notna().all()
+
+
+def test_when_scores_per_item_for_multivariate_task_then_one_row_per_target():
+    task = fev.Task(
+        dataset_path="autogluon/fev_datasets",
+        dataset_config="ETT_1H",
+        target=["OT", "LULL", "HULL"],
+        eval_metric="MASE",
+        extra_metrics=["WAPE"],
+        horizon=4,
+    )
+    predictions = naive_forecast_multivariate(task, return_dict=False)
+
+    df = task.scores_per_item(predictions)
+    assert set(df["target"]) == set(task.target)
+    n_items = len(task.get_window(0).get_ground_truth())
+    assert len(df) == n_items * len(task.target)
+
+
+def test_when_per_item_scores_averaged_then_matches_evaluation_summary_for_decomposable_metrics():
+    # For MAE, MASE and SQL the per-window aggregate is a plain mean over items, so averaging the
+    # per-item scores (per window, then over windows) must reproduce the evaluation_summary values.
+    # seasonality=1 keeps every item's seasonal error defined, avoiding NaN exclusions.
+    quantile_levels = [0.1, 0.5, 0.9]
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="MASE",
+        extra_metrics=["MAE", "SQL"],
+        quantile_levels=quantile_levels,
+        seasonality=1,
+        horizon=4,
+        num_windows=2,
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        target = window.target_columns[0]
+        preds = []
+        for ts in past_data:
+            forecast = [ts[target][-1]] * task.horizon
+            preds.append({"predictions": forecast, **{str(q): forecast for q in quantile_levels}})
+        predictions_per_window.append(preds)
+
+    summary = task.evaluation_summary(predictions_per_window, model_name="naive")
+    per_item = task.scores_per_item(predictions_per_window)
+
+    for metric in ["MASE", "MAE", "SQL"]:
+        # aggregate = mean over windows of the per-window mean over items
+        aggregate = per_item.groupby("window")[metric].mean().mean()
+        assert np.isclose(aggregate, summary[metric])
+
+
+def test_when_scores_per_item_with_per_quantile_scores_then_breakdown_columns_added():
+    quantile_levels = [0.1, 0.5, 0.9]
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="SQL",
+        quantile_levels=quantile_levels,
+        horizon=4,
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        target = window.target_columns[0]
+        preds = []
+        for ts in past_data:
+            forecast = [ts[target][-1]] * task.horizon
+            preds.append({"predictions": forecast, **{str(q): forecast for q in quantile_levels}})
+        predictions_per_window.append(preds)
+
+    df = task.scores_per_item(predictions_per_window, per_quantile_scores=True)
+    for q in quantile_levels:
+        assert f"SQL[{q}]" in df.columns
+    # overall SQL is the mean of the per-quantile-level scores
+    per_level = df[[f"SQL[{q}]" for q in quantile_levels]].mean(axis=1)
+    np.testing.assert_allclose(df["SQL"].to_numpy(), per_level.to_numpy())
+
+
 def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
