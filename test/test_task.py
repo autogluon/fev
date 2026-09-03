@@ -243,6 +243,40 @@ def test_when_scores_per_item_for_multivariate_task_then_one_row_per_target():
     assert len(df) == n_items * len(task.target)
 
 
+def test_when_per_item_scores_averaged_then_matches_evaluation_summary_for_decomposable_metrics():
+    # For MAE, MASE and SQL the per-window aggregate is a plain mean over items, so averaging the
+    # per-item scores (per window, then over windows) must reproduce the evaluation_summary values.
+    # seasonality=1 keeps every item's seasonal error defined, avoiding NaN exclusions.
+    quantile_levels = [0.1, 0.5, 0.9]
+    task = fev.Task(
+        dataset_path="autogluon/chronos_datasets",
+        dataset_config="monash_m1_yearly",
+        eval_metric="MASE",
+        extra_metrics=["MAE", "SQL"],
+        quantile_levels=quantile_levels,
+        seasonality=1,
+        horizon=4,
+        num_windows=2,
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        target = window.target_columns[0]
+        preds = []
+        for ts in past_data:
+            forecast = [ts[target][-1]] * task.horizon
+            preds.append({"predictions": forecast, **{str(q): forecast for q in quantile_levels}})
+        predictions_per_window.append(preds)
+
+    summary = task.evaluation_summary(predictions_per_window, model_name="naive")
+    per_item = task.scores_per_item(predictions_per_window)
+
+    for metric in ["MASE", "MAE", "SQL"]:
+        # aggregate = mean over windows of the per-window mean over items
+        aggregate = per_item.groupby("window")[metric].mean().mean()
+        assert np.isclose(aggregate, summary[metric])
+
+
 def test_if_predictions_are_not_available_for_all_columns_then_error_is_raised():
     task = fev.Task(
         dataset_path="autogluon/fev_datasets",
