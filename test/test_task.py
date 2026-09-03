@@ -218,7 +218,7 @@ def test_when_scores_per_item_called_then_returns_per_item_per_window_scores():
         predictions_per_window.append([{"predictions": [ts[target][-1]] * task.horizon} for ts in past_data])
 
     df = task.scores_per_item(predictions_per_window)
-    assert list(df.columns[:3]) == ["window", task.id_column, "target"]
+    assert list(df.columns[:3]) == [task.id_column, "window", "target"]
     assert {"MASE", "WAPE"}.issubset(df.columns)
     n_items = len(task.get_window(0).get_ground_truth())
     assert len(df) == n_items * task.num_windows  # univariate -> one target per item

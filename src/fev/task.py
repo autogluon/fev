@@ -1013,7 +1013,7 @@ class Task:
         Returns
         -------
         pd.DataFrame
-            Columns: `window`, `id_column`, `target`, and one column per metric.
+            Columns: `id_column`, `window`, `target`, and one column per metric.
         """
         metrics = self.metrics
 
@@ -1023,8 +1023,8 @@ class Task:
 
             df = pd.DataFrame(
                 {
-                    "window": window_idx,
                     self.id_column: np.repeat(item_ids, len(self.target_columns)),
+                    "window": window_idx,
                     "target": np.tile(self.target_columns, len(item_ids)),
                 }
             )
