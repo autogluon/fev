@@ -484,3 +484,29 @@ def test_when_datasets_prefix_is_set_then_config_dataset_is_loaded_from_mirror(t
 
     assert len(loaded_dataset) == 1
     assert loaded_dataset[0]["id"] == "series_0"
+
+
+def test_when_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_path, monkeypatch):
+    dataset_path = "s3://original-bucket/nested/test_dataset/*.parquet"
+    mirror_dir = tmp_path / "mirror" / "nested" / "test_dataset"
+    mirror_dir.mkdir(parents=True)
+    monkeypatch.setattr(datasets.config, "HF_DATASETS_CACHE", tmp_path / "cache")
+    mirror_dataset = datasets.Dataset.from_dict(
+        {
+            "id": ["series_0"],
+            "timestamp": [[pd.Timestamp("2020-01-01") + pd.Timedelta(days=t) for t in range(4)]],
+            "target": [[float(t) for t in range(4)]],
+        }
+    )
+    mirror_dataset.to_parquet(mirror_dir / "data.parquet")
+    monkeypatch.setenv("FEV_DATASETS_PREFIX", str(tmp_path / "mirror"))
+    monkeypatch.setattr(fev.task.utils, "validate_time_series_dataset", lambda *args, **kwargs: None)
+
+    task = fev.Task(dataset_path=dataset_path, horizon=2)
+
+    loaded_dataset = task.load_full_dataset(num_proc=1)
+
+    assert len(loaded_dataset) == 1
+    assert loaded_dataset[0]["id"] == "series_0"
+    assert task.dataset_path == dataset_path
+    assert task.to_dict()["dataset_path"] == dataset_path

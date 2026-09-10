@@ -7,6 +7,7 @@ import pprint
 import warnings
 from pathlib import Path
 from typing import Any, Iterable, Literal
+from urllib.parse import urlsplit
 
 import datasets
 import numpy as np
@@ -257,7 +258,9 @@ class Task:
     ----------
     dataset_path : str
         Path to the time series dataset stored locally, on S3, or on Hugging Face Hub. See the Examples section below
-        for information on how to load datasets from different sources.
+        for information on how to load datasets from different sources. If this is an S3 URI and
+        `FEV_DATASETS_PREFIX` is set, the S3 bucket root is replaced by `FEV_DATASETS_PREFIX` while preserving the
+        object key. This only changes where the data is loaded from; `dataset_path` itself remains unchanged.
     dataset_config : str | None, default None
         Name of the dataset configuration. The dataset source is determined as follows:
 
@@ -637,12 +640,14 @@ class Task:
         num_proc: int = DEFAULT_NUM_PROC,
     ) -> datasets.Dataset:
         """Load the raw dataset and apply initial preprocessing based on the Task definition."""
+        datasets_prefix = os.environ.get("FEV_DATASETS_PREFIX")
+        if datasets_prefix:
+            datasets_prefix = datasets_prefix.rstrip("/")
         if self.dataset_config is not None:
-            datasets_prefix = os.environ.get("FEV_DATASETS_PREFIX")
             if datasets_prefix:
                 path = "parquet"
                 name = None
-                data_files = f"{datasets_prefix.rstrip('/')}/{self.dataset_config}/*.parquet"
+                data_files = f"{datasets_prefix}/{self.dataset_config}/*.parquet"
                 logger.info("Loading dataset %s from mirror %s", self.dataset_config, data_files)
             else:
                 # Load dataset from HF Hub
@@ -657,7 +662,12 @@ class Task:
                 raise ValueError(f"When loading dataset from file, path must end in one of {allowed_formats}.")
             path = dataset_format
             name = None
-            data_files = self.dataset_path
+            if datasets_prefix and self.dataset_path.startswith("s3://"):
+                object_key = urlsplit(self.dataset_path).path.removeprefix("/")
+                data_files = f"{datasets_prefix}/{object_key}"
+                logger.info("Loading dataset %s from mirror %s", self.dataset_path, data_files)
+            else:
+                data_files = self.dataset_path
 
         if storage_options is None:
             storage_options = {}
