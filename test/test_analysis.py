@@ -97,6 +97,24 @@ def test_when_pairwise_comparison_called_then_all_expected_columns_are_present(n
     assert pairwise_comparison.columns.to_list() == expected_columns
 
 
+def test_when_leaderboard_called_with_custom_task_columns_then_custom_columns_define_tasks(mock_summaries):
+    mock_summaries["dataset_path"] = "shared_dataset"
+    mock_summaries["task_name"] = ["task_1", "task_1", "task_2", "task_2"]
+
+    result = fev.leaderboard(mock_summaries, task_columns="task_name", baseline_model="model_b")
+
+    assert result.index.to_list() == ["model_a", "model_b"]
+
+
+def test_when_pairwise_comparison_called_with_custom_task_columns_then_custom_columns_define_tasks(mock_summaries):
+    mock_summaries["dataset_path"] = "shared_dataset"
+    mock_summaries["task_name"] = ["task_1", "task_1", "task_2", "task_2"]
+
+    result = fev.pairwise_comparison(mock_summaries, task_columns="task_name")
+
+    assert result.index.names == ["model_1", "model_2"]
+
+
 def test_when_pivot_table_called_then_errors_df_has_expected_shape():
     summaries = fev.analysis._load_summaries(SUMMARIES_URLS)
     pivot_table = fev.pivot_table(SUMMARIES_URLS)
