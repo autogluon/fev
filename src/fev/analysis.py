@@ -235,6 +235,7 @@ def leaderboard(
     n_resamples: int | None = None,
     seed: int = 123,
     normalize_time_per_n_forecasts: int | None = None,
+    task_columns: str | list[str] | None = None,
 ):
     """Generate a leaderboard with aggregate performance metrics for all models.
 
@@ -273,6 +274,8 @@ def leaderboard(
         If set, rescale each task's runtime to represent the time for this many forecasts (by dividing by the task's
         num_forecasts and multiplying by this value). Inference and training time column names will have suffix `"_per{value}"` added.
         If None, no normalization is performed.
+    task_columns : str | list[str], optional
+        Column(s) defining unique tasks. If None, all task definition columns are used
 
     Returns
     -------
@@ -291,17 +294,25 @@ def leaderboard(
         - `training_corpus_overlap`: Mean fraction of tasks where model was trained on the dataset
         - `num_failures`: Number of tasks where the model failed
     """
+    if task_columns is None:
+        task_columns = TASK_DEF_COLUMNS
     summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
-    errors_df = pivot_table(summaries, metric_column=metric_column, baseline_model=baseline_model)
+    errors_df = pivot_table(
+        summaries, metric_column=metric_column, task_columns=task_columns, baseline_model=baseline_model
+    )
 
-    training_time_df = pivot_table(summaries, metric_column="training_time_s")
-    inference_time_df = pivot_table(summaries, metric_column="inference_time_s")
+    training_time_df = pivot_table(summaries, metric_column="training_time_s", task_columns=task_columns)
+    inference_time_df = pivot_table(summaries, metric_column="inference_time_s", task_columns=task_columns)
     e2e_time_df = training_time_df + inference_time_df
-    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+    training_corpus_overlap_df = pivot_table(
+        summaries, metric_column="trained_on_this_dataset", task_columns=task_columns
+    )
 
     if normalize_time_per_n_forecasts is not None:
-        num_forecasts_df = pivot_table(summaries, metric_column="num_forecasts").astype(pd.Int64Dtype())
+        num_forecasts_df = pivot_table(summaries, metric_column="num_forecasts", task_columns=task_columns).astype(
+            pd.Int64Dtype()
+        )
         if not (num_forecasts_df.nunique(axis=1, dropna=True) == 1).all():
             raise ValueError(
                 "Column 'num_forecasts' has inconsistent values across models for the same task. "
@@ -387,6 +398,7 @@ def pairwise_comparison(
     leakage_imputation_model: str | None = None,
     n_resamples: int | None = None,
     seed: int = 123,
+    task_columns: str | list[str] | None = None,
 ) -> pd.DataFrame:
     """Compute pairwise performance comparisons between all model pairs.
 
@@ -421,6 +433,8 @@ def pairwise_comparison(
         Number of bootstrap samples for confidence intervals. If None, confidence intervals are not computed
     seed : int, default 123
         Random seed for reproducible bootstrap sampling
+    task_columns : str | list[str], optional
+        Column(s) defining unique tasks. If None, all task definition columns are used
 
     Returns
     -------
@@ -434,12 +448,16 @@ def pairwise_comparison(
         - `skill_score_lower`: Lower bound of 95% confidence interval (only if n_resamples is not None)
         - `skill_score_upper`: Upper bound of 95% confidence interval (only if n_resamples is not None)
     """
+    if task_columns is None:
+        task_columns = TASK_DEF_COLUMNS
     summaries = _load_summaries(summaries, check_fev_version=True)
     summaries = _filter_models(summaries, included_models=included_models, excluded_models=excluded_models)
-    errors_df = pivot_table(summaries, metric_column=metric_column)
+    errors_df = pivot_table(summaries, metric_column=metric_column, task_columns=task_columns)
     num_failures_per_model = errors_df.isna().sum()
 
-    training_corpus_overlap_df = pivot_table(summaries, metric_column="trained_on_this_dataset")
+    training_corpus_overlap_df = pivot_table(
+        summaries, metric_column="trained_on_this_dataset", task_columns=task_columns
+    )
     if leakage_imputation_model is not None:
         errors_df = _handle_leakage_imputation(errors_df, training_corpus_overlap_df, leakage_imputation_model)
 
