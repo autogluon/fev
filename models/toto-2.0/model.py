@@ -50,7 +50,7 @@ class Toto2Model(fev.ForecastingModel):
             context_length=self.context_length,
             target_dim=len(target_columns),
             decode_block_size=self.decode_block_size,
-            quantiles=task.quantile_levels,
+            quantiles=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
         )
         gts_model = Toto2GluonTSModel(self._model, config)
         predictor = gts_model.create_predictor(batch_size=self.batch_size, device=self.device)
