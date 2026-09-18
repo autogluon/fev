@@ -31,15 +31,7 @@ DEFAULT_BATCH_SIZE = 32
 
 
 def cast_as_numeric(*sequences) -> list[np.ndarray]:
-    """Coerce covariate values to float32, label-encoding non-numeric ones.
-
-    Some tasks carry string covariates (holiday names in ``favorita_stores_1D``,
-    ``StateHoliday`` in ``rossmann_1D``). The model has no categorical embedding,
-    so they get integer ids instead. One vocabulary spans every sequence passed
-    in the same call: a known covariate's context and horizon halves arrive
-    separately, and encoding them apart would give the same holiday a different
-    id either side of the forecast boundary.
-    """
+    """Coerce covariate values to float32, label-encoding non-numeric ones."""
     try:
         return [np.asarray(s, dtype=np.float32) for s in sequences]
     except (ValueError, TypeError):
@@ -52,8 +44,7 @@ class T0BetaModel(fev.ForecastingModel):
     """t0-beta forecasting foundation model from The Forecasting Company."""
 
     model_name = "t0-beta"
-    # Dataset configs from autogluon/fev_datasets seen during pretraining. Empty:
-    # this checkpoint's pretraining mix excludes the fev-bench evaluation corpora.
+    # t0-beta was trained with no data leakage.
     trained_on_datasets = []
 
     def __init__(

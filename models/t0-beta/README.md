@@ -7,9 +7,7 @@ conditions on past and known-future covariates.
 
 - Weights: https://huggingface.co/theforecastingcompany/t0-beta
 - Code: https://github.com/theforecastingcompany/tfc-t0
-- Runtime: [`tfc-t0`](https://pypi.org/project/tfc-t0/) `>=0.5.0` (earlier
-  releases load these weights but run them under the previous checkpoint's
-  normalization)
+- Runtime: [`tfc-t0`](https://pypi.org/project/tfc-t0/) `>=0.5.0`
 
 ```bash
 python models/evaluate.py -m t0-beta
