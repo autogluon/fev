@@ -1,0 +1,2 @@
+fracast==0.1.0
+torch>=2.0
