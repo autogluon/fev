@@ -1,0 +1,4 @@
+alibabacloud_brain_industrial20200920==2.1.2
+alibabacloud_tea_openapi==0.4.6
+datasets==3.6.0
+numpy==2.1.3
