@@ -60,11 +60,11 @@ SORT_COL = "win_rate"
 N_RESAMPLES_FOR_CI = 1000
 TOP_K_MODELS_TO_PLOT = 15
 
-# --- Figure curation (script-only; the leaderboard intentionally shows all models) ----------
+# --- Figure curation ------------------------------------------------------------------------
 
-# Redundant Toto-2.0 sizes dropped by default to avoid crowding figures with one model family.
-# Keeps Toto-2.0-22m and Toto-2.0-2.5B. Override with --exclude or disable with --keep-all-models.
-DEFAULT_EXCLUDED_MODELS = ["Toto-2.0-4m", "Toto-2.0-313m", "Toto-2.0-1B"]
+# Models flagged `hidden: true` in benchmarks/fev_bench/models.yaml are dropped by default, so the
+# figures and the leaderboard hide the same models (currently redundant Toto-2.0 checkpoint sizes).
+# Override with --exclude or disable with --keep-all-models.
 
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent.parent / "benchmarks" / "fev_bench" / "results"
 
@@ -311,7 +311,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--exclude",
         nargs="+",
         default=None,
-        help=f"Model names to drop from tables/figures (default: {DEFAULT_EXCLUDED_MODELS}).",
+        help="Model names to drop from tables/figures (default: models marked `hidden` in models.yaml).",
     )
     parser.add_argument(
         "--keep-all-models",
@@ -329,7 +329,15 @@ def main(argv: list[str] | None = None) -> int:
     task_names = resolve_task_filter(args.benchmark, args.tasks)
     summaries = filter_summaries(summaries, task_names)
 
-    excluded = [] if args.keep_all_models else (args.exclude if args.exclude is not None else DEFAULT_EXCLUDED_MODELS)
+    if args.keep_all_models:
+        excluded = []
+    elif args.exclude is not None:
+        excluded = args.exclude
+    else:
+        # Imported here so this script stays importable on its own (the leaderboard app vendors it).
+        from fev_bench_metadata import hidden_model_names
+
+        excluded = hidden_model_names(args.results_dir)
     if excluded:
         present = sorted(set(excluded) & set(summaries["model_name"]))
         summaries = summaries[~summaries["model_name"].isin(excluded)]

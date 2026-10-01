@@ -1,0 +1,274 @@
+# Display metadata for the fev-bench leaderboard (https://huggingface.co/spaces/autogluon/fev-leaderboard).
+#
+# One entry per submission, keyed by the file name of its results CSV in `results/` (without the
+# `.csv` suffix). Every results file holds exactly one model, so the key identifies one leaderboard
+# row. Both directions are enforced by test/test_fev_bench_submissions.py: a results file without an
+# entry here (or an entry without a results file) fails CI.
+#
+# Add your entry in the same pull request as your results CSV. Fields:
+#
+#   organization   Who built the model. Use "—" for models provided by a library.
+#   url            Where a reader can learn more: HF model page, GitHub repo, or API docs. The
+#                  license is whatever that page states, so link somewhere it is visible.
+#   model_type     One of:
+#                    pretrained     - pretrained model applied to each task as-is
+#                    task-specific  - trained or tuned on each task's history
+#                    statistical    - classical statistical method, fit per task
+#                    system         - pipeline combining or selecting several models (AutoML,
+#                                     ensembles, per-task selection)
+#                    closed-api     - any forecasting component runs behind a closed API, or the
+#                                     weights are not publicly available
+#                  If several apply, use the one listed last (closed-api wins over system, which
+#                  wins over the rest). `system` and `closed-api` models are hidden by default on
+#                  the leaderboard and shown only when the reader opts in, because their results
+#                  cannot be independently reproduced or are not comparable to single models.
+#   zero_shot      true if the model forecasts without being trained on the target task.
+#   commercial_use true if the model's license permits commercial use. Self-reported, not legal
+#                  advice; readers should check the license via `url`. No default - state it.
+#   display_name   Optional. Only when the `model_name` in the CSV does not display well.
+#   hidden         Optional, defaults to false. Maintainer-set; drops the model from the
+#                  leaderboard entirely (used for redundant checkpoint sizes).
+
+# --- Pretrained models ---------------------------------------------------------------------------
+
+chronos-bolt:
+  organization: AWS
+  url: https://huggingface.co/amazon/chronos-bolt-base
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+chronos-2:
+  organization: AWS
+  url: https://huggingface.co/amazon/chronos-2
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+citras-fm:
+  organization: Hitachi
+  url: https://huggingface.co/hitachi-nlp/citras-fm
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+  display_name: CITRAS-FM
+
+flowstate:
+  organization: IBM
+  url: https://huggingface.co/ibm-granite/granite-timeseries-flowstate-r1
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+moirai-2_0:
+  organization: Salesforce
+  url: https://huggingface.co/Salesforce/moirai-2.0-R-small
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+sundial-base:
+  organization: Tsinghua University
+  url: https://huggingface.co/thuml/sundial-base-128m
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+t0-beta:
+  organization: The Forecasting Company
+  url: https://huggingface.co/theforecastingcompany/t0-beta
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+tabpfn-ts:
+  organization: Prior Labs
+  url: https://huggingface.co/Prior-Labs/TabPFN-v2-reg
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+tabpfn-ts-3:
+  organization: Prior Labs
+  url: https://huggingface.co/Prior-Labs/TabPFN-2.5-reg
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+timesfm-2_5:
+  organization: Google
+  url: https://huggingface.co/google/timesfm-2.5-200m-pytorch
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+timesfm-3:
+  organization: Google
+  url: https://huggingface.co/google/timesfm-3.0-pytorch
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+tirex:
+  organization: NX-AI
+  url: https://huggingface.co/NX-AI/TiRex
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+tirex-2:
+  organization: NX-AI
+  url: https://huggingface.co/NX-AI/TiRex-2-fevbench
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+toto-1_0:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-Open-Base-1.0
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+toto-2_0-2_5b:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-2.0-2.5B
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+toto-2_0-22m:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-2.0-22m
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+# Redundant Toto-2.0 checkpoint sizes: kept in the repo for reference, not shown on the leaderboard.
+toto-2_0-1b:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-2.0-1B
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+toto-2_0-313m:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-2.0-313m
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+toto-2_0-4m:
+  organization: Datadog
+  url: https://huggingface.co/Datadog/Toto-2.0-4m
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+ts-icl:
+  organization: EDF-Lab
+  url: https://huggingface.co/taharnbl/TS-ICL
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
+# --- Closed-weight / API models ------------------------------------------------------------------
+
+lingjiang2_api:
+  organization: Alibaba
+  url: TODO
+  model_type: closed-api
+  zero_shot: true
+  commercial_use: true
+
+# --- Task-specific models ------------------------------------------------------------------------
+
+deepar:
+  organization: "—"
+  url: https://github.com/awslabs/gluonts
+  model_type: task-specific
+  zero_shot: false
+  commercial_use: true
+
+patchtst:
+  organization: "—"
+  url: https://github.com/awslabs/gluonts
+  model_type: task-specific
+  zero_shot: false
+  commercial_use: true
+
+tft:
+  organization: "—"
+  url: https://github.com/awslabs/gluonts
+  model_type: task-specific
+  zero_shot: false
+  commercial_use: true
+
+catboost:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/mlforecast
+  model_type: task-specific
+  zero_shot: false
+  commercial_use: true
+
+lightgbm:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/mlforecast
+  model_type: task-specific
+  zero_shot: false
+  commercial_use: true
+
+# --- Statistical models --------------------------------------------------------------------------
+
+autoarima:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+autoets:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+autotheta:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+drift:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+naive:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+seasonal_naive:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
+
+stat_ensemble:
+  organization: "—"
+  url: https://nixtlaverse.nixtla.io/statsforecast/
+  model_type: statistical
+  zero_shot: false
+  commercial_use: true
