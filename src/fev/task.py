@@ -341,10 +341,10 @@ class Task:
 
         This field is only here for convenience and is not used for any validation when computing the results.
     dataset_description : str | None, default None
-        Free-text description of the dataset, e.g. its domain, what is measured and how the data were aggregated.
+        Text description of the dataset, e.g. its domain, what is measured and how the data were aggregated.
         Not used when computing the results; available to models that use text.
     column_descriptions : dict[str, str] | None, default None
-        Free-text description of each column used by the task, e.g. its meaning, units, typical seasonality and
+        Text description of each column used by the task, e.g. its meaning, units, typical seasonality and
         relations to other columns. Not used when computing the results; available to models that use text.
 
         If provided, the keys must exactly match the target, dynamic and static columns of the task.
