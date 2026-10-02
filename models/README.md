@@ -68,3 +68,24 @@ class MyModel(ForecastingModel):
 3. Add `requirements.txt` with pinned dependencies for the model.
 
 4. For pretrained models, set `trained_on_datasets` to the list of dataset configs from `autogluon/fev_datasets` that overlap with the model's training data. Leave empty for models that train from scratch.
+
+## Submit results to the fev-bench leaderboard
+
+1. Run your model on the full benchmark and save the results as one CSV per model:
+
+   ```bash
+   python models/evaluate.py -m <name> -b benchmarks/fev_bench/tasks.yaml
+   mv <name>.csv benchmarks/fev_bench/results/<name>.csv
+   ```
+
+   Each results file must contain exactly one `model_name`. If your wrapper covers several models
+   (e.g. checkpoint sizes), run it once per model with `-n` and save one file for each.
+
+2. Add an entry for your results CSV to [`benchmarks/fev_bench/models.yaml`](../benchmarks/fev_bench/models.yaml).
+   This is what the [leaderboard](https://huggingface.co/spaces/autogluon/fev-leaderboard) displays
+   for your model. The format is defined by `ModelMetadata` in
+   [`scripts/fev_bench_metadata.py`](../scripts/fev_bench_metadata.py).
+
+3. Open a pull request with `models/<name>/model.py`, `models/<name>/requirements.txt`, your results
+   CSV, and the `models.yaml` entry. CI validates the submission; we then reproduce the results
+   independently before they appear on the leaderboard.

@@ -1,12 +1,13 @@
 """Sanity checks for fev-bench leaderboard submissions.
 
-A submission is a results CSV in ``benchmarks/fev_bench/results/`` (one file per model family;
-a file may hold several model sizes). These tests run in CI whenever ``benchmarks/`` is modified
+A submission is a results CSV in ``benchmarks/fev_bench/results/`` plus its entry in
+``benchmarks/fev_bench/models.yaml``. These tests run in CI whenever ``benchmarks/`` is modified
 and verify that submissions are formatted correctly: right task-definition columns, valid task
-names, no duplicates, and that they slot into the leaderboard without breaking metric
-aggregation. They are intentionally lightweight and offline.
+names, no duplicates, valid metadata, and that they slot into the leaderboard without breaking
+metric aggregation. They are intentionally lightweight and offline.
 """
 
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -16,6 +17,10 @@ import fev
 from fev.analysis import TASK_DEF_COLUMNS, pivot_table
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from fev_bench_metadata import load_model_metadata  # noqa: E402
+
 FEV_BENCH_DIR = REPO_ROOT / "benchmarks" / "fev_bench"
 RESULTS_DIR = FEV_BENCH_DIR / "results"
 TASKS_YAML = FEV_BENCH_DIR / "tasks.yaml"
@@ -48,7 +53,6 @@ def test_when_submission_added_then_it_is_valid(result_file: Path, benchmark_tas
     missing_columns = sorted(col for col in REQUIRED_COLUMNS if col not in summary.columns)
     assert not missing_columns, f"{result_file.name} is missing required columns: {missing_columns}"
 
-    # A submission may report several models (e.g. model sizes), but not duplicate (model, task) rows.
     duplicates = summary[summary.duplicated(["model_name", "task_name"])]
     assert duplicates.empty, (
         f"{result_file.name} has duplicate (model_name, task_name) rows: "
@@ -83,3 +87,8 @@ def test_when_all_submissions_loaded_then_leaderboard_covers_every_task(metric: 
         leakage_imputation_model="Chronos-Bolt",
     )
     assert set(summaries["model_name"]) == set(lb.index)
+
+
+def test_when_submission_added_then_it_has_valid_metadata():
+    # Validates every models.yaml entry and that entries and results files match one-to-one.
+    load_model_metadata()

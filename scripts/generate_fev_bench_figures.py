@@ -33,8 +33,8 @@ Run with ``uv run`` so the inline dependencies above are installed automatically
     # Make the pairwise heatmaps larger
     uv run scripts/generate_fev_bench_figures.py --metric SQL --fig-width 1100
 
-By default summaries are read from ``benchmarks/fev_bench/results``. Outputs land in
-``--out-dir`` (default ``figures/``) as vector PDFs:
+Summaries are read from ``benchmarks/fev_bench/results``; to include your own model, add its CSV
+and ``models.yaml`` entry there. Outputs land in ``--out-dir`` (default ``figures/``) as vector PDFs:
 
     leaderboard_<metric>.csv           leaderboard table (raw values)
     leaderboard_<metric>.tex           leaderboard table (paper-style LaTeX)
@@ -60,11 +60,11 @@ SORT_COL = "win_rate"
 N_RESAMPLES_FOR_CI = 1000
 TOP_K_MODELS_TO_PLOT = 15
 
-# --- Figure curation (script-only; the leaderboard intentionally shows all models) ----------
+# --- Figure curation ------------------------------------------------------------------------
 
-# Redundant Toto-2.0 sizes dropped by default to avoid crowding figures with one model family.
-# Keeps Toto-2.0-22m and Toto-2.0-2.5B. Override with --exclude or disable with --keep-all-models.
-DEFAULT_EXCLUDED_MODELS = ["Toto-2.0-4m", "Toto-2.0-313m", "Toto-2.0-1B"]
+# Models flagged `hidden: true` in benchmarks/fev_bench/models.yaml are dropped by default, so the
+# figures and the leaderboard hide the same models (currently redundant Toto-2.0 checkpoint sizes).
+# Override with --exclude or disable with --keep-all-models.
 
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent.parent / "benchmarks" / "fev_bench" / "results"
 
@@ -75,7 +75,7 @@ HEATMAP_COLOR_SCHEME = "purplegreen"
 # Per-metric heatmap config: (colorbar label, color domain, midpoint, white-text condition)
 PAIRWISE_CHART_CONFIG = {
     "win_rate": ("Win Rate", [0, 100], 50, "abs(datum.{col} - 50) > 30"),
-    "skill_score": ("Skill Score", [-30, 30], 0, "abs(datum.{col}) > 20"),
+    "skill_score": ("Skill Score", [-15, 15], 0, "abs(datum.{col}) > 10"),
 }
 
 
@@ -277,12 +277,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         help=f"Metric(s) to generate (repeatable). Default: all of {AVAILABLE_METRICS}.",
     )
-    parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=DEFAULT_RESULTS_DIR,
-        help="Directory containing the summary CSV files (default: benchmarks/fev_bench/results).",
-    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--benchmark",
@@ -311,7 +305,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--exclude",
         nargs="+",
         default=None,
-        help=f"Model names to drop from tables/figures (default: {DEFAULT_EXCLUDED_MODELS}).",
+        help="Model names to drop from tables/figures (default: models marked `hidden` in models.yaml).",
     )
     parser.add_argument(
         "--keep-all-models",
@@ -325,11 +319,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     metrics = args.metric or AVAILABLE_METRICS
 
-    summaries = load_summaries(args.results_dir)
+    summaries = load_summaries(DEFAULT_RESULTS_DIR)
     task_names = resolve_task_filter(args.benchmark, args.tasks)
     summaries = filter_summaries(summaries, task_names)
 
-    excluded = [] if args.keep_all_models else (args.exclude if args.exclude is not None else DEFAULT_EXCLUDED_MODELS)
+    if args.keep_all_models:
+        excluded = []
+    elif args.exclude is not None:
+        excluded = args.exclude
+    else:
+        # Imported here so this script stays importable on its own (the leaderboard app vendors it).
+        from fev_bench_metadata import hidden_model_names
+
+        excluded = hidden_model_names()
     if excluded:
         present = sorted(set(excluded) & set(summaries["model_name"]))
         summaries = summaries[~summaries["model_name"].isin(excluded)]

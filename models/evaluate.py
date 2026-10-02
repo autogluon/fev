@@ -77,6 +77,7 @@ def main():
     output_path = f"{display_name}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to {output_path}")
+    print("To submit to the fev-bench leaderboard, see models/README.md.")
 
 
 if __name__ == "__main__":
