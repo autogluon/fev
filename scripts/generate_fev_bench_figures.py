@@ -75,7 +75,7 @@ HEATMAP_COLOR_SCHEME = "purplegreen"
 # Per-metric heatmap config: (colorbar label, color domain, midpoint, white-text condition)
 PAIRWISE_CHART_CONFIG = {
     "win_rate": ("Win Rate", [0, 100], 50, "abs(datum.{col} - 50) > 30"),
-    "skill_score": ("Skill Score", [-30, 30], 0, "abs(datum.{col}) > 20"),
+    "skill_score": ("Skill Score", [-15, 15], 0, "abs(datum.{col}) > 10"),
 }
 
 
