@@ -510,3 +510,48 @@ def test_when_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_p
     assert loaded_dataset[0]["id"] == "series_0"
     assert task.dataset_path == dataset_path
     assert task.to_dict()["dataset_path"] == dataset_path
+
+
+def test_when_descriptions_not_provided_then_they_default_to_none():
+    task = fev.Task(dataset_path="my_dataset", horizon=12)
+    assert task.dataset_description is None
+    assert task.column_descriptions is None
+    assert task.to_dict()["dataset_description"] is None
+    assert task.to_dict()["column_descriptions"] is None
+
+
+def test_when_column_descriptions_match_task_columns_then_task_is_created():
+    column_descriptions = {"OT": "oil temperature", "HULL": "load", "LULL": "load", "store": "store id"}
+    task = fev.Task(
+        dataset_path="my_dataset",
+        horizon=12,
+        target="OT",
+        known_dynamic_columns=["HULL"],
+        past_dynamic_columns=["LULL"],
+        static_columns=["store"],
+        dataset_description="Transformer data.",
+        column_descriptions=column_descriptions,
+    )
+    assert task.dataset_description == "Transformer data."
+    assert task.column_descriptions == column_descriptions
+    assert fev.Task(**task.to_dict()) == task
+
+
+@pytest.mark.parametrize(
+    "column_descriptions",
+    [
+        {"OT": "oil temperature"},
+        {"OT": "oil temperature", "HULL": "load", "LULL": "load"},
+        {"target": "oil temperature", "HULL": "load"},
+        {},
+    ],
+)
+def test_when_column_descriptions_do_not_match_task_columns_then_validation_error_is_raised(column_descriptions):
+    with pytest.raises(pydantic.ValidationError, match="column_descriptions"):
+        fev.Task(
+            dataset_path="my_dataset",
+            horizon=12,
+            target="OT",
+            known_dynamic_columns=["HULL"],
+            column_descriptions=column_descriptions,
+        )
