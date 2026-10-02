@@ -340,6 +340,14 @@ class Task:
         name of 2 parent directories for local or S3-based datasets.
 
         This field is only here for convenience and is not used for any validation when computing the results.
+    dataset_description : str | None, default None
+        Free-text description of the dataset, e.g. its domain, what is measured and how the data were aggregated.
+        Not used when computing the results; available to models that use text.
+    column_descriptions : dict[str, str] | None, default None
+        Free-text description of each column used by the task, e.g. its meaning, units, typical seasonality and
+        relations to other columns. Not used when computing the results; available to models that use text.
+
+        If provided, the keys must exactly match the target, dynamic and static columns of the task.
 
     Examples
     --------
@@ -379,6 +387,8 @@ class Task:
     past_dynamic_columns: list[str] = dataclasses.field(default_factory=list)
     static_columns: list[str] = dataclasses.field(default_factory=list)
     task_name: str | None = None
+    dataset_description: str | None = None
+    column_descriptions: dict[str, str] | None = None
 
     def __post_init__(self):
         if self.task_name is None:
@@ -457,6 +467,16 @@ class Task:
             raise ValueError(
                 "`generate_univariate_targets_from` cannot be used for multivariate tasks (when `target` is a list)"
             )
+
+        if self.column_descriptions is not None:
+            expected = set(self.target_columns + self.dynamic_columns + self.static_columns)
+            missing = sorted(expected - set(self.column_descriptions))
+            unexpected = sorted(set(self.column_descriptions) - expected)
+            if missing or unexpected:
+                raise ValueError(
+                    "`column_descriptions` must have exactly one entry per target, dynamic and static column of the "
+                    f"task. Missing: {missing}. Unexpected: {unexpected}."
+                )
 
         # Attributes computed after the dataset is loaded
         self._full_dataset: datasets.Dataset | None = None
