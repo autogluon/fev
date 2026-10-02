@@ -63,7 +63,7 @@ tabpfn-ts:
 
 tabpfn-ts-3:
   organization: Prior Labs
-  url: https://huggingface.co/Prior-Labs/TabPFN-2.5-reg
+  url: https://huggingface.co/Prior-Labs/tabpfn_3
   model_type: pretrained
   zero_shot: true
   commercial_use: false
