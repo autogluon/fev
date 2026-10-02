@@ -33,8 +33,8 @@ Run with ``uv run`` so the inline dependencies above are installed automatically
     # Make the pairwise heatmaps larger
     uv run scripts/generate_fev_bench_figures.py --metric SQL --fig-width 1100
 
-By default summaries are read from ``benchmarks/fev_bench/results``. Outputs land in
-``--out-dir`` (default ``figures/``) as vector PDFs:
+Summaries are read from ``benchmarks/fev_bench/results``; to include your own model, add its CSV
+and ``models.yaml`` entry there. Outputs land in ``--out-dir`` (default ``figures/``) as vector PDFs:
 
     leaderboard_<metric>.csv           leaderboard table (raw values)
     leaderboard_<metric>.tex           leaderboard table (paper-style LaTeX)
@@ -277,12 +277,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         help=f"Metric(s) to generate (repeatable). Default: all of {AVAILABLE_METRICS}.",
     )
-    parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=DEFAULT_RESULTS_DIR,
-        help="Directory containing the summary CSV files (default: benchmarks/fev_bench/results).",
-    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--benchmark",
@@ -325,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     metrics = args.metric or AVAILABLE_METRICS
 
-    summaries = load_summaries(args.results_dir)
+    summaries = load_summaries(DEFAULT_RESULTS_DIR)
     task_names = resolve_task_filter(args.benchmark, args.tasks)
     summaries = filter_summaries(summaries, task_names)
 
@@ -337,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         # Imported here so this script stays importable on its own (the leaderboard app vendors it).
         from fev_bench_metadata import hidden_model_names
 
-        excluded = hidden_model_names(args.results_dir)
+        excluded = hidden_model_names()
     if excluded:
         present = sorted(set(excluded) & set(summaries["model_name"]))
         summaries = summaries[~summaries["model_name"].isin(excluded)]
