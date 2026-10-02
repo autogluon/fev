@@ -13,21 +13,6 @@ _DEFAULT_BENCHMARK = (
 )
 
 
-# Printed after an evaluation run: leaderboard submissions declare their display metadata in
-# benchmarks/fev_bench/models.yaml, keyed by the results file name. See models/README.md.
-METADATA_SNIPPET_TEMPLATE = """
-To submit these results to the fev-bench leaderboard, move the CSV to
-benchmarks/fev_bench/results/ and add this entry to benchmarks/fev_bench/models.yaml:
-
-{key}:
-  organization: TODO           # who built the model
-  url: TODO                    # HF model page / repo / API docs, where the license is visible
-  model_type: TODO             # pretrained | task-specific | statistical | system | closed-api
-  zero_shot: TODO              # true | false
-  commercial_use: TODO         # true | false - does the license permit commercial use?
-"""
-
-
 def list_available_models() -> list[str]:
     return sorted(d.name for d in _MODELS_DIR.iterdir() if (d / "model.py").exists())
 
@@ -92,7 +77,7 @@ def main():
     output_path = f"{display_name}.csv"
     df.to_csv(output_path, index=False)
     print(f"Saved to {output_path}")
-    print(METADATA_SNIPPET_TEMPLATE.format(key=Path(output_path).stem))
+    print("To submit to the fev-bench leaderboard, see models/README.md.")
 
 
 if __name__ == "__main__":

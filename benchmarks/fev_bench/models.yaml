@@ -1,33 +1,6 @@
-# Display metadata for the fev-bench leaderboard (https://huggingface.co/spaces/autogluon/fev-leaderboard).
-#
-# One entry per submission, keyed by the file name of its results CSV in `results/` (without the
-# `.csv` suffix). Every results file holds exactly one model, so the key identifies one leaderboard
-# row. Both directions are enforced by test/test_fev_bench_submissions.py: a results file without an
-# entry here (or an entry without a results file) fails CI.
-#
-# Add your entry in the same pull request as your results CSV. Fields:
-#
-#   organization   Who built the model. Use "—" for models provided by a library.
-#   url            Where a reader can learn more: HF model page, GitHub repo, or API docs. The
-#                  license is whatever that page states, so link somewhere it is visible.
-#   model_type     One of:
-#                    pretrained     - pretrained model applied to each task as-is
-#                    task-specific  - trained or tuned on each task's history
-#                    statistical    - classical statistical method, fit per task
-#                    system         - pipeline combining or selecting several models (AutoML,
-#                                     ensembles, per-task selection)
-#                    closed-api     - any forecasting component runs behind a closed API, or the
-#                                     weights are not publicly available
-#                  If several apply, use the one listed last (closed-api wins over system, which
-#                  wins over the rest). `system` and `closed-api` models are hidden by default on
-#                  the leaderboard and shown only when the reader opts in, because their results
-#                  cannot be independently reproduced or are not comparable to single models.
-#   zero_shot      true if the model forecasts without being trained on the target task.
-#   commercial_use true if the model's license permits commercial use. Self-reported, not legal
-#                  advice; readers should check the license via `url`. No default - state it.
-#   display_name   Optional. Only when the `model_name` in the CSV does not display well.
-#   hidden         Optional, defaults to false. Maintainer-set; drops the model from the
-#                  leaderboard entirely (used for redundant checkpoint sizes).
+# Leaderboard metadata for fev-bench (https://huggingface.co/spaces/autogluon/fev-leaderboard).
+# One entry per results CSV in `results/`, keyed by its file name without `.csv`.
+# Format: see `ModelMetadata` in scripts/fev_bench_metadata.py.
 
 # --- Pretrained models ---------------------------------------------------------------------------
 
