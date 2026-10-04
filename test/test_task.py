@@ -611,3 +611,13 @@ def test_when_descriptions_provided_then_summary_contains_fingerprint_but_not_te
     assert "task_description" not in summary
     assert "column_descriptions" not in summary
     assert task.to_dict()["task_description"] == "Toy task."
+
+
+def test_when_column_descriptions_combined_with_generate_univariate_targets_from_then_validation_error_is_raised():
+    with pytest.raises(pydantic.ValidationError, match="generate_univariate_targets_from"):
+        fev.Task(
+            dataset_path="my_dataset",
+            horizon=12,
+            generate_univariate_targets_from=["X", "Y"],
+            column_descriptions={"target": "generated target"},
+        )

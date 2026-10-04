@@ -346,8 +346,7 @@ class Task:
         Text description of the task.
     column_descriptions : dict[str, str] | None, default None
         Text description of each column used by the task. If provided, the keys must exactly match the target,
-        dynamic and static columns of the task. With `generate_univariate_targets_from`, describe the generated
-        target column (e.g. `"target"`), not the source columns.
+        dynamic and static columns of the task. Cannot be combined with `generate_univariate_targets_from`.
 
     Examples
     --------
@@ -469,6 +468,11 @@ class Task:
             )
 
         if self.column_descriptions is not None:
+            if self.generate_univariate_targets_from is not None:
+                raise ValueError(
+                    "`column_descriptions` cannot be combined with `generate_univariate_targets_from`, since each "
+                    "generated series has a different source column"
+                )
             expected = set(self.target_columns + self.dynamic_columns + self.static_columns)
             missing = sorted(expected - set(self.column_descriptions))
             unexpected = sorted(set(self.column_descriptions) - expected)
