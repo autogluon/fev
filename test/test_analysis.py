@@ -1,3 +1,5 @@
+import warnings
+
 import pandas as pd
 import pytest
 
@@ -163,3 +165,23 @@ def test_when_leaderboard_called_with_inconsistent_num_forecasts_then_raises(moc
     mock_summaries.loc[mock_summaries["model_name"] == "model_b", "num_forecasts"] = 200
     with pytest.raises(ValueError, match="inconsistent values"):
         fev.leaderboard(mock_summaries.head(2), baseline_model="model_b", normalize_time_per_n_forecasts=100)
+
+
+def test_when_summaries_lack_description_fingerprint_then_they_load_without_warnings(mock_summaries):
+    summaries = mock_summaries.drop(columns="description_fingerprint")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        pivot_table = fev.pivot_table(summaries)
+    assert pivot_table.shape == (2, 2)
+
+
+def test_when_descriptions_differ_then_same_dataset_is_treated_as_separate_tasks(mock_summaries):
+    mock_summaries["dataset_path"] = "shared_dataset"
+    mock_summaries["description_fingerprint"] = ["aaaa", "aaaa", "bbbb", "bbbb"]
+
+    pivot_table = fev.pivot_table(mock_summaries)
+    assert pivot_table.shape == (2, 2)
+    assert set(pivot_table.index.get_level_values("description_fingerprint")) == {"aaaa", "bbbb"}
+
+    result = fev.leaderboard(mock_summaries, baseline_model="model_b")
+    assert result.index.to_list() == ["model_a", "model_b"]

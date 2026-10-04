@@ -35,6 +35,7 @@ TASK_DEF_DTYPES = {
     "known_dynamic_columns": pd.StringDtype(),
     "past_dynamic_columns": pd.StringDtype(),
     "static_columns": pd.StringDtype(),
+    "description_fingerprint": pd.StringDtype(),
 }
 
 RESULTS_DTYPES = {
@@ -106,8 +107,10 @@ def _load_summaries(summaries: SummaryType | list[SummaryType], check_fev_versio
     summaries_df = pd.concat([_summary_to_df(summary) for summary in summaries])
 
     missing_columns = sorted([col for col in RESULTS_DTYPES if col not in summaries_df])
-    if len(missing_columns) > 0:
-        warnings.warn(f"Columns {missing_columns} are missing from summaries, filling them with None", stacklevel=3)
+    # Summaries created before descriptions were added to `Task` lack this column; fill it silently
+    missing_to_report = [col for col in missing_columns if col != "description_fingerprint"]
+    if len(missing_to_report) > 0:
+        warnings.warn(f"Columns {missing_to_report} are missing from summaries, filling them with None", stacklevel=3)
     for col in missing_columns:
         summaries_df[col] = None
     summaries_df["quantile_levels"] = summaries_df["quantile_levels"].apply(_sanitize_quantile_levels)
