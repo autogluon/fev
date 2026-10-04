@@ -28,7 +28,12 @@ TASKS_YAML = FEV_BENCH_DIR / "tasks.yaml"
 # Metrics reported on the leaderboard that every submission must provide.
 REQUIRED_METRICS = ["MASE", "SQL"]
 # Task-definition columns feed the pivot; a malformed one silently splits a task into extra rows.
-REQUIRED_COLUMNS = TASK_DEF_COLUMNS + ["model_name", "task_name", *REQUIRED_METRICS]
+# description_fingerprint is optional: summaries without it are filled with None on load.
+REQUIRED_COLUMNS = [c for c in TASK_DEF_COLUMNS if c != "description_fingerprint"] + [
+    "model_name",
+    "task_name",
+    *REQUIRED_METRICS,
+]
 
 # Reject pathological files before parsing. Legitimate submissions are well under 1 MB.
 MAX_RESULT_FILE_BYTES = 5 * 1024 * 1024
