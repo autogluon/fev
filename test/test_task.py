@@ -510,3 +510,114 @@ def test_when_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_p
     assert loaded_dataset[0]["id"] == "series_0"
     assert task.dataset_path == dataset_path
     assert task.to_dict()["dataset_path"] == dataset_path
+
+
+def test_when_descriptions_not_provided_then_they_default_to_none():
+    task = fev.Task(dataset_path="my_dataset", horizon=12)
+    assert task.task_description is None
+    assert task.column_descriptions is None
+    assert task.to_dict()["task_description"] is None
+    assert task.to_dict()["column_descriptions"] is None
+
+
+def test_when_column_descriptions_match_task_columns_then_task_is_created():
+    column_descriptions = {"OT": "oil temperature", "HULL": "load", "LULL": "load", "store": "store id"}
+    task = fev.Task(
+        dataset_path="my_dataset",
+        horizon=12,
+        target="OT",
+        known_dynamic_columns=["HULL"],
+        past_dynamic_columns=["LULL"],
+        static_columns=["store"],
+        task_description="Transformer task.",
+        column_descriptions=column_descriptions,
+    )
+    assert task.task_description == "Transformer task."
+    assert task.column_descriptions == column_descriptions
+    assert fev.Task(**task.to_dict()) == task
+
+
+@pytest.mark.parametrize(
+    "column_descriptions",
+    [
+        {"OT": "oil temperature"},
+        {"OT": "oil temperature", "HULL": "load", "LULL": "load"},
+        {"target": "oil temperature", "HULL": "load"},
+        {},
+    ],
+)
+def test_when_column_descriptions_do_not_match_task_columns_then_validation_error_is_raised(column_descriptions):
+    with pytest.raises(pydantic.ValidationError, match="column_descriptions"):
+        fev.Task(
+            dataset_path="my_dataset",
+            horizon=12,
+            target="OT",
+            known_dynamic_columns=["HULL"],
+            column_descriptions=column_descriptions,
+        )
+
+
+def test_when_no_descriptions_provided_then_description_fingerprint_is_none():
+    assert fev.Task(dataset_path="my_dataset", horizon=12).description_fingerprint is None
+
+
+def test_when_column_descriptions_built_in_different_key_order_then_fingerprint_is_identical():
+    kwargs = dict(dataset_path="my_dataset", horizon=12, target="OT", known_dynamic_columns=["HULL"])
+    task_a = fev.Task(**kwargs, column_descriptions={"OT": "oil temperature", "HULL": "load"})
+    task_b = fev.Task(**kwargs, column_descriptions={"HULL": "load", "OT": "oil temperature"})
+    assert task_a.description_fingerprint == task_b.description_fingerprint
+    assert len(task_a.description_fingerprint) == 16
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"task_description": "Other task."},
+        {"column_descriptions": {"OT": "oil temperature in C", "HULL": "load"}},
+        {"column_descriptions": {"OT": "oil temperature", "HULL": "useless load"}},
+    ],
+)
+def test_when_any_description_changes_then_fingerprint_changes(changes):
+    kwargs = dict(
+        dataset_path="my_dataset",
+        horizon=12,
+        target="OT",
+        known_dynamic_columns=["HULL"],
+        task_description="Transformer task.",
+        column_descriptions={"OT": "oil temperature", "HULL": "load"},
+    )
+    assert fev.Task(**kwargs).description_fingerprint != fev.Task(**{**kwargs, **changes}).description_fingerprint
+
+
+def test_when_descriptions_provided_then_summary_contains_fingerprint_but_not_text(tmp_path):
+    dataset_path = tmp_path / "data.parquet"
+    timestamps = pd.date_range("2024-01-01", periods=20, freq="D")
+    datasets.Dataset.from_list(
+        [{"id": item_id, "timestamp": timestamps, "target": np.arange(20.0) + i} for i, item_id in enumerate("AB")]
+    ).to_parquet(dataset_path)
+    task = fev.Task(
+        dataset_path=str(dataset_path),
+        horizon=3,
+        task_description="Toy task.",
+        column_descriptions={"target": "toy target"},
+    )
+    predictions_per_window = []
+    for window in task.iter_windows():
+        past_data, _ = window.get_input_data()
+        predictions_per_window.append([{"predictions": [ts["target"][-1]] * task.horizon} for ts in past_data])
+
+    summary = task.evaluation_summary(predictions_per_window, model_name="naive")
+    assert summary["description_fingerprint"] == task.description_fingerprint
+    assert "task_description" not in summary
+    assert "column_descriptions" not in summary
+    assert task.to_dict()["task_description"] == "Toy task."
+
+
+def test_when_column_descriptions_combined_with_generate_univariate_targets_from_then_validation_error_is_raised():
+    with pytest.raises(pydantic.ValidationError, match="generate_univariate_targets_from"):
+        fev.Task(
+            dataset_path="my_dataset",
+            horizon=12,
+            generate_univariate_targets_from=["X", "Y"],
+            column_descriptions={"target": "generated target"},
+        )
