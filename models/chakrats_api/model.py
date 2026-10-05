@@ -2,8 +2,8 @@
 
 ChakraTS is served through an API; no weights are distributed. Set YHAT_API_KEY (evaluation keys are
 issued on request, see https://huggingface.co/yhatlabs/ChakraTS). The wrapper sends every item of a
-window with all of its target columns, past covariates and known covariates, 100 items per call, and
-never mixes evaluation windows in one call. The `chakra-ts-fev` model is the fev-bench evaluation
+window with all of its target columns, past covariates and known covariates, up to 100 items per call
+(fewer when a call would exceed the API's request size), and never mixes evaluation windows in one call. The `chakra-ts-fev` model is the fev-bench evaluation
 configuration of ChakraTS: it declares no overlap with fev-bench datasets.
 """
 
@@ -26,6 +26,8 @@ API_URL = os.environ.get("YHAT_API_URL", "https://api.yhatlabs.com/v1/forecast")
 QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 QKEYS = [str(q) for q in QUANTILES]
 MAX_CONTEXT = 20480  # points of history sent per item; longer than every component's own context window
+MAX_REQUEST_POINTS = 1_500_000  # values per request (targets + covariates), under the API's per-request cap
+MAX_REQUEST_BYTES = 24_000_000  # JSON bytes per request, under the gateway's body limit
 
 
 def _jsonable(v):
@@ -49,6 +51,28 @@ def _freq(timestamps) -> str:
     if f is None and len(idx) >= 2:
         f = pd.tseries.frequencies.to_offset(idx[1] - idx[0]).freqstr
     return f or "h"
+
+
+def _item_size(item: dict) -> tuple[int, int]:
+    """(values, JSON bytes) of one item: long-context, many-column tasks need fewer items per call than the default batch."""
+    cols = [item["values"]] if "values" in item else list(item["targets"].values())
+    cols += list(item.get("past_covariates", {}).values()) + list(item.get("known_covariates", {}).values())
+    return sum(len(c) for c in cols), len(json.dumps(item))
+
+
+def _batches(items: list[dict], batch_size: int):
+    """Consecutive batches of at most `batch_size` items that also stay under the request caps; every item is sent, one per batch at worst."""
+    batch, points, nbytes = [], 0, 0
+    for item in items:
+        p, b = _item_size(item)
+        if batch and (len(batch) >= batch_size or points + p > MAX_REQUEST_POINTS or nbytes + b > MAX_REQUEST_BYTES):
+            yield batch
+            batch, points, nbytes = [], 0, 0
+        batch.append(item)
+        points += p
+        nbytes += b
+    if batch:
+        yield batch
 
 
 class ChakraTSAPIModel(ForecastingModel):
@@ -106,8 +130,8 @@ class ChakraTSAPIModel(ForecastingModel):
                 items.append(item)
             out = {}
             with self._record_inference_time():
-                for i in range(0, len(items), self.batch_size):
-                    for f in self._call(items[i : i + self.batch_size], window.horizon, freq):
+                for batch in _batches(items, self.batch_size):
+                    for f in self._call(batch, window.horizon, freq):
                         out[f["id"]] = f
             gt_ids = [str(r[task.id_column]) for r in window.get_ground_truth()]
             q_of = lambda f, c: np.asarray(f["quantiles"] if c is None else f["targets"][c], dtype=np.float32)  # [h, 9]
