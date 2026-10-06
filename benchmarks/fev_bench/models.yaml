@@ -158,6 +158,13 @@ lingjiang2_api:
   zero_shot: true
   commercial_use: true
 
+chakrats_api:
+  organization: YHat Labs
+  url: https://huggingface.co/yhatlabs/ChakraTS
+  model_type: closed-api
+  zero_shot: true
+  commercial_use: true
+
 # --- Task-specific models ------------------------------------------------------------------------
 
 deepar:
