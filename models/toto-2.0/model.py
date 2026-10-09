@@ -80,10 +80,18 @@ class Toto2Model(fev.ForecastingModel):
             )
             return fev.utils.combine_univariate_predictions_to_multivariate(flat, target_columns=task.target_columns)
         else:
-            # One forecast per item, reshaped to (num_items, horizon, n_variates). The model squeezes the
-            # variate axis for single-target tasks, so `f.quantile(q)` is (horizon,) there and (horizon, n_var) else.
+            import gluonts
+            from packaging.version import Version
+
+            # One forecast per item, reshaped to (num_items, horizon, n_variates). The model outputs (n_var, horizon, q),
+            # which gluonts<0.17 transposes, so `f.quantile(q)` is (horizon, n_var), while gluonts>=0.17 moves the last
+            # axis to the front, so it is (n_var, horizon). The variate axis is squeezed for single-target tasks.
+            if Version(gluonts.__version__) >= Version("0.17"):
+                to_horizon_first = lambda x: x.reshape(-1, task.horizon).T  # noqa: E731
+            else:
+                to_horizon_first = lambda x: x.reshape(task.horizon, -1)  # noqa: E731
             quantiles = {
-                key: np.stack([f.quantile(q).reshape(task.horizon, -1) for f in forecasts])
+                key: np.stack([to_horizon_first(f.quantile(q)) for f in forecasts])
                 for key, q in forecast_keys.items()
             }
             return datasets.DatasetDict(
