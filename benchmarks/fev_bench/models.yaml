@@ -252,3 +252,11 @@ stat_ensemble:
   model_type: statistical
   zero_shot: false
   commercial_use: true
+
+TimeRSI:
+  display_name: TimeRSI
+  organization: "GaTech & SamayLabs"
+  url: https://github.com/haoxin1998/TimeRSI
+  model_type: system
+  zero_shot: false
+  commercial_use: false

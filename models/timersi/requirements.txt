@@ -1,0 +1,12 @@
+timesfm[torch] @ git+https://github.com/google-research/timesfm.git@20191171b74f51bfead932b6b8d0c8f515e70f63
+datasets==4.8.5
+torch==2.7.0
+numpy==2.5.3
+pandas==2.3.3
+scikit-learn==1.9.1
+scipy==1.18.1
+pyarrow==25.0.1
+lightgbm==4.7.0
+huggingface-hub==1.33.0
+safetensors==0.8.0
+einops==0.8.1
