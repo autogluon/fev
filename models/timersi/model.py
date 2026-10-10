@@ -12,7 +12,7 @@ from program_imports import install as install_program_isolation
 from view_cache import cache_window
 
 class TimeRSIModel(ForecastingModel):
-    model_name = 'timersi'
+    model_name = "timersi"
     # This field describes foundation-model pretraining overlap.
     trained_on_datasets = []
 
