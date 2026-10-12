@@ -486,7 +486,7 @@ def test_when_datasets_prefix_is_set_then_config_dataset_is_loaded_from_mirror(t
     assert loaded_dataset[0]["id"] == "series_0"
 
 
-def test_when_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_path, monkeypatch):
+def test_when_s3_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_path, monkeypatch):
     dataset_path = "s3://original-bucket/nested/test_dataset/*.parquet"
     mirror_dir = tmp_path / "mirror" / "nested" / "test_dataset"
     mirror_dir.mkdir(parents=True)
@@ -499,7 +499,7 @@ def test_when_datasets_prefix_is_set_then_s3_dataset_is_loaded_from_mirror(tmp_p
         }
     )
     mirror_dataset.to_parquet(mirror_dir / "data.parquet")
-    monkeypatch.setenv("FEV_DATASETS_PREFIX", str(tmp_path / "mirror"))
+    monkeypatch.setenv("FEV_S3_DATASETS_PREFIX", str(tmp_path / "mirror"))
     monkeypatch.setattr(fev.task.utils, "validate_time_series_dataset", lambda *args, **kwargs: None)
 
     task = fev.Task(dataset_path=dataset_path, horizon=2)
@@ -621,3 +621,20 @@ def test_when_column_descriptions_combined_with_generate_univariate_targets_from
             generate_univariate_targets_from=["X", "Y"],
             column_descriptions={"target": "generated target"},
         )
+
+
+def test_when_only_datasets_prefix_is_set_then_s3_dataset_path_is_not_rewritten(tmp_path, monkeypatch):
+    monkeypatch.setenv("FEV_DATASETS_PREFIX", str(tmp_path / "mirror"))
+    monkeypatch.delenv("FEV_S3_DATASETS_PREFIX", raising=False)
+    task = fev.Task(dataset_path="s3://original-bucket/data.parquet", horizon=2)
+    captured = {}
+
+    def fake_load_dataset(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(fev.task.datasets, "load_dataset", fake_load_dataset)
+    with pytest.raises(RuntimeError):
+        task.load_full_dataset(num_proc=1)
+
+    assert captured["data_files"] == "s3://original-bucket/data.parquet"
