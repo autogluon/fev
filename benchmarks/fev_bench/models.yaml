@@ -88,6 +88,7 @@ timesfm-3:
   model_type: pretrained
   zero_shot: true
   commercial_use: false
+  display_name: TimesFM-3
 
 tirex:
   organization: NX-AI
