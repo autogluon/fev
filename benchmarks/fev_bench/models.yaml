@@ -54,6 +54,13 @@ t0-beta:
   zero_shot: true
   commercial_use: true
 
+t0-gamma:
+  organization: The Forecasting Company
+  url: https://huggingface.co/theforecastingcompany/t0-gamma
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
 tabpfn-ts:
   organization: Prior Labs
   url: https://huggingface.co/Prior-Labs/TabPFN-v2-reg
@@ -68,6 +75,14 @@ tabpfn-ts-3:
   zero_shot: true
   commercial_use: false
 
+timeh2o-v1-tiny:
+  organization: H2O.ai
+  url: https://huggingface.co/h2oai/timeh2o-v1-tiny
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+  display_name: TimeH2O-v1-tiny
+
 timesfm-2_5:
   organization: Google
   url: https://huggingface.co/google/timesfm-2.5-200m-pytorch
@@ -81,6 +96,7 @@ timesfm-3:
   model_type: pretrained
   zero_shot: true
   commercial_use: false
+  display_name: TimesFM-3
 
 tirex:
   organization: NX-AI
