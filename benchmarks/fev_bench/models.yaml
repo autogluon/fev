@@ -75,6 +75,14 @@ tabpfn-ts-3:
   zero_shot: true
   commercial_use: false
 
+timeh2o-v1-tiny:
+  organization: H2O.ai
+  url: https://huggingface.co/h2oai/timeh2o-v1-tiny
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+  display_name: TimeH2O-v1-tiny
+
 timesfm-2_5:
   organization: Google
   url: https://huggingface.co/google/timesfm-2.5-200m-pytorch
