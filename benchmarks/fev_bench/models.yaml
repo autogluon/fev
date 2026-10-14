@@ -270,7 +270,7 @@ stat_ensemble:
   commercial_use: true
 
 TimeRSI:
-  display_name: TimeRSI
+  display_name: TimeRSI-1.0
   organization: "GaTech & SamayLabs"
   url: https://github.com/haoxin1998/TimeRSI4FevBench
   model_type: closed-api
