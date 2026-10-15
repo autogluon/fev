@@ -268,3 +268,11 @@ stat_ensemble:
   model_type: statistical
   zero_shot: false
   commercial_use: true
+
+TimeRSI:
+  display_name: TimeRSI-1.0
+  organization: "GaTech & SamayLabs"
+  url: https://github.com/haoxin1998/TimeRSI4FevBench
+  model_type: closed-api
+  zero_shot: false
+  commercial_use: false
