@@ -98,6 +98,34 @@ timesfm-3:
   commercial_use: false
   display_name: TimesFM-3
 
+timestral-5m:
+  organization: Mistral AI
+  url: https://huggingface.co/mistralai/Timestral-5M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+timestral-28m:
+  organization: Mistral AI
+  url: https://huggingface.co/mistralai/Timestral-28M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+timestral-123m:
+  organization: Mistral AI
+  url: https://huggingface.co/mistralai/Timestral-123M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+timestral-209m:
+  organization: Mistral AI
+  url: https://huggingface.co/mistralai/Timestral-209M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
 tirex:
   organization: NX-AI
   url: https://huggingface.co/NX-AI/TiRex
