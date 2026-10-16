@@ -104,6 +104,7 @@ timestral-5m:
   model_type: pretrained
   zero_shot: true
   commercial_use: false
+  hidden: true
 
 timestral-28m:
   organization: Mistral AI
@@ -111,6 +112,7 @@ timestral-28m:
   model_type: pretrained
   zero_shot: true
   commercial_use: false
+  hidden: true
 
 timestral-123m:
   organization: Mistral AI
@@ -118,6 +120,7 @@ timestral-123m:
   model_type: pretrained
   zero_shot: true
   commercial_use: false
+  hidden: true
 
 timestral-209m:
   organization: Mistral AI
