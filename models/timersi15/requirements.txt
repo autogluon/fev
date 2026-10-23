@@ -1,0 +1,1 @@
+timersi-fevbench15 @ https://github.com/haoxin1998/TimeRSI4FevBench/archive/a8d036bf7bafadc31142560fd45f56de121b876b.tar.gz#subdirectory=TimeRSI-1.5

@@ -316,3 +316,11 @@ TimeRSI:
   model_type: closed-api
   zero_shot: false
   commercial_use: false
+
+timersi-1_5:
+  organization: GaTech & SamayLabs
+  display_name: TimeRSI-1.5
+  url: https://github.com/haoxin1998/TimeRSI4FevBench/tree/main/TimeRSI-1.5
+  model_type: closed-api
+  zero_shot: false
+  commercial_use: false
