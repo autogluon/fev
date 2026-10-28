@@ -33,6 +33,14 @@ flowstate:
   zero_shot: true
   commercial_use: true
 
+iamtime:
+  organization: Walmart Labs
+  url: https://huggingface.co/anishsaha/iAmTime-base-forecast
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  display_name: iAmTime-base-forecast
+
 moirai-2_0:
   organization: Salesforce
   url: https://huggingface.co/Salesforce/moirai-2.0-R-small
