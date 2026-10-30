@@ -332,3 +332,27 @@ timersi-1_5:
   model_type: closed-api
   zero_shot: false
   commercial_use: false
+
+pdm-femto:
+  organization: Flashmind UAE
+  url: https://www.flashmind.com/models/pdm#pdm-femto
+  model_type: closed-api
+  zero_shot: true
+  commercial_use: true
+  display_name: PDM-Femto
+
+pdm-pico:
+  organization: Flashmind UAE
+  url: https://www.flashmind.com/models/pdm#pdm-pico
+  model_type: closed-api
+  zero_shot: true
+  commercial_use: true
+  display_name: PDM-Pico
+
+pdm-nano:
+  organization: Flashmind UAE
+  url: https://www.flashmind.com/models/pdm#pdm-nano
+  model_type: closed-api
+  zero_shot: true
+  commercial_use: true
+  display_name: PDM-Nano
