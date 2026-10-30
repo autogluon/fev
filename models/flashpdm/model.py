@@ -2,9 +2,10 @@
 
 https://www.flashmind.com/models/pdm
 
-Targets are joint unless known-future covariates require one target per input.
+Targets are forecast jointly, including with known-future covariates.
 Numeric dynamic covariates retain their roles. String covariates use smoothed
-per-series target means fitted on observed history only; static columns are unused.
+per-series target means fitted on observed history only (one channel per target);
+static columns are unused.
 """
 
 from itertools import tee
@@ -91,28 +92,32 @@ class FlashPDMModel(fev.ForecastingModel):
     def _items(self, task, windows, categorical, cap):
         for w, (past_data, future_data) in enumerate(windows):
             for i, (past, future) in enumerate(zip(past_data, future_data, strict=True)):
-                groups = [[c] for c in task.target_columns] if task.known_dynamic_columns else [task.target_columns]
-                for columns in groups:
-                    if len(columns) > 1 and categorical:
-                        raise ValueError(
-                            "Joint targets with categorical covariates require an explicit encoding policy"
-                        )
-                    targets = {c: _numeric(past[c]) for c in columns}
-                    p, f = {}, {}
-                    for c in task.known_dynamic_columns + task.past_dynamic_columns:
-                        ahead = future[c] if c in task.known_dynamic_columns else None
-                        hist = past[c]
-                        if c in categorical:
-                            hist, ahead = _target_encode(targets[columns[0]], hist, ahead)
-                        p[c] = _values(_numeric(hist)[-cap:])
-                        if ahead is not None:
-                            f[c] = _values(ahead)
-                    payload = {"targets": {c: _values(y[-cap:]) for c, y in targets.items()}}
-                    if p:
-                        payload["past_covariates"] = p
-                    if f:
-                        payload["future_covariates"] = f
-                    yield (w, i, targets, payload)
+                columns = task.target_columns
+                targets = {c: _numeric(past[c]) for c in columns}
+                p, f = {}, {}
+                reserved = set(columns) | set(task.known_dynamic_columns) | set(task.past_dynamic_columns)
+                for c in task.known_dynamic_columns + task.past_dynamic_columns:
+                    ahead = future[c] if c in task.known_dynamic_columns else None
+                    variants = (
+                        [_target_encode(y, past[c], ahead) for y in targets.values()]
+                        if c in categorical
+                        else [(past[c], ahead)]
+                    )
+                    for j, (hist, known) in enumerate(variants):
+                        name = c
+                        if len(variants) > 1:
+                            name = f"encoded-{len(p)}-{j}"
+                            while name in reserved or name in p:
+                                name = "_" + name
+                        p[name] = _values(_numeric(hist)[-cap:])
+                        if known is not None:
+                            f[name] = _values(known)
+                payload = {"targets": {c: _values(y[-cap:]) for c, y in targets.items()}}
+                if p:
+                    payload["past_covariates"] = p
+                if f:
+                    payload["future_covariates"] = f
+                yield (w, i, targets, payload)
 
     def _fit_predict(self, task):
         levels = sorted({0.5, *task.quantile_levels})
@@ -128,14 +133,23 @@ class FlashPDMModel(fev.ForecastingModel):
             for past, _ in windows
         ]
 
-        with Client(timeout=180, max_retries=2) as client, ForecastPool(
-            client, model=self.model, revision=self.revision, concurrency=self.concurrency,
-            limits=BatchLimits(windows=self.batch_size), max_attempts=3,
-        ) as pool:
+        with (
+            Client(timeout=180, max_retries=2) as client,
+            ForecastPool(
+                client,
+                model=self.model,
+                revision=self.revision,
+                concurrency=self.concurrency,
+                limits=BatchLimits(windows=self.batch_size),
+                max_attempts=3,
+            ) as pool,
+        ):
             items, metadata = tee(self._items(task, windows, categorical, pool.capabilities["max_context"]))
             with self._record_inference_time():
                 forecasts = pool.forecast_inputs(
-                    (item[3] for item in items), task.horizon, quantile_levels=levels,
+                    (item[3] for item in items),
+                    task.horizon,
+                    quantile_levels=levels,
                 )
                 for (w, i, targets, _), result in zip(metadata, forecasts, strict=True):
                     for c, history in targets.items():
