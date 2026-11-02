@@ -340,6 +340,7 @@ pdm-femto:
   zero_shot: true
   commercial_use: true
   display_name: PDM-Femto
+  hidden: true
 
 pdm-pico:
   organization: Flashmind UAE
@@ -348,6 +349,7 @@ pdm-pico:
   zero_shot: true
   commercial_use: true
   display_name: PDM-Pico
+  hidden: true
 
 pdm-nano:
   organization: Flashmind UAE
