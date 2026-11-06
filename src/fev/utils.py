@@ -149,7 +149,9 @@ def infer_column_types(
 class PatchedDownloadConfig(datasets.DownloadConfig):
     # Fixes a bug that prevents `load_dataset` from loading datasets from S3.
     # See https://github.com/huggingface/datasets/issues/6598
-    def __post_init__(self, use_auth_token):
+    # datasets<5 passes the deprecated `use_auth_token` InitVar here; datasets>=5 calls
+    # __post_init__() without arguments, so the argument needs a default.
+    def __post_init__(self, use_auth_token="deprecated"):
         if use_auth_token != "deprecated":
             self.token = use_auth_token
 
