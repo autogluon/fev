@@ -710,11 +710,7 @@ class Task:
             storage_options=copy.deepcopy(storage_options),
         )
         try:
-            ds = datasets.load_dataset(
-                **load_dataset_kwargs,
-                # PatchedDownloadConfig fixes https://github.com/huggingface/datasets/issues/6598
-                download_config=utils.PatchedDownloadConfig(storage_options=copy.deepcopy(storage_options)),
-            )
+            ds = datasets.load_dataset(**load_dataset_kwargs)
         except Exception:
             raise RuntimeError(
                 "Failed to load the dataset when calling `datasets.load_dataset` with arguments\n"
