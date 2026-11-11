@@ -1,6 +1,8 @@
 # Leaderboard metadata for fev-bench (https://huggingface.co/spaces/autogluon/fev-leaderboard).
 # One entry per results CSV in `results/`, keyed by its file name without `.csv`.
 # Format: see `ModelMetadata` in scripts/fev_bench_metadata.py.
+# Model families: keep at most 1 model per family visible (2 only for major differences, e.g. a
+# thinking mode); set `hidden: true` on the rest (e.g. other sizes) to avoid correlated entries.
 
 # --- Pretrained models ---------------------------------------------------------------------------
 

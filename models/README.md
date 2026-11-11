@@ -86,6 +86,9 @@ class MyModel(ForecastingModel):
    for your model. The format is defined by `ModelMetadata` in
    [`scripts/fev_bench_metadata.py`](../scripts/fev_bench_metadata.py).
 
+   > [!IMPORTANT]
+   > **Submitting several models from one family?** Keep at most one model per family visible (e.g. if variants differ only in size, pick the one to highlight) and set `hidden: true` for the rest. Two are OK only for major differences (e.g. a thinking mode). Many correlated entries crowd the board and make win rates less meaningful.
+
 3. Open a pull request with `models/<name>/model.py`, `models/<name>/requirements.txt`, your results
    CSV, and the `models.yaml` entry. CI validates the submission; we then reproduce the results
    independently before they appear on the leaderboard.
