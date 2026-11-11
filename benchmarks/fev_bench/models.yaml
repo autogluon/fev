@@ -50,6 +50,37 @@ moirai-2_0:
   zero_shot: true
   commercial_use: false
 
+simons-25m:
+  organization: Abel AI Lab
+  url: https://huggingface.co/abel-lab/Simons-25M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+simons-60m:
+  organization: Abel AI Lab
+  url: https://huggingface.co/abel-lab/Simons-60M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+simons-178m:
+  organization: Abel AI Lab
+  url: https://huggingface.co/abel-lab/Simons-178M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+  hidden: true
+
+simons-297m:
+  organization: Abel AI Lab
+  url: https://huggingface.co/abel-lab/Simons-297M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
+
 sundial-base:
   organization: Tsinghua University
   url: https://huggingface.co/thuml/sundial-base-128m
