@@ -358,3 +358,10 @@ pdm-nano:
   zero_shot: true
   commercial_use: true
   display_name: PDM-Nano
+
+ci-proto:
+  organization: Continuous Intelligence
+  url: https://huggingface.co/ContinuousIntelligence/ci-proto
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
