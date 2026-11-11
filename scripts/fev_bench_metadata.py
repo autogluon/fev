@@ -46,7 +46,8 @@ class ModelMetadata(BaseModel):
     commercial_use: bool
     # Only needed if the `model_name` in the results CSV does not display well.
     display_name: str | None = None
-    # Set by maintainers to drop a model from the leaderboard and figures (e.g. redundant sizes).
+    # Drop the model from the leaderboard and figures. Set on all but 1 (max 2) models per family
+    # (e.g. redundant sizes) to avoid crowding the board with correlated entries.
     hidden: bool = False
 
 
