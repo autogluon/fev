@@ -54,6 +54,7 @@ simons-25m:
   model_type: pretrained
   zero_shot: true
   commercial_use: true
+  hidden: true
 
 simons-60m:
   organization: Abel AI Lab
@@ -61,6 +62,7 @@ simons-60m:
   model_type: pretrained
   zero_shot: true
   commercial_use: true
+  hidden: true
 
 simons-178m:
   organization: Abel AI Lab
@@ -68,6 +70,7 @@ simons-178m:
   model_type: pretrained
   zero_shot: true
   commercial_use: true
+  hidden: true
 
 simons-297m:
   organization: Abel AI Lab
