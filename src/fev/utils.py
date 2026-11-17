@@ -169,8 +169,12 @@ def convert_long_df_to_hf_dataset(
     static_columns
         Names of columns that contain static (time-independent) features.
     """
-    df[id_column] = df[id_column].astype(str)
-    df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+    df = df.assign(
+        **{
+            id_column: df[id_column].astype(str),
+            timestamp_column: pd.to_datetime(df[timestamp_column]),
+        }
+    )
     table = pa.Table.from_pandas(df, preserve_index=False)
     return convert_long_table_to_hf_dataset(
         table,
