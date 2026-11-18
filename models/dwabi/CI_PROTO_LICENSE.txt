@@ -2,8 +2,8 @@
 
 Version 1.0, 10 November 2026
 
-Licensor: Continuous Intelligence Limited  
-Release: ci-proto  
+Licensor: Continuous Intelligence Limited
+Release: ci-proto
 Copyright 2026 Continuous Intelligence Limited
 
 This licence is based on the Apache License, Version 2.0, with additional attribution and notification requirements in Section 10. It is designed to cover both software source code and AI model weights, with Section 10 also addressing the use of model outputs to develop other AI models.
