@@ -27,12 +27,17 @@ TASKS_YAML = FEV_BENCH_DIR / "tasks.yaml"
 
 # Metrics reported on the leaderboard that every submission must provide.
 REQUIRED_METRICS = ["MASE", "SQL"]
+# Runtime columns the leaderboard reports. Values are wall-clock seconds for the whole system.
+TIME_COLUMNS = ["training_time_s", "inference_time_s"]
+# Model types that fit inside `predict` and may legitimately report zero training time.
+TYPES_WITHOUT_TRAINING_STEP = {"statistical"}
 # Task-definition columns feed the pivot; a malformed one silently splits a task into extra rows.
 # description_fingerprint is optional: summaries without it are filled with None on load.
 REQUIRED_COLUMNS = [c for c in TASK_DEF_COLUMNS if c != "description_fingerprint"] + [
     "model_name",
     "task_name",
     *REQUIRED_METRICS,
+    *TIME_COLUMNS,
 ]
 
 # Reject pathological files before parsing. Legitimate submissions are well under 1 MB.
@@ -92,6 +97,26 @@ def test_when_all_submissions_loaded_then_leaderboard_covers_every_task(metric: 
         leakage_imputation_model="Chronos-Bolt",
     )
     assert set(summaries["model_name"]) == set(lb.index)
+
+
+@pytest.mark.parametrize("model_name", sorted(load_model_metadata()))
+def test_when_submission_added_then_it_reports_runtimes(model_name: str):
+    metadata = load_model_metadata()[model_name]
+    summary = pd.read_csv(RESULTS_DIR / metadata["results_file"])
+    for column in TIME_COLUMNS:
+        values = pd.to_numeric(summary[column], errors="coerce")
+        bad = summary.loc[~(values >= 0) | values.isin([float("inf")]), "task_name"].tolist()
+        assert not bad, f"{model_name}: '{column}' must be a finite non-negative number, invalid for tasks {bad[:5]}"
+
+    no_inference = summary.loc[summary["inference_time_s"] <= 0, "task_name"].tolist()
+    assert not no_inference, f"{model_name}: 'inference_time_s' must be > 0, got 0 for tasks {no_inference[:5]}"
+
+    if not metadata["zero_shot"] and metadata["model_type"] not in TYPES_WITHOUT_TRAINING_STEP:
+        no_training = summary.loc[summary["training_time_s"] <= 0, "task_name"].tolist()
+        assert not no_training, (
+            f"{model_name} is trained on each task (zero_shot: false) but reports 'training_time_s' <= 0 "
+            f"for tasks {no_training[:5]}. Report the full per-task training time of the whole system."
+        )
 
 
 def test_when_submission_added_then_it_has_valid_metadata():
