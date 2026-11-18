@@ -69,7 +69,8 @@ def test_changed_native_metric_contract_cannot_reuse_a_fitted_policy():
         runner.fit_predict(task)
 
 
-def test_stock_fit_predict_and_prepared_policy_issue_the_same_known_driver(tmp_path, monkeypatch):
+@pytest.mark.parametrize("max_context_length", [None, 12])
+def test_stock_fit_predict_and_prepared_policy_issue_the_same_known_driver(tmp_path, monkeypatch, max_context_length):
     monkeypatch.delenv("DWABI_FEV_POLICY", raising=False)
     start = datetime(2020, 1, 1)
     driver = list(map(float, range(25)))
@@ -79,7 +80,7 @@ def test_stock_fit_predict_and_prepared_policy_issue_the_same_known_driver(tmp_p
     data_file = tmp_path / "panel.parquet"
     data.to_parquet(str(data_file))
     task = Task(dataset_path=str(data_file), task_name="task", horizon=2, num_windows=2,
-                seasonality=1, min_context_length=3, known_dynamic_columns=["driver"],
+                seasonality=1, min_context_length=3, max_context_length=max_context_length, known_dynamic_columns=["driver"],
                 eval_metric="SQL", extra_metrics=["MASE", {"name": "WAPE", "epsilon": 1},
                 {"name": "WQL", "epsilon": 1}], quantile_levels=[i / 10 for i in range(1, 10)])
     suite, families = tmp_path / "suite.yaml", tmp_path / "families.json"
@@ -104,6 +105,16 @@ def test_stock_fit_predict_and_prepared_policy_issue_the_same_known_driver(tmp_p
         assert issued["target"].data.table.equals(saved["target"].data.table)
         np.testing.assert_array_equal(issued["target"]["0.5"][0], driver[21 + 2 * index:23 + 2 * index])
     assert task.evaluation_summary(results, model_name="D-wabi")["SQL"] == 0
+
+    # Original prepared policies could fit on history outside a native context cap.
+    fitted.pop("calibration_history", None)
+    path.write_text(json.dumps(fitted, allow_nan=False))
+    if max_context_length is None:
+        legacy = DWabiFEVModel(device="cpu", policy_path=path)
+        assert legacy.decisions == prepared.decisions
+    else:
+        with pytest.raises(ValueError, match="context cap"):
+            DWabiFEVModel(device="cpu", policy_path=path)
 
 
 def test_local_gate_uses_only_complete_blocks_mature_by_the_actual_cutoff():

@@ -69,16 +69,10 @@ def provider_frequency(task, past, future):
 
 
 class NativeEarlierInputs(EarlierInputs):
-    """Enumerate all eligible prefix clocks and restore FEV's history cap on issue."""
+    """Enumerate calibration only inside the native first-window history."""
 
     def __init__(self, task, first_case, ends):
         self.native_max_context = first_case[0].max_context_length
-        if self.native_max_context is not None:
-            # Geometry needs all earlier clocks. Providers will only receive the native capped prefix.
-            full = replace(first_case[0], max_context_length=None)
-            first_case, observed = capture_native(task,full,first_case[5]["origin"])
-            if not np.array_equal(ends,observed):
-                raise ValueError("The native context cap changed the first forecast recipient cutoffs.")
         super().__init__(task,first_case,ends)
 
     def case(self, index):
@@ -92,12 +86,24 @@ class NativeEarlierInputs(EarlierInputs):
         return current,actual,positions
 
 
+def _earlier_plan(task, first_case, ends):
+    window = first_case[0]
+    # FEV filters recipients by minimum length before truncating their histories.
+    # A valid official recipient can therefore have too little visible history
+    # to furnish any earlier calibration episode.
+    if window.max_context_length is not None and window.max_context_length < window.min_context_length:
+        return None
+    return NativeEarlierInputs(task,first_case,ends)
+
+
 def earlier_episodes(task, rows):
     """Resolve a generated earlier population from the native first receiving window."""
     if not rows:
         return
     first, ends = capture_native(task,task.get_window(0,num_proc=1),0)
-    plan = NativeEarlierInputs(task,first,ends)
+    plan = _earlier_plan(task,first,ends)
+    if plan is None:
+        raise ValueError("The visible first-window history cannot support earlier episodes.")
     for row in rows:
         case, actual, _ = plan.case(row["ordinal"])
         dates = case[4].astype(np.int64)
@@ -180,6 +186,9 @@ class Calendar:
 
 
 def _cadence(plan):
+    if plan is None:
+        empty = np.empty(0,dtype=np.int64)
+        return Calendar(empty,empty,empty,empty)
     first,last = _target_bounds(plan)
     clock = plan.grid[plan.active_grid]
     raw = Calendar(clock,first,last,np.empty(0,dtype=np.int64))
@@ -257,7 +266,7 @@ def build_calendars(tasks, families, *, progress=None):
         for idx,window in enumerate(task.iter_windows(num_proc=1)):
             case,ends = capture_native(task,window,idx)
             if idx == 0:
-                geometry[name] = _cadence(NativeEarlierInputs(task,case,ends))
+                geometry[name] = _cadence(_earlier_plan(task,case,ends))
             dates = case[4].astype(np.int64)
             native = [(int(lo),int(hi)) for lo,hi in zip(dates.min(axis=1),dates.max(axis=1),strict=True)]
             horizons.append(_merge(native))
@@ -301,7 +310,7 @@ def build_calendars(tasks, families, *, progress=None):
                            if w["issue_at_ns"] < max(schedule[j]["own_boundary_ns"] for j in siblings if j != n)
                            for x in spans)
         first,ends = capture_native(task,task.get_window(0,num_proc=1),0)
-        plan = NativeEarlierInputs(task,first,ends)
+        plan = _earlier_plan(task,first,ends)
         calendar = geometry[name]
         holds = shared_plans[name]
         entry["earlier"] = _rows(plan,calendar,holds,namespace="shared",family=family,shared=shared,own=own)

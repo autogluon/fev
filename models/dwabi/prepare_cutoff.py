@@ -16,7 +16,9 @@ from dwabi import CutoffDecision, PointHistory, QuantileHistory
 
 from _dwabi_fev.bank import ForecastBank
 from _dwabi_fev.cases import predictions
-from _dwabi_fev.cutoff import BUDGET, METHOD, SUPPLEMENTAL, VERSION, earlier_cells, input_bindings, native_sql
+from _dwabi_fev.cutoff import (
+    BUDGET, CALIBRATION_HISTORY, METHOD, SUPPLEMENTAL, VERSION, earlier_cells, input_bindings, native_sql,
+)
 from _dwabi_fev.guarded import ROOT, record
 from dwabi.wape import _ordered_deciles
 from _dwabi_fev.native_calendar import HELD, MIN_EVIDENCE, build_calendars, earlier_episodes
@@ -163,7 +165,7 @@ def fit(model, tasks, schedule, local, bank=None):
         raise ValueError("Every native task needs one fitted decision.")
     return {"method": METHOD, "dwabi_version": VERSION, "inputs": input_bindings(), "members": list(models),
             "supplemental": SUPPLEMENTAL, "budget": asdict(BUDGET), "tasks": decisions, "schedule": schedule,
-            "task_definitions": task_definitions,
+            "task_definitions": task_definitions, "calibration_history": CALIBRATION_HISTORY,
             "local": local, "local_used": local_used, "local_gate": gates, "local_held": validation,
             "counts": counts, "seconds": perf_counter() - started}
 
@@ -175,7 +177,7 @@ def main():
     parser.add_argument("benchmark", type=Path)
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--families", type=Path, default=ROOT / "physical_families.json",
-                        help="Source lineage for exclusion of overlapping episodes and pooling. Keys identify tasks.")
+                        help="Source lineage used to exclude overlapping forecast intervals. Keys identify tasks.")
     parser.add_argument("--checkpoint-root", type=Path)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--forecast-bank", type=Path)

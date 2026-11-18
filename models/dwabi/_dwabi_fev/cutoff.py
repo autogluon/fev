@@ -16,6 +16,7 @@ from .guarded import ROOT, epsilon
 
 
 METHOD = "native_cutoff"
+CALIBRATION_HISTORY = "native_first_window"
 SUPPLEMENTAL = "timeh2o"
 BUDGET = ForecastBudget(16_384, 2_000_000)
 VERSION = "0.1.1.post1"
@@ -106,6 +107,10 @@ def read_policy(path, members):
             or state["budget"] != {"context_limit": BUDGET.context_limit, "max_cells": BUDGET.max_cells}
             or state["tasks"].keys() != schedule.keys() or state.get("task_definitions", {}).keys() != schedule.keys()):
         raise ValueError("Prepare the policy with the same package, checkpoints and FEV inputs.")
+    if state.get("calibration_history") != CALIBRATION_HISTORY and any(
+        definition.get("max_context_length") is not None for definition in state["task_definitions"].values()
+    ):
+        raise ValueError("Rebuild the policy using the native context cap for calibration.")
     decisions = {name: CutoffDecision(**rule) for name, rule in state["tasks"].items()}
     for name, decision in decisions.items():
         p, q = decision.point, decision.quantile

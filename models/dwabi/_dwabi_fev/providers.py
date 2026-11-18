@@ -4,14 +4,21 @@ from hashlib import file_digest, sha256
 from importlib.metadata import version
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from types import SimpleNamespace
+from threading import RLock, get_ident
+from types import ModuleType, SimpleNamespace
+import sys
 
 import numpy as np
 import pyarrow.compute as pc
+from fev import ForecastingModel
 
 from . import _ci_runtime
 from .cases import typed_panel
 from .members import CIProtoMember, T0Member, TimestralMember
+
+
+_WRAPPER_LOCK = RLock()
+_TIREX_LOCK = RLock()
 
 
 def digest(path):
@@ -33,14 +40,63 @@ def checkpoint(pin, root, member):
     return path
 
 
+def _wrapper_digest(path):
+    return sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def _registered_namespace(model, pin, member):
+    function = model.__dict__.get("_fit_predict")
+    namespace = getattr(function, "__globals__", {})
+    try:
+        source = Path(namespace["__file__"])
+        verified = (namespace.get("__name__") == model.__module__
+                    and namespace.get(model.__name__) is model
+                    and Path(function.__code__.co_filename).resolve() == source.resolve()
+                    and _wrapper_digest(source) == pin["wrapper_sha256"])
+    except (KeyError, OSError, TypeError, AttributeError, ValueError):
+        verified = False
+    if not verified:
+        raise ValueError(f"{member}: the registered upstream adapter differs from the pinned source.")
+    return namespace
+
+
 def wrapper(pin, member):
     path = Path(__file__).resolve().parents[2] / pin["wrapper"] / "model.py"
-    if sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest() != pin["wrapper_sha256"]:
+    if _wrapper_digest(path) != pin["wrapper_sha256"]:
         raise ValueError(f"{member}: the upstream adapter differs from the benchmark pin.")
-    spec = spec_from_file_location(f"_dwabi_provider_{member}", path)
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    name = f"_dwabi_provider_{member}"
+    with _WRAPPER_LOCK:
+        registered = ForecastingModel._registry.get(pin["wrapper"])
+        namespace = None if registered is None else _registered_namespace(registered, pin, member)
+        module = sys.modules.get(name)
+        if module is not None:
+            try:
+                verified_source = _wrapper_digest(module.__file__) == pin["wrapper_sha256"]
+            except (OSError, TypeError, AttributeError, ValueError):
+                verified_source = False
+            if (registered is None or module.__dict__.get(registered.__name__) is not registered
+                    or not verified_source):
+                raise ValueError(f"{member}: the loaded upstream adapter differs from the pinned source.")
+            return module
+        if registered is not None:
+            module = sys.modules.get(registered.__module__)
+            if module is None:
+                # FEV's file loader can register a class without retaining its module.
+                module = ModuleType(registered.__module__)
+                module.__dict__.update(namespace)
+            elif module.__dict__ is not namespace:
+                raise ValueError(f"{member}: the registered module differs from the pinned source.")
+            sys.modules[name] = module
+            return module
+        spec = spec_from_file_location(name, path)
+        module = module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+        return module
 
 
 def native_array(task, predictions, n):
@@ -57,6 +113,9 @@ def native_array(task, predictions, n):
 
 
 def make_provider(member, pin, root, device="cuda"):
+    if member == "timesfm3" and sys.flags.hash_randomization:
+        raise ValueError("TimesFM3 requires starting Python with PYTHONHASHSEED=0. "
+                         "Set it before launching the interpreter; changing os.environ after startup is insufficient.")
     import torch
 
     torch.manual_seed(1937)
@@ -82,8 +141,18 @@ def make_provider(member, pin, root, device="cuda"):
         from tirex2 import load_model
         from tirex2.model.component import flashrnn_slstm
 
-        flashrnn_slstm._flashrnn_backend = lambda device: "vanilla"
-        model = load_model(path, device=device)
+        with _TIREX_LOCK:
+            original_backend = flashrnn_slstm._flashrnn_backend
+            constructing_thread = get_ident()
+
+            def backend(runtime_device):
+                return "vanilla" if get_ident() == constructing_thread else original_backend(runtime_device)
+
+            flashrnn_slstm._flashrnn_backend = backend
+            try:
+                model = load_model(path, device=device)
+            finally:
+                flashrnn_slstm._flashrnn_backend = original_backend
 
         def adapter(task, case):
             law = model.forecast_fev(case[0], prediction_length=task.horizon, output_type="fev",
@@ -94,10 +163,10 @@ def make_provider(member, pin, root, device="cuda"):
     if member == "chronos2":
         from chronos import BaseChronosPipeline
 
-        from .chronos_missing import install
+        from .chronos_missing import prepare_fev_inputs
 
-        install()
         model = BaseChronosPipeline.from_pretrained(str(path), device_map=device, torch_dtype=torch.float32)
+        model.predict_quantiles = prepare_fev_inputs(model.predict_quantiles)
 
         def adapter(task, case):
             view = SimpleNamespace(iter_windows=lambda: iter((case[0],)), quantile_levels=task.quantile_levels)
