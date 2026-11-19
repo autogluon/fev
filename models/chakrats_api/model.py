@@ -1,10 +1,11 @@
 """fev wrapper for ChakraTS, a hosted forecasting model from YHat Labs (https://yhatlabs.com).
 
 ChakraTS is served through an API; no weights are distributed. Set YHAT_API_KEY (evaluation keys are
-issued on request, see https://huggingface.co/yhatlabs/ChakraTS). The wrapper sends every item of a
-window with all of its target columns, past covariates and known covariates, up to 100 items per call
-(fewer when a call would exceed the API's request size), and never mixes evaluation windows in one call. The `chakra-ts-fev` model is the fev-bench evaluation
-configuration of ChakraTS: it declares no overlap with fev-bench datasets.
+issued on request, see https://huggingface.co/yhatlabs/ChakraTS). The results use the `chakra-ts` model
+with its `pro` preset, the same model the API serves to everyone. The wrapper sends every item of a
+window with all of its target columns, past covariates and known covariates (up to 32,768 steps of
+history), up to 256 items per call (fewer when a call would exceed the API's request size), and never
+mixes evaluation windows in one call.
 """
 
 from __future__ import annotations
@@ -22,11 +23,11 @@ import numpy as np
 import pandas as pd
 from fev.model import ForecastingModel
 
-API_URL = os.environ.get("YHAT_API_URL", "https://api.yhatlabs.com/v1/forecast")
+API_URL = os.environ.get("YHAT_API_URL", "https://api.yhatlabs.com/v1/series/forecast")
 QUANTILES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 QKEYS = [str(q) for q in QUANTILES]
-MAX_CONTEXT = 20480  # points of history sent per item; longer than every component's own context window
-MAX_REQUEST_POINTS = 1_500_000  # values per request (targets + covariates), under the API's per-request cap
+MAX_CONTEXT = 32768  # points of history sent per item: the API's limit per series and the model's longest context
+MAX_REQUEST_POINTS = 290_000  # values per request (targets + covariates): larger requests are served on slower overflow capacity
 MAX_REQUEST_BYTES = 24_000_000  # JSON bytes per request, under the gateway's body limit
 
 
@@ -79,18 +80,19 @@ class ChakraTSAPIModel(ForecastingModel):
     model_name = "chakrats_api"
     trained_on_datasets: list[str] = []
 
-    def __init__(self, model: str = "chakra-ts-fev", batch_size: int = 100, api_key: str | None = None):
+    def __init__(self, model: str = "chakra-ts", preset: str = "pro", batch_size: int = 256, api_key: str | None = None):
         super().__init__()
         self.model = model
+        self.preset = preset
         self.batch_size = batch_size
         self.api_key = api_key or os.environ["YHAT_API_KEY"]
 
     def _call(self, items: list[dict], horizon: int, freq: str) -> list[dict]:
-        body = {"model": self.model, "horizon": horizon, "freq": freq, "series": items}
+        body = {"model": self.model, "preset": self.preset, "horizon": horizon, "freq": freq, "series": items}
         req = urllib.request.Request(
             API_URL,
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}", "User-Agent": "chakrats-fev-wrapper/1.0 (+https://yhatlabs.com)"},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}", "User-Agent": "chakrats-fev-wrapper/1.1 (+https://yhatlabs.com)"},
         )
         for attempt in range(8):
             try:
