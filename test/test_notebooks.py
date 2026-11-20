@@ -18,8 +18,10 @@ notebook_files = [
 ]
 
 
-def _is_pip_install(cell) -> bool:
-    return cell.cell_type == "code" and cell.source.lstrip().startswith(("!pip install", "%pip install"))
+def _drop_pip_installs(source: str) -> str:
+    return "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith(("!pip install", "%pip install"))
+    )
 
 
 def _print_slowest_cells(nb, capsys, n=3):
@@ -42,7 +44,9 @@ def test_notebooks_run_without_errors(notebook_path, capsys):
         nb = nbformat.read(f, as_version=4)
     # Notebook dependencies come from the `test` extras. Installing them again in CI is slow and may change
     # package versions in the environment shared with the other tests.
-    nb.cells = [cell for cell in nb.cells if not _is_pip_install(cell)]
+    for cell in nb.cells:
+        if cell.cell_type == "code":
+            cell.source = _drop_pip_installs(cell.source)
 
     ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
 
