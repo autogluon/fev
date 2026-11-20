@@ -89,6 +89,8 @@ class ChakraTSAPIModel(ForecastingModel):
 
     def _call(self, items: list[dict], horizon: int, freq: str) -> list[dict]:
         body = {"model": self.model, "preset": self.preset, "horizon": horizon, "freq": freq, "series": items}
+        # The User-Agent only labels this wrapper's calls in our request logs; the API does not read it, and serves the same
+        # model and settings to every caller that sends the same request.
         req = urllib.request.Request(
             API_URL,
             data=json.dumps(body).encode(),
