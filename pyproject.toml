@@ -71,3 +71,7 @@ exclude = [
 
 [tool.hatch.version]
 path = "src/fev/__about__.py"
+
+[tool.pytest.ini_options]
+# Report the slowest tests to keep the suite fast.
+addopts = "--durations=25"
