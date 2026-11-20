@@ -1,3 +1,4 @@
+import math
 import reprlib
 import warnings
 
@@ -8,6 +9,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from .constants import DEFAULT_NUM_PROC
+
+# Records per worker process when validating a dataset in parallel.
+MIN_RECORDS_PER_PROC = 2000
 
 __all__ = [
     "maybe_cache_from_s3",
@@ -84,9 +88,10 @@ def validate_time_series_dataset(
     if num_records_to_validate is not None:
         dataset = dataset.select(range(num_records_to_validate))
 
+    # Starting a worker pool costs ~0.5s, more than validating a few thousand records in one process.
     dataset.map(
         _validate_frequency,
-        num_proc=min(num_proc, len(dataset)),
+        num_proc=max(1, min(num_proc, math.ceil(len(dataset) / MIN_RECORDS_PER_PROC))),
         desc="Validating dataset format",
         batched=True,
         input_columns=[timestamp_column],
