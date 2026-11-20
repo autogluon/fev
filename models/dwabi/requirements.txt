@@ -26,7 +26,7 @@ debugpy==1.8.20
 decorator==5.2.1
 dill==0.4.0
 docstring-parser==0.17.0
-dwabi==0.1.1.post1
+dwabi==0.1.2
 einops==0.7.0
 einshape==1.0
 executing==2.2.1
