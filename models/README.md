@@ -65,7 +65,13 @@ class MyModel(ForecastingModel):
         ...
 ```
 
-3. Add `requirements.txt` with pinned dependencies for the model.
+3. Add `requirements.txt` that pins every dependency exactly: `pkg==X.Y.Z`, or a git URL with
+   `@<commit or tag>`.
+
+   Keep the wrapper thin: put the model code in a package released on PyPI, pin its exact version
+   in `requirements.txt`, and keep `models/<name>/` to a single `model.py` that adapts the package to
+   `ForecastingModel` (a few hundred lines is typically enough). CI rejects any other `.py` or
+   `.json` files in the wrapper folder.
 
 4. For pretrained models, set `trained_on_datasets` to the list of dataset configs from `autogluon/fev_datasets` that overlap with the model's training data. Leave empty for models that train from scratch.
 
@@ -77,6 +83,12 @@ class MyModel(ForecastingModel):
    python models/evaluate.py -m <name> -b benchmarks/fev_bench/tasks.yaml
    mv <name>.csv benchmarks/fev_bench/results/<name>.csv
    ```
+
+   Every row must report `training_time_s` and `inference_time_s`: wall-clock seconds for the whole
+   system on that task, including any per-task fitting, model selection, and member forecasts used
+   for calibration. Use the `_record_training_time` / `_record_inference_time` helpers of
+   `ForecastingModel`. Models trained on each task (`zero_shot: false`, except `statistical`) must
+   report a positive training time.
 
    Each results file must contain exactly one `model_name`. If your wrapper covers several models
    (e.g. checkpoint sizes), run it once per model with `-n` and save one file for each.
