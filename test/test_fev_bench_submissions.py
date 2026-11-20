@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from packaging.requirements import InvalidRequirement, Requirement
 
 import fev
 from fev.analysis import TASK_DEF_COLUMNS, pivot_table
@@ -44,6 +45,11 @@ REQUIRED_COLUMNS = [c for c in TASK_DEF_COLUMNS if c != "description_fingerprint
 MAX_RESULT_FILE_BYTES = 5 * 1024 * 1024
 
 RESULT_FILES = sorted(RESULTS_DIR.glob("*.csv"))
+
+MODELS_DIR = REPO_ROOT / "models"
+WRAPPER_DIRS = sorted(p for p in MODELS_DIR.iterdir() if p.is_dir() and p.name != "__pycache__")
+# Wrappers merged before exact pins were required. Do not add new entries.
+UNPINNED_REQUIREMENTS_ALLOWLIST = {"flowstate", "sundial", "timesfm-2.5", "timesfm-3", "tirex-2"}
 
 
 @pytest.fixture(scope="module")
@@ -122,3 +128,50 @@ def test_when_submission_added_then_it_reports_runtimes(model_name: str):
 def test_when_submission_added_then_it_has_valid_metadata():
     # Validates every models.yaml entry and that entries and results files match one-to-one.
     load_model_metadata()
+
+
+@pytest.mark.parametrize("wrapper_dir", WRAPPER_DIRS, ids=lambda p: p.name)
+def test_when_wrapper_added_then_it_is_a_single_model_file(wrapper_dir: Path):
+    # Model code belongs in a released package. The wrapper is one model.py adapter plus requirements.txt.
+    assert (wrapper_dir / "model.py").is_file(), f"models/{wrapper_dir.name}/ is missing model.py"
+    assert (wrapper_dir / "requirements.txt").is_file(), f"models/{wrapper_dir.name}/ is missing requirements.txt"
+    extra = sorted(
+        str(path.relative_to(wrapper_dir))
+        for pattern in ("*.py", "*.json")
+        for path in wrapper_dir.rglob(pattern)
+        if path.name != "model.py" or path.parent != wrapper_dir
+    )
+    assert not extra, (
+        f"models/{wrapper_dir.name}/ must contain a single model.py with no other .py or .json files, found {extra}. "
+        "Move the model code into a package released on PyPI and pin it in requirements.txt."
+    )
+
+
+def _is_exact_pin(requirement: Requirement) -> bool:
+    if requirement.url:
+        # VCS URLs must reference a commit or tag. Archive URLs point to a fixed file.
+        return not requirement.url.startswith("git+") or "@" in requirement.url.split("://", 1)[-1]
+    specifiers = list(requirement.specifier)
+    return len(specifiers) == 1 and specifiers[0].operator in ("==", "===") and "*" not in specifiers[0].version
+
+
+@pytest.mark.parametrize("wrapper_dir", WRAPPER_DIRS, ids=lambda p: p.name)
+def test_when_wrapper_added_then_requirements_are_pinned(wrapper_dir: Path):
+    if wrapper_dir.name in UNPINNED_REQUIREMENTS_ALLOWLIST:
+        pytest.skip("Merged before exact pins were required")
+    unpinned = []
+    for line in (wrapper_dir / "requirements.txt").read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        try:
+            requirement = Requirement(line)
+        except InvalidRequirement:
+            unpinned.append(line)
+            continue
+        if not _is_exact_pin(requirement):
+            unpinned.append(line)
+    assert not unpinned, (
+        f"models/{wrapper_dir.name}/requirements.txt must pin every dependency exactly "
+        f"(`pkg==X.Y.Z`, or a git URL with `@<commit or tag>`), found {unpinned}"
+    )
