@@ -6,6 +6,14 @@
 
 # --- Pretrained models ---------------------------------------------------------------------------
 
+chakrats-os-10m:
+  organization: YHat Labs
+  url: https://huggingface.co/yhatlabs/ChakraTS-OS-10M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+  display_name: ChakraTS-OS-10M
+
 chronos-bolt:
   organization: AWS
   url: https://huggingface.co/amazon/chronos-bolt-base
