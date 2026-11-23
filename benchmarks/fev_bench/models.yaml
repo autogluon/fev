@@ -406,3 +406,11 @@ ci-proto:
   model_type: pretrained
   zero_shot: true
   commercial_use: true
+
+dwabi:
+  organization: RabbitHawk
+  display_name: D-wabi
+  url: https://github.com/AbishekSriramulu/dwabi
+  model_type: system
+  zero_shot: false
+  commercial_use: false
