@@ -6,7 +6,7 @@ antlr4-python3-runtime==4.9.3
 anyio==4.12.1
 apache-tvm-ffi==0.1.9
 asttokens==3.0.1
-certifi==2026.1.4
+certifi==2026.10.18
 cffi==2.0.0
 charset-normalizer==3.4.4
 click==8.3.1
