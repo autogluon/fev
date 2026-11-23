@@ -400,7 +400,7 @@ ci-proto:
   commercial_use: true
 
 dwabi:
-  organization: "—"
+  organization: RabbitHawk
   display_name: D-wabi
   url: https://github.com/AbishekSriramulu/dwabi
   model_type: system
