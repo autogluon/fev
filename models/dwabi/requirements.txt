@@ -30,7 +30,7 @@ dwabi==0.1.2
 einops==0.7.0
 einshape==1.0
 executing==2.2.1
-filelock==3.20.2
+filelock==4.2.1
 flashrnn==1.0.4
 fonttools==4.61.1
 fsspec==2025.10.0
