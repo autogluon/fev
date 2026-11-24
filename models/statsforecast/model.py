@@ -101,6 +101,8 @@ class StatsForecastModel(fev.ForecastingModel):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 forecast_df = predictor.forecast(h=window.horizon, df=train_df[["unique_id", "ds", "y"]], level=levels)
+        # StatsForecast returns series sorted by unique_id; convert_forecast_df_to_predictions expects the input order
+        forecast_df = forecast_df.set_index("unique_id").loc[train_df["unique_id"].unique()].reset_index()
 
         model_names = [str(m) for m in predictor.models]
         forecast_df["predictions"] = forecast_df[model_names].median(1)
