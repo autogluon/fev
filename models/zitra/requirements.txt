@@ -1,0 +1,1 @@
+zitra-forecast[all] @ git+https://github.com/tomascupr/zitra-forecast.git

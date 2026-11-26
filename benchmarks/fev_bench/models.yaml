@@ -414,3 +414,28 @@ dwabi:
   model_type: system
   zero_shot: false
   commercial_use: false
+
+zitra-titan-585m:
+  organization: Zitra
+  display_name: Zitra-Titan-585M
+  url: https://huggingface.co/tomcupr/Zitra-Titan-585M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+zitra-apex-585m:
+  organization: Zitra
+  display_name: Zitra-Apex-585M
+  url: https://huggingface.co/tomcupr/Zitra-Apex-585M
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+
+zitra-209m-v2:
+  organization: Zitra
+  display_name: Zitra-209M-v2
+  url: https://huggingface.co/tomcupr/Zitra-209M-v2
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: false
+  hidden: true
