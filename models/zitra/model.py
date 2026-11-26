@@ -74,7 +74,7 @@ class Item:
 class ZitraModel(fev.ForecastingModel):
     """Zitra v3 forecasting model (100% Apache-2.0, https://github.com/tomascupr/zitra-forecast).
 
-    Supports Zitra-Titan-v3 via the unified `zitra.ZitraForecaster` API with multivariate targets
+    Supports Zitra-Titan-v3 (1.06B) and Zitra-Core-v3 (256M) via the unified `zitra.ZitraForecaster` API with multivariate targets
     plus past and known-future covariates (up to 16,384 context on known covariates).
     """
 

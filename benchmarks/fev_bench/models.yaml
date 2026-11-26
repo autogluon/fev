@@ -422,3 +422,11 @@ zitra-titan-v3:
   model_type: pretrained
   zero_shot: true
   commercial_use: true
+
+zitra-core-v3:
+  organization: Zitra
+  display_name: Zitra-Core-v3
+  url: https://huggingface.co/tomcupr/Zitra-Core-v3
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
