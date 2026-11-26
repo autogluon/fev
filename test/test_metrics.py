@@ -114,6 +114,26 @@ def test_seasonal_error_per_item_empty():
     assert result.dtype == np.float64
 
 
+@pytest.mark.parametrize("metric_type", [fev.metrics.MASE, fev.metrics.SQL])
+def test_zero_seasonal_error_with_epsilon(metric_type):
+    # The three histories have seasonal errors of zero, one, and NaN (too short).
+    y_past, lengths = _arrays_to_flat([[3, 3], [0, 1], [9]])
+    y_true = np.array([2.0, 1.0, 5.0]).reshape(-1, 1, 1)
+    y_pred = np.zeros_like(y_true)
+    inputs = {
+        "y_true": y_true,
+        "y_pred": y_pred,
+        "q_pred": y_pred[..., None],
+        "quantile_levels": [0.5],
+        "y_past": y_past,
+        "y_past_lengths": lengths,
+        "seasonality": 1,
+    }
+    with np.errstate(divide="ignore"):
+        np.testing.assert_allclose(metric_type().compute(**inputs), [1.0])
+    np.testing.assert_allclose(metric_type(epsilon=0.5).compute(**inputs), [(4.0 + 1.0) / 2])
+
+
 def _nzql(y_true, q_pred, y_past, y_past_lengths, quantile_levels):
     """Convenience wrapper: compute NZQL from explicit arrays (seasonality is unused by NZQL)."""
     per_dim = fev.metrics.NZQL().compute(

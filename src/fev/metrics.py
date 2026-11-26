@@ -204,8 +204,10 @@ class MASE(Metric):
     """Mean absolute scaled error.
 
     Warning:
-        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
-        all-NaN history, or zero seasonal error) are excluded from aggregation.
+        By default (`epsilon=0.0`), items with zero in-sample seasonal error are excluded from the average.
+        A positive `epsilon` sets a lower bound on the denominator, so these items contribute to the score.
+        If an item has no valid seasonal differences for a target (e.g., a short or all-NaN history),
+        its score for that target is excluded regardless of `epsilon`.
     """
 
     def __init__(self, epsilon: float = 0.0) -> None:
@@ -462,8 +464,10 @@ class SQL(QuantileMetric):
     """Scaled quantile loss.
 
     Warning:
-        Items with undefined in-sample seasonal error (e.g., history shorter than `seasonality`,
-        all-NaN history, or zero seasonal error) are excluded from aggregation.
+        By default (`epsilon=0.0`), items with zero in-sample seasonal error are excluded from the average.
+        A positive `epsilon` sets a lower bound on the denominator, so these items contribute to the score.
+        If an item has no valid seasonal differences for a target (e.g., a short or all-NaN history),
+        its score for that target is excluded regardless of `epsilon`.
     """
 
     def __init__(self, epsilon: float = 0.0) -> None:
