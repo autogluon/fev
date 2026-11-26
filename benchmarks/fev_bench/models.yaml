@@ -414,3 +414,11 @@ dwabi:
   model_type: system
   zero_shot: false
   commercial_use: false
+
+zitra-titan-v3:
+  organization: Zitra
+  display_name: Zitra-Titan-v3
+  url: https://huggingface.co/tomcupr/Zitra-Titan-v3
+  model_type: pretrained
+  zero_shot: true
+  commercial_use: true
