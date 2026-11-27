@@ -65,17 +65,45 @@ def _left_padded(rows: list[np.ndarray], fill: float) -> np.ndarray:
     return stacked
 
 
+def _override_tta(forecaster, overrides: dict) -> None:
+    """Override the model's test-time settings (``tta.json``), also on the lazily loaded long-context checkpoint."""
+    unknown = overrides.keys() - forecaster._tta.keys()
+    if unknown:
+        raise ValueError(f"unknown tta settings: {sorted(unknown)}")
+    forecaster._tta = {**forecaster._tta, **overrides}
+    load_long = forecaster._long_model
+    if load_long is not None:
+
+        def load_long_overridden():
+            long = load_long()
+            _override_tta(long, overrides)
+            return long
+
+        forecaster._long_model = load_long_overridden
+
+
 class CIProtoModel(fev.ForecastingModel):
-    """CI-Proto, loaded from a Hugging Face repository at a pinned ``revision``."""
+    """CI-Proto, loaded from a Hugging Face repository at a pinned ``revision``.
+
+    ``tta_overrides`` overrides the model's test-time settings. For example,
+    ``{"static_groups": 0, "joint_neighbours": 0, "chunk_joint": 0}`` disables cross-series inference, so that each
+    series is forecast on its own.
+    """
 
     model_name = "ci-proto"
     trained_on_datasets: ClassVar[list[str]] = []
 
     def __init__(
-        self, model_path: str = "ContinuousIntelligence/ci-proto", revision: str | None = None, device: str = "cuda"
+        self,
+        model_path: str = "ContinuousIntelligence/ci-proto",
+        revision: str | None = None,
+        device: str = "cuda",
+        tta_overrides: dict | None = None,
     ):
         super().__init__()
         self._model = ci.load_model(model_path, device=device, revision=revision)
+        if tta_overrides:
+            _override_tta(self._model, tta_overrides)
         self._model.forecast(torch.sin(torch.arange(512, dtype=torch.float32) / 8)[None], horizon=32)
 
     def _fit_predict(self, task: fev.Task) -> list[datasets.DatasetDict]:
