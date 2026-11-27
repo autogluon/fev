@@ -1,1 +1,1 @@
-zitra-forecast @ git+https://github.com/tomascupr/zitra-forecast.git@3e74ced5a9c863e59c6f85d4b06cb5c7f1d37ca2
+zitra-forecast @ git+https://github.com/tomascupr/zitra-forecast.git@ae11cb0145b4b00a2866155d91545e211f9f998e
